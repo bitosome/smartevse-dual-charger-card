@@ -63,6 +63,11 @@ class SmartEVSEFlowCard extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
+    const renderKey = this._buildRenderKey();
+    if (renderKey === this._lastRenderKey) {
+      return;
+    }
+    this._lastRenderKey = renderKey;
     this._render();
   }
 
@@ -86,6 +91,73 @@ class SmartEVSEFlowCard extends HTMLElement {
 
   _attr(entityId, attr) {
     return this._entity(entityId)?.attributes?.[attr];
+  }
+
+  _entitySnapshot(entityId, attrs = []) {
+    if (!entityId) {
+      return null;
+    }
+    const entity = this._entity(entityId);
+    if (!entity) {
+      return null;
+    }
+    const snapshot = { state: entity.state };
+    if (attrs.length > 0) {
+      snapshot.attrs = {};
+      for (const attr of attrs) {
+        snapshot.attrs[attr] = entity.attributes?.[attr] ?? null;
+      }
+    }
+    return snapshot;
+  }
+
+  _buildRenderKey() {
+    if (!this._config || !this._hass) {
+      return "";
+    }
+    const controllerAttrs = [
+      "controller_error",
+      "charge_allowed",
+      "active_smartevse_raw",
+      "charge_policy",
+      "wled_visuals",
+      "smartevse_1_name",
+      "smartevse_1_battery",
+      "smartevse_1_state",
+      "smartevse_1_plug_state",
+      "smartevse_1_mode",
+      "smartevse_1_charge_current",
+      "smartevse_1_max_current",
+      "smartevse_1_override_current",
+      "smartevse_1_error",
+      "smartevse_1_session_complete",
+      "smartevse_2_name",
+      "smartevse_2_battery",
+      "smartevse_2_state",
+      "smartevse_2_plug_state",
+      "smartevse_2_mode",
+      "smartevse_2_charge_current",
+      "smartevse_2_max_current",
+      "smartevse_2_override_current",
+      "smartevse_2_error",
+      "smartevse_2_session_complete",
+    ];
+    const tracked = {
+      controller: this._entitySnapshot(this._config.controller_entity, controllerAttrs),
+      price: this._entitySnapshot(this._config.price_entity),
+      schedule: this._entitySnapshot(this._config.schedule_entity, ["next_event"]),
+      scheduleSwitch: this._entitySnapshot(this._config.schedule_switch_entity),
+      forceCharge: this._entitySnapshot(this._config.force_charge_entity),
+      forcePrice: this._entitySnapshot(this._config.force_price_entity),
+      forceTimer: this._entitySnapshot(this._config.force_timer_entity),
+      acceptablePrice: this._entitySnapshot(this._config.acceptable_price_entity),
+      chargePolicy: this._entitySnapshot(this._config.charge_policy_entity),
+      dutyCycle: this._entitySnapshot(this._config.duty_cycle_entity),
+      forceDuration: this._entitySnapshot(this._config.force_charge_duration_entity),
+      dutyRemaining: this._entitySnapshot(this._config.duty_remaining_entity),
+      timerRemaining: this._entitySnapshot(this._config.timer_remaining_entity),
+    };
+    return JSON.stringify(tracked);
   }
 
   _safe(value) {
