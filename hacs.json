@@ -1,0 +1,6 @@
+{
+  "name": "SmartEVSE Dual Charger Card",
+  "content_in_root": true,
+  "filename": "smartevse-dual-charger-card.js",
+  "render_readme": true
+}

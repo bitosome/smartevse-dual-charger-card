@@ -1,0 +1,605 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SmartEVSE Flow Card Preview</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --primary-text-color: #f3f4f6;
+        --secondary-text-color: #9ca3af;
+        --error-color: #ef4444;
+        --card-background-color: #171717;
+        --ha-card-background: #171717;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family:
+          Inter,
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+        background:
+          radial-gradient(circle at top, rgba(245, 158, 11, 0.14), transparent 26%),
+          radial-gradient(circle at bottom left, rgba(14, 165, 233, 0.12), transparent 30%),
+          #0b0d12;
+        color: var(--primary-text-color);
+      }
+
+      button,
+      select {
+        font: inherit;
+      }
+
+      .app {
+        max-width: 1440px;
+        margin: 0 auto;
+        padding: 18px;
+      }
+
+      .toolbar {
+        display: grid;
+        grid-template-columns: 1fr auto auto;
+        gap: 12px;
+        align-items: center;
+        margin-bottom: 16px;
+      }
+
+      .toolbar-group {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .surface {
+        display: grid;
+        grid-template-columns: minmax(320px, auto) minmax(260px, 340px);
+        gap: 18px;
+        align-items: start;
+      }
+
+      .frame {
+        width: 390px;
+        max-width: 100%;
+        transition: width 140ms ease;
+      }
+
+      .panel {
+        border-radius: 18px;
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        background: rgba(23, 23, 23, 0.84);
+        padding: 14px;
+        backdrop-filter: blur(10px);
+      }
+
+      .panel h1,
+      .panel h2 {
+        margin: 0 0 10px;
+        font-size: 15px;
+        font-weight: 700;
+      }
+
+      .control {
+        appearance: none;
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        background: rgba(255, 255, 255, 0.04);
+        color: var(--primary-text-color);
+        border-radius: 10px;
+        padding: 8px 10px;
+        cursor: pointer;
+      }
+
+      .control.active {
+        border-color: rgba(34, 197, 94, 0.4);
+        background: rgba(34, 197, 94, 0.12);
+      }
+
+      .control.select {
+        min-width: 220px;
+      }
+
+      .hint {
+        color: var(--secondary-text-color);
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .log {
+        margin-top: 12px;
+        padding: 10px;
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(148, 163, 184, 0.12);
+        color: var(--secondary-text-color);
+        font-size: 12px;
+        line-height: 1.5;
+        min-height: 120px;
+        white-space: pre-wrap;
+      }
+
+      ha-card {
+        display: block;
+      }
+
+      ha-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 1em;
+        height: 1em;
+      }
+
+      @media (max-width: 980px) {
+        .toolbar {
+          grid-template-columns: 1fr;
+        }
+
+        .surface {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <div class="toolbar">
+        <div class="toolbar-group panel">
+          <select id="scenario" class="control select">
+            <option value="schedule_waiting">Schedule Waiting</option>
+            <option value="charging_left" selected>Charging Left</option>
+            <option value="charging_right">Charging Right</option>
+            <option value="price_waiting">Price Waiting</option>
+            <option value="timer_active">Timer Active</option>
+            <option value="both_idle">Both Idle</option>
+          </select>
+        </div>
+        <div class="toolbar-group panel">
+          <button class="control active" data-width="390">Mobile</button>
+          <button class="control" data-width="680">Tablet</button>
+          <button class="control" data-width="960">Wide</button>
+        </div>
+        <div class="toolbar-group panel">
+          <button class="control" id="reset">Reset Scenario</button>
+        </div>
+      </div>
+
+      <div class="surface">
+        <div class="frame" id="frame"></div>
+
+        <div class="panel">
+          <h1>Preview Notes</h1>
+          <div class="hint">
+            This page renders the real custom card with mock Home Assistant state.
+            Toggle tiles work. Setting tiles open a prompt so you can change the mock
+            values and immediately re-render the card.
+          </div>
+
+          <h2 style="margin-top: 14px;">Interaction Log</h2>
+          <div class="log" id="log">Ready.</div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      if (!customElements.get("ha-card")) {
+        customElements.define("ha-card", class extends HTMLElement {});
+      }
+
+      if (!customElements.get("ha-icon")) {
+        customElements.define(
+          "ha-icon",
+          class extends HTMLElement {
+            static get observedAttributes() {
+              return ["icon"];
+            }
+
+            connectedCallback() {
+              this.render();
+            }
+
+            attributeChangedCallback() {
+              this.render();
+            }
+
+            render() {
+              const icon = this.getAttribute("icon") || "";
+              const map = {
+                "mdi:calendar-clock": "🗓",
+                "mdi:lightning-bolt": "⚡",
+                "mdi:currency-eur": "€",
+                "mdi:timer-sand": "⏳",
+                "mdi:source-fork": "⇄",
+                "mdi:cash-edit": "¤",
+                "mdi:clock-time-four-outline": "🕒",
+                "mdi:swap-horizontal-bold": "⇆",
+              };
+              this.textContent = map[icon] || "•";
+              this.title = icon;
+            }
+          },
+        );
+      }
+    </script>
+    <script src="../lovelace/smartevse-flow-card.js"></script>
+    <script>
+      const controllerEntity = "sensor.smartevse_dual_charger_controller_state";
+
+      const scenarios = {
+        schedule_waiting: {
+          [controllerEntity]: entity("idle", {
+            controller_error: "",
+            charge_reason: "waiting_for_schedule_window",
+            charge_allowed: false,
+            active_smartevse: "None",
+            active_smartevse_raw: "",
+            mains_peak: 0,
+            smartevse_1_name: "Volvo XC40",
+            smartevse_2_name: "Volvo EX30",
+            smartevse_1_battery: "68%",
+            smartevse_2_battery: "52%",
+            smartevse_1_state: "Charging Stopped",
+            smartevse_1_plug_state: "Connected",
+            smartevse_1_mode: "Off",
+            smartevse_1_charge_current: 0,
+            smartevse_1_max_current: 16,
+            smartevse_1_override_current: 0,
+            smartevse_1_error: "None",
+            smartevse_1_session_complete: false,
+            smartevse_2_state: "Ready to Charge",
+            smartevse_2_plug_state: "Disconnected",
+            smartevse_2_mode: "Off",
+            smartevse_2_charge_current: 0,
+            smartevse_2_max_current: 16,
+            smartevse_2_override_current: 0,
+            smartevse_2_error: "None",
+            smartevse_2_session_complete: true,
+          }),
+          "sensor.real_electricity_price_current_price": entity("0.076"),
+          "schedule.charge_schedule": entity("off", { next_event: "2026-04-05T22:00:00+03:00" }),
+          "switch.smartevse_dual_charger_charge_with_schedule": entity("on"),
+          "switch.smartevse_dual_charger_force_charge": entity("off"),
+          "switch.smartevse_dual_charger_force_charge_by_price": entity("off"),
+          "switch.smartevse_dual_charger_force_charge_timer": entity("off"),
+          "number.smartevse_dual_charger_acceptable_price": entity("0.070"),
+          "select.smartevse_dual_charger_charge_policy": entity("Volvo XC40 first"),
+          "number.smartevse_dual_charger_duty_cycle": entity("60"),
+          "number.smartevse_dual_charger_force_charge_duration": entity("90"),
+          "sensor.smartevse_dual_charger_duty_cycle_remaining": entity("1860"),
+          "sensor.smartevse_dual_charger_timer_remaining": entity("0"),
+        },
+        charging_left: {
+          [controllerEntity]: entity("force", {
+            controller_error: "",
+            charge_reason: "force_charge",
+            charge_allowed: true,
+            active_smartevse: "Volvo XC40",
+            active_smartevse_raw: "smartevse_1",
+            mains_peak: 12.4,
+            smartevse_1_name: "Volvo XC40",
+            smartevse_2_name: "Volvo EX30",
+            smartevse_1_battery: "71%",
+            smartevse_2_battery: "49%",
+            smartevse_1_state: "Charging",
+            smartevse_1_plug_state: "Connected",
+            smartevse_1_mode: "Smart",
+            smartevse_1_charge_current: 10.8,
+            smartevse_1_max_current: 16,
+            smartevse_1_override_current: 11,
+            smartevse_1_error: "None",
+            smartevse_1_session_complete: false,
+            smartevse_2_state: "Charging Stopped",
+            smartevse_2_plug_state: "Connected",
+            smartevse_2_mode: "Off",
+            smartevse_2_charge_current: 0,
+            smartevse_2_max_current: 16,
+            smartevse_2_override_current: 0,
+            smartevse_2_error: "None",
+            smartevse_2_session_complete: false,
+          }),
+          "sensor.real_electricity_price_current_price": entity("0.063"),
+          "schedule.charge_schedule": entity("off", { next_event: "2026-04-05T22:00:00+03:00" }),
+          "switch.smartevse_dual_charger_charge_with_schedule": entity("off"),
+          "switch.smartevse_dual_charger_force_charge": entity("on"),
+          "switch.smartevse_dual_charger_force_charge_by_price": entity("off"),
+          "switch.smartevse_dual_charger_force_charge_timer": entity("off"),
+          "number.smartevse_dual_charger_acceptable_price": entity("0.070"),
+          "select.smartevse_dual_charger_charge_policy": entity("Volvo XC40 first"),
+          "number.smartevse_dual_charger_duty_cycle": entity("60"),
+          "number.smartevse_dual_charger_force_charge_duration": entity("90"),
+          "sensor.smartevse_dual_charger_duty_cycle_remaining": entity("2490"),
+          "sensor.smartevse_dual_charger_timer_remaining": entity("0"),
+        },
+        charging_right: {
+          [controllerEntity]: entity("price", {
+            controller_error: "",
+            charge_reason: "acceptable_price",
+            charge_allowed: true,
+            active_smartevse: "Volvo EX30",
+            active_smartevse_raw: "smartevse_2",
+            mains_peak: 13.7,
+            smartevse_1_name: "Volvo XC40",
+            smartevse_2_name: "Volvo EX30",
+            smartevse_1_battery: "73%",
+            smartevse_2_battery: "41%",
+            smartevse_1_state: "Charging Stopped",
+            smartevse_1_plug_state: "Connected",
+            smartevse_1_mode: "Off",
+            smartevse_1_charge_current: 0,
+            smartevse_1_max_current: 16,
+            smartevse_1_override_current: 0,
+            smartevse_1_error: "None",
+            smartevse_1_session_complete: true,
+            smartevse_2_state: "Charging",
+            smartevse_2_plug_state: "Connected",
+            smartevse_2_mode: "Smart",
+            smartevse_2_charge_current: 9.7,
+            smartevse_2_max_current: 16,
+            smartevse_2_override_current: 10,
+            smartevse_2_error: "None",
+            smartevse_2_session_complete: false,
+          }),
+          "sensor.real_electricity_price_current_price": entity("0.052"),
+          "schedule.charge_schedule": entity("off", { next_event: "2026-04-05T22:00:00+03:00" }),
+          "switch.smartevse_dual_charger_charge_with_schedule": entity("off"),
+          "switch.smartevse_dual_charger_force_charge": entity("off"),
+          "switch.smartevse_dual_charger_force_charge_by_price": entity("on"),
+          "switch.smartevse_dual_charger_force_charge_timer": entity("off"),
+          "number.smartevse_dual_charger_acceptable_price": entity("0.070"),
+          "select.smartevse_dual_charger_charge_policy": entity("Volvo EX30 first"),
+          "number.smartevse_dual_charger_duty_cycle": entity("45"),
+          "number.smartevse_dual_charger_force_charge_duration": entity("90"),
+          "sensor.smartevse_dual_charger_duty_cycle_remaining": entity("0"),
+          "sensor.smartevse_dual_charger_timer_remaining": entity("0"),
+        },
+        price_waiting: {
+          [controllerEntity]: entity("idle", {
+            controller_error: "",
+            charge_reason: "waiting_for_acceptable_price",
+            charge_allowed: false,
+            active_smartevse: "None",
+            active_smartevse_raw: "",
+            mains_peak: 6.2,
+            smartevse_1_name: "Volvo XC40",
+            smartevse_2_name: "Volvo EX30",
+            smartevse_1_battery: "69%",
+            smartevse_2_battery: "55%",
+            smartevse_1_state: "Connected to EV",
+            smartevse_1_plug_state: "Connected",
+            smartevse_1_mode: "Off",
+            smartevse_1_charge_current: 0,
+            smartevse_1_max_current: 16,
+            smartevse_1_override_current: 0,
+            smartevse_1_error: "None",
+            smartevse_1_session_complete: false,
+            smartevse_2_state: "Connected to EV",
+            smartevse_2_plug_state: "Connected",
+            smartevse_2_mode: "Off",
+            smartevse_2_charge_current: 0,
+            smartevse_2_max_current: 16,
+            smartevse_2_override_current: 0,
+            smartevse_2_error: "None",
+            smartevse_2_session_complete: false,
+          }),
+          "sensor.real_electricity_price_current_price": entity("0.119"),
+          "schedule.charge_schedule": entity("off", { next_event: "2026-04-05T22:00:00+03:00" }),
+          "switch.smartevse_dual_charger_charge_with_schedule": entity("off"),
+          "switch.smartevse_dual_charger_force_charge": entity("off"),
+          "switch.smartevse_dual_charger_force_charge_by_price": entity("on"),
+          "switch.smartevse_dual_charger_force_charge_timer": entity("off"),
+          "number.smartevse_dual_charger_acceptable_price": entity("0.070"),
+          "select.smartevse_dual_charger_charge_policy": entity("Volvo XC40 first"),
+          "number.smartevse_dual_charger_duty_cycle": entity("60"),
+          "number.smartevse_dual_charger_force_charge_duration": entity("90"),
+          "sensor.smartevse_dual_charger_duty_cycle_remaining": entity("0"),
+          "sensor.smartevse_dual_charger_timer_remaining": entity("0"),
+        },
+        timer_active: {
+          [controllerEntity]: entity("timer", {
+            controller_error: "",
+            charge_reason: "force_timer",
+            charge_allowed: true,
+            active_smartevse: "Volvo XC40",
+            active_smartevse_raw: "smartevse_1",
+            mains_peak: 11.8,
+            smartevse_1_name: "Volvo XC40",
+            smartevse_2_name: "Volvo EX30",
+            smartevse_1_battery: "76%",
+            smartevse_2_battery: "44%",
+            smartevse_1_state: "Charging",
+            smartevse_1_plug_state: "Connected",
+            smartevse_1_mode: "Smart",
+            smartevse_1_charge_current: 8.9,
+            smartevse_1_max_current: 16,
+            smartevse_1_override_current: 9,
+            smartevse_1_error: "None",
+            smartevse_1_session_complete: false,
+            smartevse_2_state: "Ready to Charge",
+            smartevse_2_plug_state: "Connected",
+            smartevse_2_mode: "Off",
+            smartevse_2_charge_current: 0,
+            smartevse_2_max_current: 16,
+            smartevse_2_override_current: 0,
+            smartevse_2_error: "None",
+            smartevse_2_session_complete: false,
+          }),
+          "sensor.real_electricity_price_current_price": entity("0.074"),
+          "schedule.charge_schedule": entity("off", { next_event: "2026-04-05T22:00:00+03:00" }),
+          "switch.smartevse_dual_charger_charge_with_schedule": entity("off"),
+          "switch.smartevse_dual_charger_force_charge": entity("off"),
+          "switch.smartevse_dual_charger_force_charge_by_price": entity("off"),
+          "switch.smartevse_dual_charger_force_charge_timer": entity("on"),
+          "number.smartevse_dual_charger_acceptable_price": entity("0.070"),
+          "select.smartevse_dual_charger_charge_policy": entity("Volvo XC40 first"),
+          "number.smartevse_dual_charger_duty_cycle": entity("60"),
+          "number.smartevse_dual_charger_force_charge_duration": entity("90"),
+          "sensor.smartevse_dual_charger_duty_cycle_remaining": entity("1800"),
+          "sensor.smartevse_dual_charger_timer_remaining": entity("2592"),
+        },
+        both_idle: {
+          [controllerEntity]: entity("blocked", {
+            controller_error: "",
+            charge_reason: "all_connected_evs_complete",
+            charge_allowed: false,
+            active_smartevse: "None",
+            active_smartevse_raw: "",
+            mains_peak: 4.1,
+            smartevse_1_name: "Volvo XC40",
+            smartevse_2_name: "Volvo EX30",
+            smartevse_1_battery: "80%",
+            smartevse_2_battery: "62%",
+            smartevse_1_state: "Charging Stopped",
+            smartevse_1_plug_state: "Connected",
+            smartevse_1_mode: "Off",
+            smartevse_1_charge_current: 0,
+            smartevse_1_max_current: 16,
+            smartevse_1_override_current: 0,
+            smartevse_1_error: "None",
+            smartevse_1_session_complete: true,
+            smartevse_2_state: "Charging Stopped",
+            smartevse_2_plug_state: "Connected",
+            smartevse_2_mode: "Off",
+            smartevse_2_charge_current: 0,
+            smartevse_2_max_current: 16,
+            smartevse_2_override_current: 0,
+            smartevse_2_error: "None",
+            smartevse_2_session_complete: true,
+          }),
+          "sensor.real_electricity_price_current_price": entity("0.076"),
+          "schedule.charge_schedule": entity("off", { next_event: "2026-04-05T22:00:00+03:00" }),
+          "switch.smartevse_dual_charger_charge_with_schedule": entity("on"),
+          "switch.smartevse_dual_charger_force_charge": entity("off"),
+          "switch.smartevse_dual_charger_force_charge_by_price": entity("off"),
+          "switch.smartevse_dual_charger_force_charge_timer": entity("off"),
+          "number.smartevse_dual_charger_acceptable_price": entity("0.070"),
+          "select.smartevse_dual_charger_charge_policy": entity("Volvo XC40 first"),
+          "number.smartevse_dual_charger_duty_cycle": entity("60"),
+          "number.smartevse_dual_charger_force_charge_duration": entity("90"),
+          "sensor.smartevse_dual_charger_duty_cycle_remaining": entity("0"),
+          "sensor.smartevse_dual_charger_timer_remaining": entity("0"),
+        },
+      };
+
+      const editableTypes = {
+        "number.smartevse_dual_charger_acceptable_price": "number",
+        "number.smartevse_dual_charger_duty_cycle": "number",
+        "number.smartevse_dual_charger_force_charge_duration": "number",
+        "select.smartevse_dual_charger_charge_policy": "text",
+      };
+
+      const iconToggles = new Set([
+        "switch.smartevse_dual_charger_charge_with_schedule",
+        "switch.smartevse_dual_charger_force_charge",
+        "switch.smartevse_dual_charger_force_charge_by_price",
+        "switch.smartevse_dual_charger_force_charge_timer",
+      ]);
+
+      const frame = document.getElementById("frame");
+      const log = document.getElementById("log");
+      const scenarioSelect = document.getElementById("scenario");
+      const resetButton = document.getElementById("reset");
+      const widthButtons = [...document.querySelectorAll("[data-width]")];
+
+      let currentScenario = scenarioSelect.value;
+      let states = deepClone(scenarios[currentScenario]);
+      let card;
+
+      function entity(state, attributes = {}) {
+        return { state: String(state), attributes };
+      }
+
+      function deepClone(value) {
+        return JSON.parse(JSON.stringify(value));
+      }
+
+      function makeHass() {
+        return {
+          states,
+          callService(domain, service, data) {
+            appendLog(`${domain}.${service} → ${data.entity_id}`);
+            if (domain === "homeassistant" && iconToggles.has(data.entity_id)) {
+              const next = service === "turn_on" ? "on" : "off";
+              states[data.entity_id].state = next;
+              renderCard();
+            }
+          },
+        };
+      }
+
+      function appendLog(message) {
+        const stamp = new Date().toLocaleTimeString();
+        log.textContent = `[${stamp}] ${message}\n` + log.textContent;
+      }
+
+      function renderCard() {
+        frame.innerHTML = "";
+        card = document.createElement("smartevse-flow-card");
+        card.setConfig({
+          controller_entity: controllerEntity,
+          price_entity: "sensor.real_electricity_price_current_price",
+          schedule_entity: "schedule.charge_schedule",
+          schedule_switch_entity: "switch.smartevse_dual_charger_charge_with_schedule",
+          force_charge_entity: "switch.smartevse_dual_charger_force_charge",
+          force_price_entity: "switch.smartevse_dual_charger_force_charge_by_price",
+          force_timer_entity: "switch.smartevse_dual_charger_force_charge_timer",
+          acceptable_price_entity: "number.smartevse_dual_charger_acceptable_price",
+          charge_policy_entity: "select.smartevse_dual_charger_charge_policy",
+          duty_cycle_entity: "number.smartevse_dual_charger_duty_cycle",
+          force_charge_duration_entity: "number.smartevse_dual_charger_force_charge_duration",
+          duty_remaining_entity: "sensor.smartevse_dual_charger_duty_cycle_remaining",
+          timer_remaining_entity: "sensor.smartevse_dual_charger_timer_remaining",
+        });
+        card.hass = makeHass();
+        frame.appendChild(card);
+      }
+
+      function resetScenario(name) {
+        currentScenario = name;
+        states = deepClone(scenarios[name]);
+        renderCard();
+        appendLog(`Scenario reset → ${name}`);
+      }
+
+      function setWidth(width) {
+        frame.style.width = `${width}px`;
+        widthButtons.forEach((button) => {
+          button.classList.toggle("active", Number(button.dataset.width) === width);
+        });
+        appendLog(`Preview width → ${width}px`);
+      }
+
+      document.addEventListener("hass-more-info", (event) => {
+        const entityId = event.detail?.entityId;
+        if (!entityId || !states[entityId]) {
+          return;
+        }
+        const current = states[entityId].state;
+        const next = window.prompt(`Set mock value for ${entityId}`, current);
+        if (next === null) {
+          return;
+        }
+        states[entityId].state = editableTypes[entityId] === "number" ? String(Number(next)) : String(next);
+        appendLog(`Updated ${entityId} → ${states[entityId].state}`);
+        renderCard();
+      });
+
+      scenarioSelect.addEventListener("change", () => resetScenario(scenarioSelect.value));
+      resetButton.addEventListener("click", () => resetScenario(currentScenario));
+      widthButtons.forEach((button) => {
+        button.addEventListener("click", () => setWidth(Number(button.dataset.width)));
+      });
+
+      setWidth(390);
+      renderCard();
+    </script>
+  </body>
+</html>
