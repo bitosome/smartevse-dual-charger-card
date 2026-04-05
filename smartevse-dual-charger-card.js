@@ -368,16 +368,7 @@ class SmartEVSEFlowCard extends HTMLElement {
       .filter(Boolean)
       .join("");
     const smartevseTitle = ev.name || (ev.key === "smartevse_1" ? "SmartEVSE 1" : "SmartEVSE 2");
-    const vehicleStatus = ev.hasError
-      ? ev.error
-      : ev.isCharging
-        ? "Charging"
-        : ev.sessionComplete
-          ? "Session complete"
-          : "Connected";
-    const vehicleBattery = ev.battery
-      ? `<div class="vehicle-battery">Battery ${this._safe(ev.battery)}</div>`
-      : "";
+    const vehicleBattery = ev.battery || "n/a";
     const vehicleConnectorPath = this._vehicleConnectorPath();
     const vehicleNode = ev.connected
       ? `
@@ -390,8 +381,7 @@ class SmartEVSEFlowCard extends HTMLElement {
         <section class="vehicle-node">
           <div class="vehicle-kicker">Vehicle</div>
           <div class="vehicle-title">${this._safe(ev.name)}</div>
-          <div class="vehicle-subtitle">${this._safe(vehicleStatus)}</div>
-          ${vehicleBattery}
+          <div class="vehicle-charge">${this._safe(vehicleBattery)}</div>
         </section>
       `
       : "";
@@ -1001,25 +991,12 @@ class SmartEVSEFlowCard extends HTMLElement {
           margin-bottom: 4px;
         }
 
-        .vehicle-subtitle {
-          font-size: 11px;
-          line-height: 1.35;
-          color: var(--secondary-text-color);
-        }
-
-        .vehicle-battery {
+        .vehicle-charge {
           margin-top: 8px;
-          display: inline-flex;
-          align-items: center;
-          gap: 6px;
-          padding: 5px 8px;
-          border-radius: 999px;
-          border: 1px solid rgba(14, 165, 233, 0.2);
-          background: rgba(14, 165, 233, 0.08);
           color: #dbeafe;
-          font-size: 11px;
+          font-size: 16px;
+          line-height: 1.1;
           font-weight: 700;
-          line-height: 1;
         }
 
         .ev-error,
