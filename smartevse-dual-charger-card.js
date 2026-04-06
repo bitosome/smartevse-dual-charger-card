@@ -478,11 +478,24 @@ class SmartEVSEFlowCard extends HTMLElement {
     const anyConnected = ev1.connected || ev2.connected;
 
     const scheduleValue = scheduleSwitchOn ? (scheduleState === "on" ? "On now" : "Armed") : "Off";
-    const scheduleDetail = scheduleSwitchOn
+    let scheduleDetail = scheduleSwitchOn
       ? scheduleState === "on"
         ? `Ends ${this._formatDateTime(scheduleNextEvent)}`
         : `Starts ${this._formatDateTime(scheduleNextEvent)}`
       : "Tap to enable";
+
+    // Clarify interaction when both schedule and force-by-price are active
+    // This UI indicator helps users understand that both modes are enabled.
+    // The actual charging decision (which mode has priority) is determined by
+    // the backend SmartEVSE Dual Charger integration, not by this display card.
+    // The backend sets the 'charge_allowed' attribute based on its priority logic.
+    if (scheduleSwitchOn && forcePriceOn) {
+      scheduleDetail = scheduleSwitchOn
+        ? scheduleState === "on"
+          ? `Active with price check • Ends ${this._formatDateTime(scheduleNextEvent)}`
+          : `Armed with price check • Starts ${this._formatDateTime(scheduleNextEvent)}`
+        : "Tap to enable";
+    }
 
     const forceNowValue = forceChargeOn ? (anyConnected ? "Active" : "Waiting EV") : "Off";
     const forceNowDetail = forceChargeOn ? (anyConnected ? "Charging requested now" : "Waiting for plug-in") : "Tap to start";
@@ -490,13 +503,26 @@ class SmartEVSEFlowCard extends HTMLElement {
     const priceAccepted =
       forcePriceOn && price !== null && acceptablePrice !== null ? price <= acceptablePrice : false;
     const forcePriceValue = forcePriceOn ? (priceAccepted ? "Accepted" : anyConnected ? "Waiting" : "Waiting EV") : "Off";
-    const forcePriceDetail = forcePriceOn
+    let forcePriceDetail = forcePriceOn
       ? priceAccepted
         ? `Current ${priceValue}`
         : anyConnected
           ? `Threshold ${acceptablePrice !== null ? `${acceptablePrice.toFixed(3)} EUR/kWh` : "n/a"}`
           : "Waiting for plug-in"
       : "Tap to arm";
+
+    // Clarify interaction when both schedule and force-by-price are active
+    // Shows "Within schedule" to indicate the price check is operating in conjunction
+    // with the schedule. The backend determines the actual priority and charging logic.
+    if (scheduleSwitchOn && forcePriceOn) {
+      forcePriceDetail = forcePriceOn
+        ? priceAccepted
+          ? `Price OK • Current ${priceValue}`
+          : anyConnected
+            ? `Within schedule • Threshold ${acceptablePrice !== null ? `${acceptablePrice.toFixed(3)} EUR/kWh` : "n/a"}`
+            : "Waiting for plug-in"
+        : "Tap to arm";
+    }
 
     const forceTimerValue = forceTimerOn ? (anyConnected ? "Active" : "Waiting EV") : "Off";
     const forceTimerDetail = forceTimerOn
