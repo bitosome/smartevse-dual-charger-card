@@ -159,6 +159,7 @@
             <option value="charging_left" selected>Charging Left</option>
             <option value="charging_right">Charging Right</option>
             <option value="price_waiting">Price Waiting</option>
+            <option value="price_schedule_conflict">Price Accepted – Schedule Active</option>
             <option value="timer_active">Timer Active</option>
             <option value="both_idle">Both Idle</option>
           </select>
@@ -479,6 +480,48 @@
           "switch.smartevse_dual_charger_charge_with_schedule": entity("on"),
           "switch.smartevse_dual_charger_force_charge": entity("off"),
           "switch.smartevse_dual_charger_force_charge_by_price": entity("off"),
+          "switch.smartevse_dual_charger_force_charge_timer": entity("off"),
+          "number.smartevse_dual_charger_acceptable_price": entity("0.070"),
+          "select.smartevse_dual_charger_charge_policy": entity("Volvo XC40 first"),
+          "number.smartevse_dual_charger_duty_cycle": entity("60"),
+          "number.smartevse_dual_charger_force_charge_duration": entity("90"),
+          "sensor.smartevse_dual_charger_duty_cycle_remaining": entity("0"),
+          "sensor.smartevse_dual_charger_timer_remaining": entity("0"),
+        },
+        price_schedule_conflict: {
+          [controllerEntity]: entity("idle", {
+            controller_error: "",
+            charge_reason: "waiting_for_schedule_window",
+            charge_allowed: false,
+            active_smartevse: "None",
+            active_smartevse_raw: "",
+            mains_peak: 0,
+            smartevse_1_name: "Volvo XC40",
+            smartevse_2_name: "Volvo EX30",
+            smartevse_1_battery: "65%",
+            smartevse_2_battery: "48%",
+            smartevse_1_state: "Connected to EV",
+            smartevse_1_plug_state: "Connected",
+            smartevse_1_mode: "Off",
+            smartevse_1_charge_current: 0,
+            smartevse_1_max_current: 16,
+            smartevse_1_override_current: 0,
+            smartevse_1_error: "None",
+            smartevse_1_session_complete: false,
+            smartevse_2_state: "Connected to EV",
+            smartevse_2_plug_state: "Connected",
+            smartevse_2_mode: "Off",
+            smartevse_2_charge_current: 0,
+            smartevse_2_max_current: 16,
+            smartevse_2_override_current: 0,
+            smartevse_2_error: "None",
+            smartevse_2_session_complete: false,
+          }),
+          "sensor.real_electricity_price_current_price": entity("0.058"),
+          "schedule.charge_schedule": entity("off", { next_event: "2026-04-05T22:00:00+03:00" }),
+          "switch.smartevse_dual_charger_charge_with_schedule": entity("on"),
+          "switch.smartevse_dual_charger_force_charge": entity("off"),
+          "switch.smartevse_dual_charger_force_charge_by_price": entity("on"),
           "switch.smartevse_dual_charger_force_charge_timer": entity("off"),
           "number.smartevse_dual_charger_acceptable_price": entity("0.070"),
           "select.smartevse_dual_charger_charge_policy": entity("Volvo XC40 first"),
