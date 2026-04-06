@@ -441,6 +441,7 @@ class SmartEVSEFlowCard extends HTMLElement {
     const controllerError = String(attrs.controller_error ?? "").trim();
     const activeRaw = String(attrs.active_smartevse_raw ?? "");
     const chargeAllowed = Boolean(attrs.charge_allowed);
+    const chargeReason = String(attrs.charge_reason ?? "").trim();
     const price = this._numberState(this._config.price_entity);
     const acceptablePrice = this._numberState(this._config.acceptable_price_entity);
     const priceValue = price === null ? "n/a" : `${price.toFixed(3)} EUR/kWh`;
@@ -489,13 +490,24 @@ class SmartEVSEFlowCard extends HTMLElement {
 
     const priceAccepted =
       forcePriceOn && price !== null && acceptablePrice !== null ? price <= acceptablePrice : false;
-    const forcePriceValue = forcePriceOn ? (priceAccepted ? "Accepted" : anyConnected ? "Waiting" : "Waiting EV") : "Off";
+    const priceBlockedBySchedule = priceAccepted && chargeReason === "waiting_for_schedule_window";
+    const forcePriceValue = forcePriceOn
+      ? priceBlockedBySchedule
+        ? "Schedule Active"
+        : priceAccepted
+          ? "Accepted"
+          : anyConnected
+            ? "Waiting"
+            : "Waiting EV"
+      : "Off";
     const forcePriceDetail = forcePriceOn
-      ? priceAccepted
-        ? `Current ${priceValue}`
-        : anyConnected
-          ? `Threshold ${acceptablePrice !== null ? `${acceptablePrice.toFixed(3)} EUR/kWh` : "n/a"}`
-          : "Waiting for plug-in"
+      ? priceBlockedBySchedule
+        ? `Price accepted – schedule in control`
+        : priceAccepted
+          ? `Current ${priceValue}`
+          : anyConnected
+            ? `Threshold ${acceptablePrice !== null ? `${acceptablePrice.toFixed(3)} EUR/kWh` : "n/a"}`
+            : "Waiting for plug-in"
       : "Tap to arm";
 
     const forceTimerValue = forceTimerOn ? (anyConnected ? "Active" : "Waiting EV") : "Off";
@@ -1190,7 +1202,7 @@ class SmartEVSEFlowCard extends HTMLElement {
                   label: "Force By Price",
                   value: forcePriceValue,
                   detail: forcePriceDetail,
-                  tone: forcePriceOn ? (priceAccepted ? "ok" : "warn") : "default",
+                  tone: forcePriceOn ? (priceBlockedBySchedule ? "active" : priceAccepted ? "ok" : "warn") : "default",
                 })}
                 ${this._controlTile({
                   entityId: this._config.force_timer_entity,
