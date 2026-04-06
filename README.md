@@ -55,6 +55,36 @@ and the related control entities used in `card_flow.yaml`, including:
 - force charge duration number
 - duty/timer remaining sensors
 
+## Charging Mode Interaction
+
+The card displays multiple charging control modes that can be enabled simultaneously:
+
+### Schedule Mode
+- **Entity**: `switch.smartevse_dual_charger_charge_with_schedule`
+- **Purpose**: Time-based charging according to a schedule
+- **States**: Off, Armed (waiting for schedule window), On now (within schedule window)
+
+### Force By Price Mode
+- **Entity**: `switch.smartevse_dual_charger_force_charge_by_price`
+- **Purpose**: Price-based charging that only charges when electricity price is acceptable
+- **States**: Off, Waiting (price too high), Accepted (price acceptable)
+
+### Combined Behavior
+
+When both Schedule and Force By Price are enabled simultaneously:
+
+- The card displays visual indicators showing both modes are active
+- Schedule control shows: **"Active with price check"** or **"Armed with price check"**
+- Force By Price control shows: **"Within schedule"** when waiting for acceptable price
+- This indicates that **both conditions must be satisfied** for charging to occur
+
+**Important**: The actual charging decision logic is implemented in the SmartEVSE Dual Charger backend integration. This card is a **display-only component** that visualizes the current state and provides control switches. The backend determines:
+- Whether schedule overrides price checking, or vice versa
+- The priority order when multiple modes are enabled
+- The final `charge_allowed` decision
+
+Refer to the SmartEVSE Dual Charger integration documentation for the backend behavior and priority rules.
+
 ## Preview
 
 From this repository root:

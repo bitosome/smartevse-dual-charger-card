@@ -484,7 +484,11 @@ class SmartEVSEFlowCard extends HTMLElement {
         : `Starts ${this._formatDateTime(scheduleNextEvent)}`
       : "Tap to enable";
 
-    // Add clarification when both schedule and force-by-price are active
+    // Clarify interaction when both schedule and force-by-price are active
+    // This UI indicator helps users understand that both modes are enabled.
+    // The actual charging decision (which mode has priority) is determined by
+    // the backend SmartEVSE Dual Charger integration, not by this display card.
+    // The backend sets the 'charge_allowed' attribute based on its priority logic.
     if (scheduleSwitchOn && forcePriceOn) {
       scheduleDetail = scheduleSwitchOn
         ? scheduleState === "on"
@@ -507,7 +511,9 @@ class SmartEVSEFlowCard extends HTMLElement {
           : "Waiting for plug-in"
       : "Tap to arm";
 
-    // Add clarification when both schedule and force-by-price are active
+    // Clarify interaction when both schedule and force-by-price are active
+    // Shows "Within schedule" to indicate the price check is operating in conjunction
+    // with the schedule. The backend determines the actual priority and charging logic.
     if (scheduleSwitchOn && forcePriceOn) {
       forcePriceDetail = forcePriceOn
         ? priceAccepted
