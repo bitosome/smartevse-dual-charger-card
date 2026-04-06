@@ -478,11 +478,20 @@ class SmartEVSEFlowCard extends HTMLElement {
     const anyConnected = ev1.connected || ev2.connected;
 
     const scheduleValue = scheduleSwitchOn ? (scheduleState === "on" ? "On now" : "Armed") : "Off";
-    const scheduleDetail = scheduleSwitchOn
+    let scheduleDetail = scheduleSwitchOn
       ? scheduleState === "on"
         ? `Ends ${this._formatDateTime(scheduleNextEvent)}`
         : `Starts ${this._formatDateTime(scheduleNextEvent)}`
       : "Tap to enable";
+
+    // Add clarification when both schedule and force-by-price are active
+    if (scheduleSwitchOn && forcePriceOn) {
+      scheduleDetail = scheduleSwitchOn
+        ? scheduleState === "on"
+          ? `Active with price check • Ends ${this._formatDateTime(scheduleNextEvent)}`
+          : `Armed with price check • Starts ${this._formatDateTime(scheduleNextEvent)}`
+        : "Tap to enable";
+    }
 
     const forceNowValue = forceChargeOn ? (anyConnected ? "Active" : "Waiting EV") : "Off";
     const forceNowDetail = forceChargeOn ? (anyConnected ? "Charging requested now" : "Waiting for plug-in") : "Tap to start";
@@ -490,13 +499,24 @@ class SmartEVSEFlowCard extends HTMLElement {
     const priceAccepted =
       forcePriceOn && price !== null && acceptablePrice !== null ? price <= acceptablePrice : false;
     const forcePriceValue = forcePriceOn ? (priceAccepted ? "Accepted" : anyConnected ? "Waiting" : "Waiting EV") : "Off";
-    const forcePriceDetail = forcePriceOn
+    let forcePriceDetail = forcePriceOn
       ? priceAccepted
         ? `Current ${priceValue}`
         : anyConnected
           ? `Threshold ${acceptablePrice !== null ? `${acceptablePrice.toFixed(3)} EUR/kWh` : "n/a"}`
           : "Waiting for plug-in"
       : "Tap to arm";
+
+    // Add clarification when both schedule and force-by-price are active
+    if (scheduleSwitchOn && forcePriceOn) {
+      forcePriceDetail = forcePriceOn
+        ? priceAccepted
+          ? `Price OK • Current ${priceValue}`
+          : anyConnected
+            ? `Within schedule • Threshold ${acceptablePrice !== null ? `${acceptablePrice.toFixed(3)} EUR/kWh` : "n/a"}`
+            : "Waiting for plug-in"
+        : "Tap to arm";
+    }
 
     const forceTimerValue = forceTimerOn ? (anyConnected ? "Active" : "Waiting EV") : "Off";
     const forceTimerDetail = forceTimerOn
