@@ -1,4 +1,4 @@
-const CARD_VERSION = "0.0.3";
+const CARD_VERSION = "0.0.4";
 
 const FALLBACK_WLED_NODE_VISUALS = {
   off: {
@@ -213,6 +213,57 @@ class SmartEVSEFlowCard extends HTMLElement {
     const hours = Math.floor(minutes / 60);
     const rest = minutes % 60;
     return `${hours}:${String(rest).padStart(2, "0")}`;
+  }
+
+  _batteryPercent(value) {
+    const text = String(value ?? "").trim();
+    if (!text) {
+      return null;
+    }
+    const numeric = Number.parseFloat(text.replace("%", ""));
+    if (!Number.isFinite(numeric)) {
+      return null;
+    }
+    return Math.max(0, Math.min(100, Math.round(numeric)));
+  }
+
+  _batteryTone(percent) {
+    if (!Number.isFinite(percent)) {
+      return "unknown";
+    }
+    if (percent <= 20) {
+      return "low";
+    }
+    if (percent <= 55) {
+      return "mid";
+    }
+    return "high";
+  }
+
+  _vehicleBatteryMarkup(rawValue) {
+    const percent = this._batteryPercent(rawValue);
+    if (percent === null) {
+      return `
+        <div class="vehicle-battery vehicle-battery-unknown">
+          <div class="vehicle-battery-shell">
+            <div class="vehicle-battery-track"></div>
+            <div class="vehicle-battery-value">n/a</div>
+          </div>
+        </div>
+      `;
+    }
+    const tone = this._batteryTone(percent);
+    return `
+      <div class="vehicle-battery vehicle-battery-${this._safe(tone)}">
+        <div class="vehicle-battery-shell">
+          <div class="vehicle-battery-cap"></div>
+          <div class="vehicle-battery-track"></div>
+          <div class="vehicle-battery-level" style="width: ${percent}%"></div>
+          <div class="vehicle-battery-gloss"></div>
+          <div class="vehicle-battery-value">${this._safe(`${percent}%`)}</div>
+        </div>
+      </div>
+    `;
   }
 
   _formatDateTime(value) {
@@ -528,6 +579,7 @@ class SmartEVSEFlowCard extends HTMLElement {
       ev.connectedEvName && ev.connectedEvName.toLowerCase() !== "unknown" ? ev.connectedEvName : "?";
     const vehicleBattery =
       ev.connectedEvName && ev.connectedEvName.toLowerCase() !== "unknown" ? ev.battery || "n/a" : "n/a";
+    const vehicleBatteryMarkup = this._vehicleBatteryMarkup(vehicleBattery);
     const vehicleConnectorPath = this._vehicleConnectorPath();
     const vehicleNode = ev.connected
       ? `
@@ -540,7 +592,7 @@ class SmartEVSEFlowCard extends HTMLElement {
         <section class="vehicle-node">
           <div class="vehicle-kicker">Vehicle</div>
           <div class="vehicle-title">${this._safe(vehicleTitle)}</div>
-          <div class="vehicle-charge">${this._safe(vehicleBattery)}</div>
+          ${vehicleBatteryMarkup}
         </section>
       `
       : "";
@@ -1205,12 +1257,82 @@ class SmartEVSEFlowCard extends HTMLElement {
           margin-bottom: 4px;
         }
 
-        .vehicle-charge {
-          margin-top: 8px;
-          color: #dbeafe;
-          font-size: 16px;
-          line-height: 1.1;
-          font-weight: 700;
+        .vehicle-battery {
+          margin-top: 10px;
+          width: min(100%, 118px);
+        }
+
+        .vehicle-battery-shell {
+          position: relative;
+          width: 100%;
+          aspect-ratio: 65 / 18;
+          border: 1px solid rgba(148, 163, 184, 0.28);
+          background: rgba(15, 23, 42, 0.82);
+          overflow: visible;
+          box-shadow: inset 0 0 0 1px rgba(255,255,255,0.02);
+        }
+
+        .vehicle-battery-cap {
+          position: absolute;
+          top: 50%;
+          right: -3px;
+          width: 3px;
+          height: 8px;
+          transform: translateY(-50%);
+          border-radius: 0 1px 1px 0;
+          background: rgba(148, 163, 184, 0.42);
+        }
+
+        .vehicle-battery-track,
+        .vehicle-battery-level,
+        .vehicle-battery-value {
+          position: absolute;
+          inset: 0;
+        }
+
+        .vehicle-battery-track {
+          inset: 2px;
+          background: rgba(148, 163, 184, 0.08);
+        }
+
+        .vehicle-battery-level {
+          inset: 2px auto 2px 2px;
+          width: 0;
+          border-radius: 1px;
+          transition: width 240ms ease;
+        }
+
+        .vehicle-battery-value {
+          display: grid;
+          place-items: center;
+          font-size: 12px;
+          font-weight: 800;
+          color: #e2e8f0;
+          text-shadow: 0 1px 2px rgba(2, 6, 23, 0.55);
+          pointer-events: none;
+        }
+
+        .vehicle-battery-high .vehicle-battery-level {
+          background: #22c55e;
+          box-shadow: 0 0 10px rgba(34, 197, 94, 0.2);
+        }
+
+        .vehicle-battery-mid .vehicle-battery-level {
+          background: #f59e0b;
+          box-shadow: 0 0 10px rgba(245, 158, 11, 0.2);
+        }
+
+        .vehicle-battery-low .vehicle-battery-level {
+          background: #ef4444;
+          box-shadow: 0 0 10px rgba(239, 68, 68, 0.2);
+        }
+
+        .vehicle-battery-unknown .vehicle-battery-shell {
+          border-style: dashed;
+        }
+
+        .vehicle-battery-unknown .vehicle-battery-value {
+          color: var(--secondary-text-color);
         }
 
         .ev-error,
