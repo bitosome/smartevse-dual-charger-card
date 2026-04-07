@@ -4,7 +4,7 @@ Standalone Lovelace card extracted from the SmartEVSE Dual Charger integration p
 
 This repository contains only the frontend card and its local preview assets.
 
-Version: `0.0.2`
+Version: `0.0.3`
 
 ## Contents
 

@@ -1,4 +1,4 @@
-const CARD_VERSION = "0.0.2";
+const CARD_VERSION = "0.0.3";
 
 const FALLBACK_WLED_NODE_VISUALS = {
   off: {
@@ -328,19 +328,178 @@ class SmartEVSEFlowCard extends HTMLElement {
     `;
   }
 
+  _editorMeta(entityId) {
+    const entity = this._entity(entityId);
+    if (!entity) {
+      return { supported: false };
+    }
+    const [domain] = entityId.split(".");
+    const attrs = entity.attributes || {};
+    if (domain === "select") {
+      return {
+        supported: true,
+        kind: "select",
+        serviceDomain: "select",
+        service: "select_option",
+        options: Array.isArray(attrs.options) ? attrs.options : [],
+      };
+    }
+    if (domain === "number" || domain === "input_number") {
+      return {
+        supported: true,
+        kind: "number",
+        serviceDomain: domain,
+        service: "set_value",
+        min: Number.isFinite(Number(attrs.min)) ? Number(attrs.min) : null,
+        max: Number.isFinite(Number(attrs.max)) ? Number(attrs.max) : null,
+        step: Number.isFinite(Number(attrs.step)) ? Number(attrs.step) : "any",
+        unit: attrs.unit_of_measurement ?? "",
+      };
+    }
+    if (domain === "text") {
+      return {
+        supported: true,
+        kind: "text",
+        serviceDomain: "text",
+        service: "set_value",
+      };
+    }
+    if (domain === "time") {
+      return {
+        supported: true,
+        kind: "time",
+        serviceDomain: "time",
+        service: "set_value",
+      };
+    }
+    return { supported: false };
+  }
+
+  _editorDraft(entityId) {
+    if (!this._editorDrafts) {
+      this._editorDrafts = {};
+    }
+    return this._editorDrafts[entityId] ?? this._state(entityId) ?? "";
+  }
+
+  _openEditor(entityId) {
+    this._editingEntity = entityId;
+    if (!this._editorDrafts) {
+      this._editorDrafts = {};
+    }
+    this._editorDrafts[entityId] = this._state(entityId) ?? "";
+    this._render();
+  }
+
+  _closeEditor() {
+    this._editingEntity = null;
+    this._render();
+  }
+
+  _updateEditorDraft(entityId, value) {
+    if (!this._editorDrafts) {
+      this._editorDrafts = {};
+    }
+    this._editorDrafts[entityId] = value;
+  }
+
+  async _saveEditor(entityId) {
+    const meta = this._editorMeta(entityId);
+    if (!meta.supported) {
+      return;
+    }
+    const rawValue = this._editorDraft(entityId);
+    let serviceData = { entity_id: entityId };
+    if (meta.kind === "select") {
+      serviceData.option = rawValue;
+    } else if (meta.kind === "number") {
+      const parsed = Number.parseFloat(rawValue);
+      if (!Number.isFinite(parsed)) {
+        return;
+      }
+      serviceData.value = parsed;
+    } else if (meta.kind === "text") {
+      serviceData.value = String(rawValue ?? "");
+    } else if (meta.kind === "time") {
+      serviceData.time = String(rawValue ?? "");
+    } else {
+      return;
+    }
+    await this._hass.callService(meta.serviceDomain, meta.service, serviceData);
+    this._editingEntity = null;
+    this._render();
+  }
+
   _settingTile({ entityId, icon, label, value, detail }) {
     if (!entityId) {
       return "";
     }
+    const meta = this._editorMeta(entityId);
+    const isEditing = this._editingEntity === entityId && meta.supported;
+    if (!isEditing) {
+      return `
+        <button class="setting-tile" data-action="edit" data-entity="${this._safe(entityId)}">
+          <div class="setting-icon"><ha-icon icon="${this._safe(icon)}"></ha-icon></div>
+          <div class="setting-copy">
+            <div class="setting-label">${this._safe(label)}</div>
+            <div class="setting-value">${this._safe(value)}</div>
+            <div class="setting-detail">${this._safe(detail)}</div>
+          </div>
+        </button>
+      `;
+    }
+
+    const draft = this._editorDraft(entityId);
+    let control = "";
+    if (meta.kind === "select") {
+      const options = meta.options
+        .map(
+          (option) => `
+            <option value="${this._safe(option)}" ${option === draft ? "selected" : ""}>
+              ${this._safe(option)}
+            </option>
+          `,
+        )
+        .join("");
+      control = `
+        <select class="setting-select" data-entity="${this._safe(entityId)}">
+          ${options}
+        </select>
+      `;
+    } else {
+      const inputType = meta.kind === "time" ? "time" : meta.kind === "number" ? "number" : "text";
+      const minAttr = meta.kind === "number" && meta.min !== null ? `min="${this._safe(meta.min)}"` : "";
+      const maxAttr = meta.kind === "number" && meta.max !== null ? `max="${this._safe(meta.max)}"` : "";
+      const stepAttr = meta.kind === "number" ? `step="${this._safe(meta.step)}"` : "";
+      control = `
+        <input
+          class="setting-input"
+          data-entity="${this._safe(entityId)}"
+          type="${this._safe(inputType)}"
+          value="${this._safe(draft)}"
+          ${minAttr}
+          ${maxAttr}
+          ${stepAttr}
+        />
+      `;
+    }
+
     return `
-      <button class="setting-tile" data-action="more-info" data-entity="${this._safe(entityId)}">
+      <div class="setting-tile setting-tile-editing">
         <div class="setting-icon"><ha-icon icon="${this._safe(icon)}"></ha-icon></div>
         <div class="setting-copy">
           <div class="setting-label">${this._safe(label)}</div>
           <div class="setting-value">${this._safe(value)}</div>
           <div class="setting-detail">${this._safe(detail)}</div>
+          <div class="setting-editor">
+            ${control}
+            <div class="setting-editor-actions">
+              <button class="setting-editor-button tone-primary" data-action="save-edit" data-entity="${this._safe(entityId)}">Apply</button>
+              <button class="setting-editor-button" data-action="cancel-edit" data-entity="${this._safe(entityId)}">Cancel</button>
+            </div>
+          </div>
         </div>
-      </button>
+      </div>
     `;
   }
 
@@ -620,6 +779,11 @@ class SmartEVSEFlowCard extends HTMLElement {
           background: rgba(15, 23, 42, 0.12);
         }
 
+        .setting-tile-editing {
+          cursor: default;
+          transform: none;
+        }
+
         .control-icon,
         .setting-icon {
           display: grid;
@@ -662,6 +826,56 @@ class SmartEVSEFlowCard extends HTMLElement {
           font-size: 10px;
           line-height: 1.35;
           color: var(--secondary-text-color);
+        }
+
+        .setting-editor {
+          display: grid;
+          gap: 6px;
+          margin-top: 8px;
+        }
+
+        .setting-input,
+        .setting-select {
+          width: 100%;
+          appearance: none;
+          border: 1px solid rgba(148, 163, 184, 0.24);
+          border-radius: 10px;
+          background: rgba(2, 6, 23, 0.52);
+          color: var(--primary-text-color);
+          padding: 8px 10px;
+          font: inherit;
+          font-size: 13px;
+          font-weight: 700;
+          outline: none;
+        }
+
+        .setting-input:focus,
+        .setting-select:focus {
+          border-color: rgba(14, 165, 233, 0.42);
+          box-shadow: 0 0 0 1px rgba(14, 165, 233, 0.2);
+        }
+
+        .setting-editor-actions {
+          display: flex;
+          gap: 6px;
+        }
+
+        .setting-editor-button {
+          appearance: none;
+          border: 1px solid rgba(148, 163, 184, 0.18);
+          border-radius: 10px;
+          background: rgba(255, 255, 255, 0.04);
+          color: var(--primary-text-color);
+          padding: 6px 10px;
+          font: inherit;
+          font-size: 11px;
+          font-weight: 700;
+          cursor: pointer;
+        }
+
+        .setting-editor-button.tone-primary {
+          border-color: rgba(14, 165, 233, 0.3);
+          background: rgba(14, 165, 233, 0.1);
         }
 
         .control-tile.tone-ok {
@@ -1295,7 +1509,53 @@ class SmartEVSEFlowCard extends HTMLElement {
           await this._toggleEntity(entity);
           return;
         }
-        this._showMoreInfo(entity);
+        if (action === "edit") {
+          this._openEditor(entity);
+          return;
+        }
+        if (action === "cancel-edit") {
+          this._closeEditor();
+          return;
+        }
+        if (action === "save-edit") {
+          await this._saveEditor(entity);
+        }
+      });
+    }
+
+    for (const element of this.shadowRoot.querySelectorAll(".setting-input[data-entity]")) {
+      element.addEventListener("input", (event) => {
+        const entityId = event.currentTarget.dataset.entity;
+        this._updateEditorDraft(entityId, event.currentTarget.value);
+      });
+      element.addEventListener("keydown", async (event) => {
+        const entityId = event.currentTarget.dataset.entity;
+        if (event.key === "Enter") {
+          event.preventDefault();
+          await this._saveEditor(entityId);
+        }
+        if (event.key === "Escape") {
+          event.preventDefault();
+          this._closeEditor();
+        }
+      });
+    }
+
+    for (const element of this.shadowRoot.querySelectorAll(".setting-select[data-entity]")) {
+      element.addEventListener("change", (event) => {
+        const entityId = event.currentTarget.dataset.entity;
+        this._updateEditorDraft(entityId, event.currentTarget.value);
+      });
+      element.addEventListener("keydown", async (event) => {
+        const entityId = event.currentTarget.dataset.entity;
+        if (event.key === "Enter") {
+          event.preventDefault();
+          await this._saveEditor(entityId);
+        }
+        if (event.key === "Escape") {
+          event.preventDefault();
+          this._closeEditor();
+        }
       });
     }
   }
@@ -1307,16 +1567,6 @@ class SmartEVSEFlowCard extends HTMLElement {
     }
     const service = state === "on" ? "turn_off" : "turn_on";
     await this._hass.callService("homeassistant", service, { entity_id: entityId });
-  }
-
-  _showMoreInfo(entityId) {
-    this.dispatchEvent(
-      new CustomEvent("hass-more-info", {
-        bubbles: true,
-        composed: true,
-        detail: { entityId },
-      }),
-    );
   }
 }
 
