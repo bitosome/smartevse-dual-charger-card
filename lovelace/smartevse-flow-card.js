@@ -1,4 +1,4 @@
-const CARD_VERSION = "0.0.1";
+const CARD_VERSION = "0.0.2";
 
 const FALLBACK_WLED_NODE_VISUALS = {
   off: {
@@ -122,6 +122,7 @@ class SmartEVSEFlowCard extends HTMLElement {
       "charge_policy",
       "wled_visuals",
       "smartevse_1_name",
+      "smartevse_1_connected_ev",
       "smartevse_1_battery",
       "smartevse_1_state",
       "smartevse_1_plug_state",
@@ -132,6 +133,7 @@ class SmartEVSEFlowCard extends HTMLElement {
       "smartevse_1_error",
       "smartevse_1_session_complete",
       "smartevse_2_name",
+      "smartevse_2_connected_ev",
       "smartevse_2_battery",
       "smartevse_2_state",
       "smartevse_2_plug_state",
@@ -257,34 +259,30 @@ class SmartEVSEFlowCard extends HTMLElement {
     const error = String(attrs[`${key}_error`] ?? "").trim();
     const sessionComplete = Boolean(attrs[`${key}_session_complete`]);
     const active = attrs.active_smartevse_raw === key;
-    const name = String(attrs[`${key}_name`] || fallbackName);
+    const smartevseName = String(attrs[`${key}_name`] || fallbackName);
+    const connectedEvName = String(attrs[`${key}_connected_ev`] ?? "").trim();
     const battery = String(attrs[`${key}_battery`] ?? "").trim();
     const hasError = error && !["NONE", "None", "unknown", "unavailable"].includes(error);
     const isCharging = state === "Charging" && chargeCurrent > 0.1;
     const visual = !connected ? "off" : hasError ? "error" : isCharging ? "charging" : "idle";
 
     let tone = "idle";
-    let badge = "Idle";
     if (!connected) {
       tone = "unplugged";
-      badge = "Unplugged";
     } else if (hasError) {
       tone = "error";
-      badge = "Error";
     } else if (isCharging) {
       tone = "charging";
-      badge = "Charging";
     } else if (active) {
       tone = "active";
-      badge = "Active";
     } else if (sessionComplete) {
       tone = "complete";
-      badge = "Complete";
     }
 
     return {
       key,
-      name,
+      smartevseName,
+      connectedEvName,
       connected,
       state: state || "Idle",
       mode: mode || "n/a",
@@ -298,7 +296,6 @@ class SmartEVSEFlowCard extends HTMLElement {
       active,
       isCharging,
       tone,
-      badge,
       visual,
     };
   }
@@ -367,8 +364,11 @@ class SmartEVSEFlowCard extends HTMLElement {
     ]
       .filter(Boolean)
       .join("");
-    const smartevseTitle = ev.name || (ev.key === "smartevse_1" ? "SmartEVSE 1" : "SmartEVSE 2");
-    const vehicleBattery = ev.battery || "n/a";
+    const smartevseTitle = ev.smartevseName || (ev.key === "smartevse_1" ? "SmartEVSE 1" : "SmartEVSE 2");
+    const vehicleTitle =
+      ev.connectedEvName && ev.connectedEvName.toLowerCase() !== "unknown" ? ev.connectedEvName : "?";
+    const vehicleBattery =
+      ev.connectedEvName && ev.connectedEvName.toLowerCase() !== "unknown" ? ev.battery || "n/a" : "n/a";
     const vehicleConnectorPath = this._vehicleConnectorPath();
     const vehicleNode = ev.connected
       ? `
@@ -380,7 +380,7 @@ class SmartEVSEFlowCard extends HTMLElement {
         </div>
         <section class="vehicle-node">
           <div class="vehicle-kicker">Vehicle</div>
-          <div class="vehicle-title">${this._safe(ev.name)}</div>
+          <div class="vehicle-title">${this._safe(vehicleTitle)}</div>
           <div class="vehicle-charge">${this._safe(vehicleBattery)}</div>
         </section>
       `
@@ -401,7 +401,7 @@ class SmartEVSEFlowCard extends HTMLElement {
           <div class="ev-meta-pills">${metaPills}</div>
           <div class="ev-measure-pills">
             <span class="ev-pill measure-pill">
-              <span class="ev-pill-label">Current</span>
+              <span class="ev-pill-label">Offer</span>
               <span class="ev-pill-value">${this._safe(this._formatCurrent(ev.chargeCurrent))}</span>
             </span>
             <span class="ev-pill measure-pill">

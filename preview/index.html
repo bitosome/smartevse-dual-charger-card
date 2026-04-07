@@ -510,7 +510,7 @@
       const widthButtons = [...document.querySelectorAll("[data-width]")];
 
       let currentScenario = scenarioSelect.value;
-      let states = deepClone(scenarios[currentScenario]);
+      let states = hydrateControllerScenario(deepClone(scenarios[currentScenario]));
       let card;
 
       function entity(state, attributes = {}) {
@@ -519,6 +519,29 @@
 
       function deepClone(value) {
         return JSON.parse(JSON.stringify(value));
+      }
+
+      function hydrateControllerScenario(snapshot) {
+        const controller = snapshot[controllerEntity];
+        if (!controller) {
+          return snapshot;
+        }
+        const attrs = controller.attributes || {};
+        for (const key of ["smartevse_1", "smartevse_2"]) {
+          const nameKey = `${key}_name`;
+          const connectedKey = `${key}_connected_ev`;
+          const batteryKey = `${key}_battery`;
+          const plugKey = `${key}_plug_state`;
+          if (!(connectedKey in attrs)) {
+            attrs[connectedKey] =
+              attrs[plugKey] === "Connected" ? String(attrs[nameKey] || "?") : "unknown";
+          }
+          if (!(batteryKey in attrs)) {
+            attrs[batteryKey] = "n/a";
+          }
+        }
+        controller.attributes = attrs;
+        return snapshot;
       }
 
       function makeHass() {
@@ -564,7 +587,7 @@
 
       function resetScenario(name) {
         currentScenario = name;
-        states = deepClone(scenarios[name]);
+        states = hydrateControllerScenario(deepClone(scenarios[name]));
         renderCard();
         appendLog(`Scenario reset → ${name}`);
       }

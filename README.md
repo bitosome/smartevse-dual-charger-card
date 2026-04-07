@@ -4,7 +4,7 @@ Standalone Lovelace card extracted from the SmartEVSE Dual Charger integration p
 
 This repository contains only the frontend card and its local preview assets.
 
-Version: `0.0.1`
+Version: `0.0.2`
 
 ## Contents
 
@@ -54,6 +54,10 @@ and the related control entities used in `card_flow.yaml`, including:
 - duty cycle number
 - force charge duration number
 - duty/timer remaining sensors
+- controller-state attributes for:
+  - mapped connected EV name
+  - mapped EV battery level
+  - WLED-derived SmartEVSE visuals
 
 ## Preview
 
