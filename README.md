@@ -4,12 +4,11 @@ Standalone Lovelace card extracted from the SmartEVSE Dual Charger integration p
 
 This repository contains only the frontend card and its local preview assets.
 
-Version: `0.0.4`
+Version: `0.0.5`
 
 ## Contents
 
-- Source card implementation: `lovelace/smartevse-flow-card.js`
-- HACS/manual frontend artifact: `smartevse-dual-charger-card.js`
+- Card implementation: `smartevse-dual-charger-card.js`
 - Example dashboard YAML: `card_flow.yaml`
 - Local preview page: `preview/index.html`
 

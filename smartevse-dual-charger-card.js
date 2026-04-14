@@ -1,4 +1,4 @@
-const CARD_VERSION = "0.0.4";
+const CARD_VERSION = "0.0.5";
 
 const FALLBACK_WLED_NODE_VISUALS = {
   off: {
@@ -56,6 +56,7 @@ class SmartEVSEFlowCard extends HTMLElement {
       throw new Error("controller_entity is required");
     }
     this._config = config;
+    this._currency = config.currency || "EUR/kWh";
     if (!this.shadowRoot) {
       this.attachShadow({ mode: "open" });
     }
@@ -63,6 +64,9 @@ class SmartEVSEFlowCard extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
+    if (this._editingEntity) {
+      return;
+    }
     const renderKey = this._buildRenderKey();
     if (renderKey === this._lastRenderKey) {
       return;
@@ -118,10 +122,11 @@ class SmartEVSEFlowCard extends HTMLElement {
     const controllerAttrs = [
       "controller_error",
       "charge_allowed",
+      "charge_reason",
       "active_smartevse_raw",
       "charge_policy",
-      "wled_visuals",
       "smartevse_1_name",
+      "smartevse_1_vehicle_charging_state",
       "smartevse_1_connected_ev",
       "smartevse_1_battery",
       "smartevse_1_state",
@@ -143,6 +148,7 @@ class SmartEVSEFlowCard extends HTMLElement {
       "smartevse_2_override_current",
       "smartevse_2_error",
       "smartevse_2_session_complete",
+      "smartevse_2_vehicle_charging_state",
     ];
     const tracked = {
       controller: this._entitySnapshot(this._config.controller_entity, controllerAttrs),
@@ -314,6 +320,7 @@ class SmartEVSEFlowCard extends HTMLElement {
     const connectedEvName = String(attrs[`${key}_connected_ev`] ?? "").trim();
     const battery = String(attrs[`${key}_battery`] ?? "").trim();
     const hasError = error && !["NONE", "None", "unknown", "unavailable"].includes(error);
+    const vehicleChargingState = String(attrs[`${key}_vehicle_charging_state`] ?? "").trim();
     const isCharging = state === "Charging" && chargeCurrent > 0.1;
     const visual = !connected ? "off" : hasError ? "error" : isCharging ? "charging" : "idle";
 
@@ -343,6 +350,7 @@ class SmartEVSEFlowCard extends HTMLElement {
       overrideCurrent: Number.isFinite(overrideCurrent) ? overrideCurrent : 0,
       error,
       hasError,
+      vehicleChargingState,
       sessionComplete,
       active,
       isCharging,
@@ -589,10 +597,12 @@ class SmartEVSEFlowCard extends HTMLElement {
             <path class="pipe-active tone-${this._safe(ev.tone)} vehicle-pipe-active" d="${vehicleConnectorPath}"></path>
           </svg>
         </div>
-        <section class="vehicle-node">
+        <section class="vehicle-node tone-${this._safe(ev.tone)}">
           <div class="vehicle-kicker">Vehicle</div>
           <div class="vehicle-title">${this._safe(vehicleTitle)}</div>
           ${vehicleBatteryMarkup}
+          ${ev.vehicleChargingState ? `<div class="vehicle-state">${this._safe(this._pretty(ev.vehicleChargingState))}</div>` : ""}
+          ${ev.sessionComplete ? `<div class="vehicle-complete-badge">Done</div>` : ""}
         </section>
       `
       : "";
@@ -654,13 +664,14 @@ class SmartEVSEFlowCard extends HTMLElement {
     const chargeAllowed = Boolean(attrs.charge_allowed);
     const price = this._numberState(this._config.price_entity);
     const acceptablePrice = this._numberState(this._config.acceptable_price_entity);
-    const priceValue = price === null ? "n/a" : `${price.toFixed(3)} EUR/kWh`;
+    const priceValue = price === null ? "n/a" : `${price.toFixed(3)} ${this._currency}`;
     const priceTone =
       price !== null && acceptablePrice !== null
         ? price <= acceptablePrice
           ? "ok"
           : "warn"
         : "default";
+    const chargeReason = String(attrs.charge_reason ?? "").trim();
 
     const policy = this._state(this._config.charge_policy_entity) || this._pretty(attrs.charge_policy);
     const dutyLabel = this._formatSeconds(this._state(this._config.duty_remaining_entity));
@@ -705,7 +716,7 @@ class SmartEVSEFlowCard extends HTMLElement {
       ? priceAccepted
         ? `Current ${priceValue}`
         : anyConnected
-          ? `Threshold ${acceptablePrice !== null ? `${acceptablePrice.toFixed(3)} EUR/kWh` : "n/a"}`
+          ? `Threshold ${acceptablePrice !== null ? `${acceptablePrice.toFixed(3)} ${this._currency}` : "n/a"}`
           : "Waiting for plug-in"
       : "Tap to arm";
 
@@ -1016,7 +1027,7 @@ class SmartEVSEFlowCard extends HTMLElement {
 
         .house-summary {
           display: grid;
-          grid-template-columns: 1fr;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
           gap: 8px;
           margin-bottom: 10px;
           text-align: left;
@@ -1335,6 +1346,42 @@ class SmartEVSEFlowCard extends HTMLElement {
           color: var(--secondary-text-color);
         }
 
+        .vehicle-state {
+          margin-top: 6px;
+          font-size: 10px;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.06em;
+          color: var(--secondary-text-color);
+        }
+
+        .vehicle-complete-badge {
+          display: inline-block;
+          margin-top: 6px;
+          padding: 2px 8px;
+          border-radius: 8px;
+          font-size: 9px;
+          font-weight: 800;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+          border: 1px solid rgba(34, 197, 94, 0.3);
+          background: rgba(34, 197, 94, 0.1);
+          color: #22c55e;
+        }
+
+        .vehicle-node.tone-complete {
+          border-color: rgba(34, 197, 94, 0.2);
+          background: rgba(34, 197, 94, 0.04);
+        }
+
+        .pipe-active.tone-complete,
+        .pipe-active.tone-idle,
+        .pipe-active.tone-unplugged {
+          stroke: transparent;
+          animation: none;
+          filter: none;
+        }
+
         .ev-error,
         .error-banner {
           margin-top: 12px;
@@ -1502,6 +1549,7 @@ class SmartEVSEFlowCard extends HTMLElement {
             <section class="house-node">
               <div class="house-summary">
                 ${this._chip("Price", priceValue, priceTone)}
+                ${this._chip("Status", this._pretty(chargeReason), chargeAllowed ? "ok" : "default")}
               </div>
               <div class="controls home-controls">
                 ${this._controlTile({
@@ -1547,7 +1595,7 @@ class SmartEVSEFlowCard extends HTMLElement {
                   entityId: this._config.acceptable_price_entity,
                   icon: "mdi:cash-edit",
                   label: "Acceptable Price",
-                  value: acceptablePrice !== null ? `${acceptablePrice.toFixed(3)} EUR/kWh` : "n/a",
+                  value: acceptablePrice !== null ? `${acceptablePrice.toFixed(3)} ${this._currency}` : "n/a",
                   detail: "Tap to edit",
                 })}
                 ${this._settingTile({
