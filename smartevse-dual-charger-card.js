@@ -808,6 +808,8 @@ class SmartEVSEFlowCard extends HTMLElement {
       .filter(Boolean)
       .join("");
     const smartevseTitle = ev.smartevseName || (ev.key === "smartevse_1" ? "SmartEVSE 1" : "SmartEVSE 2");
+    const vehicleTitle =
+      ev.connectedEvName && ev.connectedEvName.toLowerCase() !== "unknown" ? ev.connectedEvName : "?";
     const vehicleBattery =
       ev.connectedEvName && ev.connectedEvName.toLowerCase() !== "unknown" ? ev.battery || "n/a" : "n/a";
     const vehicleBatteryMarkup = this._vehicleBatteryMarkup(vehicleBattery);
@@ -821,6 +823,7 @@ class SmartEVSEFlowCard extends HTMLElement {
           </svg>
         </div>
         <section class="vehicle-node tone-${this._safe(ev.tone)}">
+          <div class="vehicle-title">${this._safe(vehicleTitle)}</div>
           ${vehicleBatteryMarkup}
           ${ev.sessionComplete ? `<div class="vehicle-complete-badge">Done</div>` : ""}
         </section>
@@ -1319,7 +1322,7 @@ class SmartEVSEFlowCard extends HTMLElement {
         }
 
         .settings-panel .setting-controls {
-          grid-template-columns: repeat(2, minmax(0, 1fr));
+          grid-template-columns: minmax(0, 1fr);
           margin-bottom: 0;
         }
 
@@ -1861,10 +1864,14 @@ class SmartEVSEFlowCard extends HTMLElement {
         }
 
         .vehicle-node {
+          display: grid;
+          justify-items: center;
+          gap: 8px;
           border-radius: var(--sdc-radius-xl);
           padding: 10px;
           border: var(--sdc-border-soft);
           background: var(--sdc-surface-glass);
+          text-align: center;
         }
 
         .vehicle-link-wrap {
@@ -1887,7 +1894,19 @@ class SmartEVSEFlowCard extends HTMLElement {
         }
 
         .vehicle-battery {
-          width: min(100%, 132px);
+          justify-self: center;
+          width: 132px;
+          max-width: calc(100% - 8px);
+        }
+
+        .vehicle-title {
+          max-width: 100%;
+          color: var(--primary-text-color);
+          font-size: var(--sdc-font-body);
+          font-weight: var(--sdc-weight-strong);
+          letter-spacing: var(--sdc-letter-title);
+          line-height: 1.15;
+          overflow-wrap: anywhere;
         }
 
         .vehicle-battery-shell {
