@@ -571,6 +571,9 @@ class SmartEVSEFlowCard extends HTMLElement {
     }
     await this._hass.callService(meta.serviceDomain, meta.service, serviceData);
     this._editingEntity = null;
+    if (this._settingsSubmenuEntity === entityId) {
+      this._settingsSubmenuEntity = null;
+    }
     this._render();
   }
 
@@ -636,8 +639,8 @@ class SmartEVSEFlowCard extends HTMLElement {
       return this._settingsSubmenuModal(this._settingsSubmenuEntity);
     }
     return `
-      <ha-dialog open class="native-modal settings-modal" data-dialog-action="close-settings">
-        <div class="dialog-panel" role="document">
+      <div class="settings-backdrop">
+        <div class="dialog-panel settings-panel" role="dialog" aria-modal="true" aria-label="Policy and limits">
           <div class="modal-head">
             <div>
               <div class="modal-kicker">Controls</div>
@@ -648,7 +651,7 @@ class SmartEVSEFlowCard extends HTMLElement {
           </div>
           ${settingsControls}
         </div>
-      </ha-dialog>
+      </div>
     `;
   }
 
@@ -694,8 +697,8 @@ class SmartEVSEFlowCard extends HTMLElement {
         : "";
 
     return `
-      <ha-dialog open class="native-modal settings-modal" data-dialog-action="close-settings">
-        <div class="dialog-panel" role="document" aria-label="${this._safe(title)}">
+      <div class="settings-backdrop">
+        <div class="dialog-panel settings-panel" role="dialog" aria-modal="true" aria-label="${this._safe(title)}">
           <div class="modal-head modal-head-navigation">
             <button class="modal-back" data-action="back-settings" type="button" aria-label="Back">
               <ha-icon icon="mdi:chevron-left"></ha-icon>
@@ -709,7 +712,7 @@ class SmartEVSEFlowCard extends HTMLElement {
           </div>
           ${content}
         </div>
-      </ha-dialog>
+      </div>
     `;
   }
 
@@ -1293,46 +1296,47 @@ class SmartEVSEFlowCard extends HTMLElement {
           background: var(--sdc-surface-soft);
         }
 
-        ha-dialog.native-modal {
-          --mdc-dialog-min-width: min(390px, calc(100vw - 32px));
-          --mdc-dialog-max-width: min(390px, calc(100vw - 32px));
-          --mdc-dialog-heading-ink-color: var(--primary-text-color);
-          --mdc-dialog-content-ink-color: var(--primary-text-color);
-          --ha-dialog-border-radius: var(--sdc-radius-xl);
-          color: var(--primary-text-color);
-        }
-
-        ha-dialog.settings-modal {
-          --mdc-dialog-min-width: min(430px, calc(100vw - 32px));
-          --mdc-dialog-max-width: min(430px, calc(100vw - 32px));
+        .settings-backdrop {
+          position: fixed;
+          inset: 0;
+          z-index: 2147483647;
+          display: grid;
+          place-items: center;
+          padding: 16px;
+          background: rgba(0, 0, 0, 0.48);
         }
 
         .dialog-panel {
-          color: var(--primary-text-color);
-          min-width: min(390px, calc(100vw - 32px));
-        }
-
-        .settings-modal .dialog-panel {
-          min-width: min(430px, calc(100vw - 32px));
-          max-height: min(78vh, 620px);
+          width: min(560px, calc(100vw - 32px));
+          max-height: min(82vh, 640px);
           overflow: auto;
+          padding: 18px;
+          border-radius: var(--sdc-radius-2xl);
+          border: var(--sdc-border-muted);
+          background: var(--ha-card-background, var(--card-background-color));
+          box-shadow: 0 22px 52px rgba(0, 0, 0, 0.36);
+          color: var(--primary-text-color);
         }
 
-        ha-dialog.settings-modal .setting-controls {
+        .settings-panel .setting-controls {
           grid-template-columns: repeat(2, minmax(0, 1fr));
           margin-bottom: 0;
         }
 
-        ha-dialog.settings-modal .setting-tile-editing {
+        .settings-panel .setting-tile {
+          min-height: 74px;
+        }
+
+        .settings-panel .setting-tile-editing {
           grid-column: 1 / -1;
         }
 
         .modal-head {
-          display: flex;
-          justify-content: space-between;
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) auto;
           gap: 12px;
           align-items: flex-start;
-          margin-bottom: 12px;
+          margin-bottom: 14px;
         }
 
         .modal-head-navigation {
@@ -1535,7 +1539,7 @@ class SmartEVSEFlowCard extends HTMLElement {
           position: relative;
           display: block;
           width: 100%;
-          height: 110px;
+          height: 132px;
           padding: 0;
           margin-bottom: 8px;
           border-radius: var(--sdc-radius-xl);
@@ -1589,13 +1593,13 @@ class SmartEVSEFlowCard extends HTMLElement {
           right: 10px;
           display: grid;
           align-content: start;
-          gap: 5px;
+          gap: 7px;
           min-width: 0;
         }
 
         .status-title {
-          font-size: var(--sdc-font-title);
-          line-height: 1.15;
+          font-size: 17px;
+          line-height: 1.18;
           overflow-wrap: anywhere;
         }
 
@@ -1605,8 +1609,8 @@ class SmartEVSEFlowCard extends HTMLElement {
           right: 8px;
           display: grid;
           place-items: center;
-          width: 24px;
-          height: 24px;
+          width: 30px;
+          height: 30px;
           border-radius: var(--sdc-radius-round);
           border: 1px solid rgba(148, 163, 184, 0.16);
           background: rgba(255,255,255,0.045);
@@ -1614,22 +1618,22 @@ class SmartEVSEFlowCard extends HTMLElement {
         }
 
         .status-action ha-icon {
-          --mdc-icon-size: 14px;
+          --mdc-icon-size: 16px;
           display: inline-grid;
-          width: 14px;
-          height: 14px;
+          width: 16px;
+          height: 16px;
         }
 
         .status-details {
           display: grid;
           grid-template-columns: minmax(0, 1fr);
-          gap: 2px;
+          gap: 3px;
         }
 
         .status-detail {
           min-width: 0;
-          font-size: var(--sdc-font-detail);
-          line-height: 1.15;
+          font-size: 13px;
+          line-height: 1.22;
           overflow-wrap: anywhere;
         }
 
@@ -2117,7 +2121,7 @@ class SmartEVSEFlowCard extends HTMLElement {
             gap: 8px;
           }
 
-          ha-dialog.settings-modal .setting-controls {
+          .settings-panel .setting-controls {
             grid-template-columns: 1fr;
           }
         }
@@ -2275,10 +2279,9 @@ class SmartEVSEFlowCard extends HTMLElement {
       });
     }
 
-    for (const dialog of this.shadowRoot.querySelectorAll("ha-dialog[data-dialog-action]")) {
-      dialog.addEventListener("closed", () => {
-        const action = dialog.dataset.dialogAction;
-        if (action === "close-settings" && this._settingsModalOpen) {
+    for (const backdrop of this.shadowRoot.querySelectorAll(".settings-backdrop")) {
+      backdrop.addEventListener("click", (event) => {
+        if (event.target === event.currentTarget) {
           this._closeSettingsModal();
         }
       });
