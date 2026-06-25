@@ -1432,13 +1432,13 @@ class SmartEVSEFlowCard extends HTMLElement {
         }
 
         .modal-option-title {
-          font-size: var(--sdc-font-value);
+          font-size: 15px;
           letter-spacing: var(--sdc-letter-title);
           line-height: 1.15;
         }
 
         .modal-option-detail {
-          font-size: var(--sdc-font-detail);
+          font-size: var(--sdc-font-body);
           font-weight: var(--sdc-weight-medium);
           line-height: 1.2;
         }
@@ -1960,18 +1960,18 @@ class SmartEVSEFlowCard extends HTMLElement {
         }
 
         .vehicle-battery-high .vehicle-battery-level {
-          background: rgba(148, 163, 184, 0.72);
-          box-shadow: none;
+          background: rgba(67, 160, 71, 0.82);
+          box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06);
         }
 
         .vehicle-battery-mid .vehicle-battery-level {
-          background: rgba(148, 163, 184, 0.58);
-          box-shadow: none;
+          background: rgba(251, 192, 45, 0.86);
+          box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06);
         }
 
         .vehicle-battery-low .vehicle-battery-level {
-          background: rgba(148, 163, 184, 0.42);
-          box-shadow: none;
+          background: rgba(229, 57, 53, 0.86);
+          box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06);
         }
 
         .vehicle-battery-unknown .vehicle-battery-shell {
