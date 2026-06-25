@@ -469,9 +469,8 @@ class SmartEVSEFlowCard extends HTMLElement {
     return this._editorDrafts[entityId] ?? this._state(entityId) ?? "";
   }
 
-  _openEditor(entityId, mode = "inline") {
+  _openEditor(entityId) {
     this._editingEntity = entityId;
-    this._editingMode = mode;
     if (!this._editorDrafts) {
       this._editorDrafts = {};
     }
@@ -481,7 +480,22 @@ class SmartEVSEFlowCard extends HTMLElement {
 
   _closeEditor() {
     this._editingEntity = null;
-    this._editingMode = null;
+    this._render();
+  }
+
+  _openSettingsSubmenu(entityId) {
+    this._settingsSubmenuEntity = entityId;
+    this._editingEntity = entityId;
+    if (!this._editorDrafts) {
+      this._editorDrafts = {};
+    }
+    this._editorDrafts[entityId] = this._state(entityId) ?? "";
+    this._render();
+  }
+
+  _closeSettingsSubmenu() {
+    this._settingsSubmenuEntity = null;
+    this._editingEntity = null;
     this._render();
   }
 
@@ -516,7 +530,6 @@ class SmartEVSEFlowCard extends HTMLElement {
     }
     await this._hass.callService(meta.serviceDomain, meta.service, serviceData);
     this._editingEntity = null;
-    this._editingMode = null;
     this._render();
   }
 
@@ -527,13 +540,14 @@ class SmartEVSEFlowCard extends HTMLElement {
 
   _openSettingsModal() {
     this._settingsModalOpen = true;
+    this._settingsSubmenuEntity = null;
     this._render();
   }
 
   _closeSettingsModal() {
     this._settingsModalOpen = false;
+    this._settingsSubmenuEntity = null;
     this._editingEntity = null;
-    this._editingMode = null;
     this._render();
   }
 
@@ -546,7 +560,7 @@ class SmartEVSEFlowCard extends HTMLElement {
           label: "Charge Policy",
           value: policy,
           detail: "Tap to edit",
-          presentation: "modal",
+          presentation: "submenu",
         })}
         ${this._settingTile({
           entityId: this._config.acceptable_price_entity,
@@ -577,6 +591,9 @@ class SmartEVSEFlowCard extends HTMLElement {
     if (!this._settingsModalOpen) {
       return "";
     }
+    if (this._settingsSubmenuEntity) {
+      return this._settingsSubmenuModal(this._settingsSubmenuEntity);
+    }
     return `
       <ha-dialog open class="native-modal settings-modal" data-dialog-action="close-settings">
         <div class="dialog-panel" role="document">
@@ -594,6 +611,64 @@ class SmartEVSEFlowCard extends HTMLElement {
     `;
   }
 
+  _settingsSubmenuModal(entityId) {
+    const meta = this._editorMeta(entityId);
+    if (!meta.supported) {
+      return "";
+    }
+    const entity = this._entity(entityId);
+    const name = entity?.attributes?.friendly_name || "Setting";
+    const isChargePolicy = entityId === this._config.charge_policy_entity;
+    const title = isChargePolicy ? "Charge Policy" : name;
+    const subtitle = isChargePolicy
+      ? "Choose which SmartEVSE gets priority when both vehicles can charge."
+      : "Update this setting without opening the Home Assistant entity dialog.";
+    const draft = this._editorDraft(entityId);
+    const content =
+      meta.kind === "select"
+        ? `
+          <div class="modal-options">
+            ${meta.options
+              .map((option) => {
+                const selected = option === draft;
+                return `
+                  <button
+                    class="modal-option ${selected ? "selected" : ""}"
+                    data-action="choose-option"
+                    data-entity="${this._safe(entityId)}"
+                    data-value="${this._safe(option)}"
+                    type="button"
+                  >
+                    <span class="modal-option-title">${this._safe(option)}</span>
+                    <span class="modal-option-detail">${selected ? "Currently selected" : "Set as priority"}</span>
+                  </button>
+                `;
+              })
+              .join("")}
+          </div>
+        `
+        : "";
+
+    return `
+      <ha-dialog open class="native-modal settings-modal" data-dialog-action="close-settings">
+        <div class="dialog-panel" role="document" aria-label="${this._safe(title)}">
+          <div class="modal-head modal-head-navigation">
+            <button class="modal-back" data-action="back-settings" type="button" aria-label="Back">
+              <ha-icon icon="mdi:chevron-left"></ha-icon>
+            </button>
+            <div class="modal-copy">
+              <div class="modal-kicker">Controls</div>
+              <div class="modal-title">${this._safe(title)}</div>
+              <div class="modal-subtitle">${this._safe(subtitle)}</div>
+            </div>
+            <button class="modal-close" data-action="close-settings" type="button">Close</button>
+          </div>
+          ${content}
+        </div>
+      </ha-dialog>
+    `;
+  }
+
   _settingTile({ entityId, icon, label, value, detail, presentation = "inline" }) {
     if (!entityId) {
       return "";
@@ -601,7 +676,7 @@ class SmartEVSEFlowCard extends HTMLElement {
     const meta = this._editorMeta(entityId);
     const isEditing = presentation === "inline" && this._editingEntity === entityId && meta.supported;
     if (!isEditing) {
-      const action = presentation === "modal" ? "edit-modal" : "edit";
+      const action = presentation === "submenu" ? "open-submenu" : "edit";
       return `
         <button class="setting-tile" data-action="${this._safe(action)}" data-entity="${this._safe(entityId)}" type="button">
           <div class="setting-icon"><ha-icon icon="${this._safe(icon)}"></ha-icon></div>
@@ -665,65 +740,6 @@ class SmartEVSEFlowCard extends HTMLElement {
           </div>
         </div>
       </div>
-    `;
-  }
-
-  _editorModal() {
-    const entityId = this._editingMode === "modal" ? this._editingEntity : null;
-    if (!entityId) {
-      return "";
-    }
-    const meta = this._editorMeta(entityId);
-    if (!meta.supported) {
-      return "";
-    }
-    const draft = this._editorDraft(entityId);
-    const entity = this._entity(entityId);
-    const name = entity?.attributes?.friendly_name || "Setting";
-    const isChargePolicy = entityId === this._config.charge_policy_entity;
-    const title = isChargePolicy ? "Charge Policy" : name;
-    const subtitle = isChargePolicy
-      ? "Choose which SmartEVSE gets priority when both vehicles can charge."
-      : "Update the value without opening the Home Assistant entity dialog.";
-    const content =
-      meta.kind === "select"
-        ? `
-          <div class="modal-options">
-            ${meta.options
-              .map((option) => {
-                const selected = option === draft;
-                return `
-                  <button
-                    class="modal-option ${selected ? "selected" : ""}"
-                    data-action="choose-option"
-                    data-entity="${this._safe(entityId)}"
-                    data-value="${this._safe(option)}"
-                    type="button"
-                  >
-                    <span class="modal-option-title">${this._safe(option)}</span>
-                    <span class="modal-option-detail">${selected ? "Currently selected" : "Set as priority"}</span>
-                  </button>
-                `;
-              })
-              .join("")}
-          </div>
-        `
-        : "";
-
-    return `
-      <ha-dialog open class="native-modal editor-modal" data-dialog-action="cancel-edit">
-        <div class="dialog-panel" role="document" aria-label="${this._safe(title)}">
-          <div class="modal-head">
-            <div>
-              <div class="modal-kicker">Setting</div>
-              <div class="modal-title">${this._safe(title)}</div>
-              <div class="modal-subtitle">${this._safe(subtitle)}</div>
-            </div>
-            <button class="modal-close" data-action="cancel-edit" data-entity="${this._safe(entityId)}" type="button">Close</button>
-          </div>
-          ${content}
-        </div>
-      </ha-dialog>
     `;
   }
 
@@ -1326,6 +1342,16 @@ class SmartEVSEFlowCard extends HTMLElement {
           margin-bottom: 12px;
         }
 
+        .modal-head-navigation {
+          display: grid;
+          grid-template-columns: 34px minmax(0, 1fr) auto;
+          align-items: flex-start;
+        }
+
+        .modal-copy {
+          min-width: 0;
+        }
+
         .modal-kicker {
           margin-bottom: 7px;
         }
@@ -1355,6 +1381,30 @@ class SmartEVSEFlowCard extends HTMLElement {
           font-size: var(--sdc-font-body);
           font-weight: var(--sdc-weight-strong);
           padding: 7px 10px;
+        }
+
+        .modal-back {
+          appearance: none;
+          display: inline-grid;
+          place-items: center;
+          width: 30px;
+          height: 30px;
+          border: var(--sdc-border-input);
+          border-radius: var(--sdc-radius-round);
+          background: var(--sdc-surface-glass);
+          color: var(--primary-text-color);
+          cursor: pointer;
+          padding: 0;
+        }
+
+        .modal-back ha-icon {
+          --mdc-icon-size: var(--sdc-font-icon);
+          display: inline-grid;
+          place-items: center;
+          width: var(--sdc-font-icon);
+          height: var(--sdc-font-icon);
+          font-size: var(--sdc-font-icon);
+          line-height: 1;
         }
 
         .modal-options {
@@ -2134,7 +2184,6 @@ class SmartEVSEFlowCard extends HTMLElement {
           </div>
 
           ${this._settingsModal(settingsControls)}
-          ${this._editorModal()}
         </div>
       </ha-card>
     `;
@@ -2156,6 +2205,10 @@ class SmartEVSEFlowCard extends HTMLElement {
           this._closeSettingsModal();
           return;
         }
+        if (action === "back-settings") {
+          this._closeSettingsSubmenu();
+          return;
+        }
         if (!entity) {
           return;
         }
@@ -2167,8 +2220,8 @@ class SmartEVSEFlowCard extends HTMLElement {
           this._openEditor(entity);
           return;
         }
-        if (action === "edit-modal") {
-          this._openEditor(entity, "modal");
+        if (action === "open-submenu") {
+          this._openSettingsSubmenu(entity);
           return;
         }
         if (action === "choose-option") {
@@ -2190,9 +2243,6 @@ class SmartEVSEFlowCard extends HTMLElement {
         const action = dialog.dataset.dialogAction;
         if (action === "close-settings" && this._settingsModalOpen) {
           this._closeSettingsModal();
-        }
-        if (action === "cancel-edit" && this._editingMode === "modal") {
-          this._closeEditor();
         }
       });
     }
