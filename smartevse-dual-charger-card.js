@@ -1,4 +1,4 @@
-const CARD_VERSION = "0.0.7";
+const CARD_VERSION = "0.0.8";
 
 const FALLBACK_WLED_NODE_VISUALS = {
   off: {
