@@ -1003,6 +1003,20 @@ class SmartEVSEFlowCard extends HTMLElement {
         :host {
           display: block;
           --connector-stroke: 4px;
+          --tile-padding: 8px;
+          --tile-padding-large: 12px;
+          --tile-border-radius: var(--ha-card-border-radius, 12px);
+          --small-gap: 2px;
+          --medium-gap: 6px;
+          --large-gap: 12px;
+          --panel-shadow-color: rgba(0,0,0,0.22);
+          --pulse-weak: rgba(0,0,0,0.10);
+          --pulse-strong: rgba(0,0,0,0.18);
+          --tile-shadow-default: 0 6px 18px rgba(0,0,0,0.10);
+          --tile-shadow-hover: 0 12px 24px rgba(0,0,0,0.16);
+          --tile-shadow-active: 0 18px 40px var(--pulse-strong), 0 6px 18px var(--pulse-weak);
+          --chip-background-color: rgba(0,0,0,0.06);
+          --chip-border-radius: var(--ha-badge-border-radius, 999px);
           --sdc-font-tiny: 7px;
           --sdc-font-label: 8px;
           --sdc-font-detail: 9px;
@@ -1041,16 +1055,16 @@ class SmartEVSEFlowCard extends HTMLElement {
           --sdc-border-hover: rgba(148, 163, 184, 0.28);
           --sdc-surface-muted: rgba(15, 23, 42, 0.08);
           --sdc-surface-soft: rgba(15, 23, 42, 0.12);
-          --sdc-surface-panel: rgba(15, 23, 42, 0.18);
-          --sdc-surface-control: rgba(15, 23, 42, 0.22);
-          --sdc-surface-elevated: rgba(2, 6, 23, 0.2);
+          --sdc-surface-panel: var(--ha-card-background, var(--card-background-color));
+          --sdc-surface-control: var(--ha-card-background, var(--card-background-color));
+          --sdc-surface-elevated: var(--ha-card-background, var(--card-background-color));
           --sdc-surface-input: rgba(2, 6, 23, 0.52);
-          --sdc-surface-badge: rgba(15, 23, 42, 0.92);
-          --sdc-surface-glass: rgba(255,255,255,0.04);
-          --sdc-surface-icon: rgba(255,255,255,0.06);
+          --sdc-surface-badge: var(--chip-background-color);
+          --sdc-surface-glass: rgba(0,0,0,0.06);
+          --sdc-surface-icon: var(--chip-background-color);
           --sdc-text-muted: var(--secondary-text-color);
-          --sdc-shadow-soft: 0 8px 20px rgba(2, 6, 23, 0.1);
-          --sdc-shadow-badge: 0 8px 18px rgba(2, 6, 23, 0.18);
+          --sdc-shadow-soft: var(--tile-shadow-default);
+          --sdc-shadow-badge: var(--tile-shadow-default);
         }
 
         *,
@@ -1060,14 +1074,15 @@ class SmartEVSEFlowCard extends HTMLElement {
         }
 
         ha-card {
-          overflow: hidden;
-          border-radius: var(--sdc-radius-card);
-          border: var(--sdc-border-muted);
-          background:
-            radial-gradient(circle at top, rgba(148, 163, 184, 0.08), transparent 32%),
-            radial-gradient(circle at bottom left, rgba(148, 163, 184, 0.06), transparent 28%),
-            var(--ha-card-background, var(--card-background-color));
+          overflow: visible;
+          position: relative;
+          border-radius: var(--ha-card-border-radius, 16px);
+          border: 0;
+          background: var(--ha-card-background, var(--card-background-color));
+          box-shadow: 0 10px 30px var(--panel-shadow-color);
+          padding: var(--tile-padding-large);
           color: var(--primary-text-color);
+          transition: filter 0.12s ease, box-shadow 0.12s ease;
         }
 
         .missing {
@@ -1076,13 +1091,13 @@ class SmartEVSEFlowCard extends HTMLElement {
         }
 
         .wrap {
-          padding: 12px;
+          padding: 0;
         }
 
         .controls {
           display: grid;
           grid-template-columns: repeat(2, minmax(0, 1fr));
-          gap: 8px;
+          gap: var(--large-gap);
           margin: 0;
         }
 
@@ -1092,22 +1107,23 @@ class SmartEVSEFlowCard extends HTMLElement {
           display: grid;
           grid-template-columns: 28px 1fr;
           align-items: start;
-          gap: 8px;
+          gap: var(--medium-gap);
           width: 100%;
-          padding: 10px;
-          border-radius: var(--sdc-radius-lg);
-          border: var(--sdc-border-subtle);
-          background: var(--sdc-surface-muted);
+          padding: var(--tile-padding);
+          border-radius: var(--tile-border-radius);
+          border: 0;
+          background: var(--ha-card-background, var(--card-background-color));
+          box-shadow: var(--tile-shadow-default);
           color: inherit;
           cursor: pointer;
           font: inherit;
           text-align: left;
-          transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
+          transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
         }
 
         .primary-controls {
           grid-template-columns: repeat(2, minmax(0, 1fr));
-          gap: 10px;
+          gap: var(--large-gap);
         }
 
         .primary-controls .control-tile {
@@ -1115,12 +1131,10 @@ class SmartEVSEFlowCard extends HTMLElement {
           height: 58px;
           min-height: 58px;
           align-items: center;
-          padding: 10px;
-          border-radius: var(--sdc-radius-xl);
-          background:
-            linear-gradient(145deg, rgba(255,255,255,0.075), transparent 58%),
-            var(--sdc-surface-control);
-          box-shadow: inset 0 1px 0 var(--sdc-surface-glass);
+          padding: var(--tile-padding);
+          border-radius: var(--tile-border-radius);
+          background: var(--ha-card-background, var(--card-background-color));
+          box-shadow: var(--tile-shadow-default);
         }
 
         .primary-controls .control-icon {
@@ -1156,15 +1170,14 @@ class SmartEVSEFlowCard extends HTMLElement {
 
         .setting-controls .setting-tile {
           min-height: 62px;
-          border-radius: var(--sdc-radius-lg);
-          background: var(--sdc-surface-elevated);
+          border-radius: var(--tile-border-radius);
+          background: var(--ha-card-background, var(--card-background-color));
         }
 
         .control-tile:hover,
         .setting-tile:hover {
           transform: translateY(-1px);
-          border-color: var(--sdc-border-hover);
-          background: var(--sdc-surface-soft);
+          box-shadow: var(--tile-shadow-hover);
         }
 
         .setting-tile-editing {
@@ -1179,8 +1192,8 @@ class SmartEVSEFlowCard extends HTMLElement {
           align-self: start;
           width: 28px;
           height: 28px;
-          border-radius: var(--sdc-radius-sm);
-          background: var(--sdc-surface-icon);
+          border-radius: var(--chip-border-radius);
+          background: var(--chip-background-color);
         }
 
         .control-icon ha-icon,
@@ -1251,17 +1264,17 @@ class SmartEVSEFlowCard extends HTMLElement {
 
         .setting-editor {
           display: grid;
-          gap: 6px;
-          margin-top: 8px;
+          gap: var(--medium-gap);
+          margin-top: var(--tile-padding);
         }
 
         .setting-input,
         .setting-select {
           width: 100%;
           appearance: none;
-          border: var(--sdc-border-input);
-          border-radius: var(--sdc-radius-sm);
-          background: var(--sdc-surface-input);
+          border: 0;
+          border-radius: var(--tile-border-radius);
+          background: var(--chip-background-color);
           color: var(--primary-text-color);
           padding: 8px 10px;
           font: inherit;
@@ -1272,20 +1285,19 @@ class SmartEVSEFlowCard extends HTMLElement {
 
         .setting-input:focus,
         .setting-select:focus {
-          border-color: var(--sdc-border-hover);
-          box-shadow: 0 0 0 1px rgba(148, 163, 184, 0.18);
+          box-shadow: 0 0 0 2px rgba(var(--sdc-led-idle-rgb), 0.28);
         }
 
         .setting-editor-actions {
           display: flex;
-          gap: 6px;
+          gap: var(--medium-gap);
         }
 
         .setting-editor-button {
           appearance: none;
-          border: var(--sdc-border-muted);
-          border-radius: var(--sdc-radius-sm);
-          background: var(--sdc-surface-glass);
+          border: 0;
+          border-radius: var(--chip-border-radius);
+          background: var(--chip-background-color);
           color: var(--primary-text-color);
           padding: 6px 10px;
           font: inherit;
@@ -1296,7 +1308,7 @@ class SmartEVSEFlowCard extends HTMLElement {
 
         .setting-editor-button.tone-primary {
           border-color: var(--sdc-border-hover);
-          background: var(--sdc-surface-soft);
+          background: var(--chip-background-color);
         }
 
         .settings-backdrop {
@@ -1314,8 +1326,8 @@ class SmartEVSEFlowCard extends HTMLElement {
           max-height: min(82vh, 640px);
           overflow: auto;
           padding: 18px;
-          border-radius: var(--sdc-radius-2xl);
-          border: var(--sdc-border-muted);
+          border-radius: var(--tile-border-radius);
+          border: 0;
           background: var(--ha-card-background, var(--card-background-color));
           box-shadow: 0 22px 52px rgba(0, 0, 0, 0.36);
           color: var(--primary-text-color);
@@ -1371,9 +1383,9 @@ class SmartEVSEFlowCard extends HTMLElement {
 
         .modal-close {
           appearance: none;
-          border: var(--sdc-border-input);
-          border-radius: var(--sdc-radius-round);
-          background: var(--sdc-surface-glass);
+          border: 0;
+          border-radius: var(--chip-border-radius);
+          background: var(--chip-background-color);
           color: var(--primary-text-color);
           cursor: pointer;
           flex: 0 0 auto;
@@ -1389,9 +1401,9 @@ class SmartEVSEFlowCard extends HTMLElement {
           place-items: center;
           width: 30px;
           height: 30px;
-          border: var(--sdc-border-input);
-          border-radius: var(--sdc-radius-round);
-          background: var(--sdc-surface-glass);
+          border: 0;
+          border-radius: var(--chip-border-radius);
+          background: var(--chip-background-color);
           color: var(--primary-text-color);
           cursor: pointer;
           padding: 0;
@@ -1409,14 +1421,15 @@ class SmartEVSEFlowCard extends HTMLElement {
 
         .modal-options {
           display: grid;
-          gap: 8px;
+          gap: var(--large-gap);
         }
 
         .modal-option {
           appearance: none;
-          border: var(--sdc-border-muted);
-          border-radius: var(--sdc-radius-md);
-          background: var(--secondary-background-color, rgba(15, 23, 42, 0.08));
+          border: 0;
+          border-radius: var(--tile-border-radius);
+          background: var(--ha-card-background, var(--card-background-color));
+          box-shadow: var(--tile-shadow-default);
           color: var(--primary-text-color);
           cursor: pointer;
           display: grid;
@@ -1427,8 +1440,9 @@ class SmartEVSEFlowCard extends HTMLElement {
         }
 
         .modal-option.selected {
-          border-color: var(--sdc-border-hover);
-          background: var(--sdc-surface-soft);
+          --pulse-weak: rgba(var(--sdc-led-idle-rgb), 0.16);
+          --pulse-strong: rgba(var(--sdc-led-idle-rgb), 0.30);
+          box-shadow: var(--tile-shadow-active);
         }
 
         .modal-option-title {
@@ -1444,27 +1458,30 @@ class SmartEVSEFlowCard extends HTMLElement {
         }
 
         .control-tile.tone-ok {
-          border-color: rgba(var(--sdc-led-charging-rgb), 0.34);
-          background: rgba(var(--sdc-led-charging-rgb), 0.08);
+          --pulse-weak: rgba(var(--sdc-led-charging-rgb), 0.16);
+          --pulse-strong: rgba(var(--sdc-led-charging-rgb), 0.30);
+          box-shadow: var(--tile-shadow-active);
         }
 
         .control-tile.tone-active {
-          border-color: rgba(var(--sdc-led-idle-rgb), 0.34);
-          background: rgba(var(--sdc-led-idle-rgb), 0.08);
+          --pulse-weak: rgba(var(--sdc-led-idle-rgb), 0.16);
+          --pulse-strong: rgba(var(--sdc-led-idle-rgb), 0.30);
+          box-shadow: var(--tile-shadow-active);
         }
 
         .control-tile.tone-warn {
-          border-color: rgba(var(--sdc-led-error-rgb), 0.34);
-          background: rgba(var(--sdc-led-error-rgb), 0.08);
+          --pulse-weak: rgba(var(--sdc-led-error-rgb), 0.16);
+          --pulse-strong: rgba(var(--sdc-led-error-rgb), 0.30);
+          box-shadow: var(--tile-shadow-active);
         }
 
         .flow-stage {
-          border-radius: var(--sdc-radius-stage);
-          border: var(--sdc-border-subtle);
-          background:
-            linear-gradient(180deg, rgba(255,255,255,0.065), transparent 30%),
-            rgba(2, 6, 23, 0.1);
-          padding: 12px;
+          display: grid;
+          gap: var(--large-gap);
+          border-radius: 0;
+          border: 0;
+          background: transparent;
+          padding: 0;
         }
 
         .flow-svg {
@@ -1525,15 +1542,11 @@ class SmartEVSEFlowCard extends HTMLElement {
         .house-node {
           margin: 0 auto 8px;
           width: 100%;
-          padding: 10px;
-          border-radius: var(--sdc-radius-3xl);
-          border: var(--sdc-border-soft);
-          background:
-            linear-gradient(145deg, rgba(255,255,255,0.055), transparent 58%),
-            var(--sdc-surface-panel);
-          box-shadow:
-            0 16px 34px rgba(2, 6, 23, 0.18),
-            inset 0 1px 0 var(--sdc-surface-glass);
+          padding: 0;
+          border-radius: 0;
+          border: 0;
+          background: transparent;
+          box-shadow: none;
           text-align: left;
         }
 
@@ -1545,22 +1558,20 @@ class SmartEVSEFlowCard extends HTMLElement {
           height: 132px;
           padding: 0;
           margin-bottom: 8px;
-          border-radius: var(--sdc-radius-xl);
-          border: var(--sdc-border-soft);
-          background:
-            linear-gradient(135deg, rgba(255,255,255,0.05), transparent 56%),
-            var(--sdc-surface-elevated);
+          border-radius: var(--tile-border-radius);
+          border: 0;
+          background: var(--ha-card-background, var(--card-background-color));
+          box-shadow: var(--tile-shadow-default);
           color: var(--primary-text-color);
           cursor: pointer;
           font: inherit;
           text-align: left;
-          transition: transform 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+          transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
         }
 
         .status-hero:hover {
           transform: translateY(-1px);
-          border-color: var(--sdc-border-hover);
-          box-shadow: inset 0 1px 0 var(--sdc-surface-glass);
+          box-shadow: var(--tile-shadow-hover);
         }
 
         .status-hero:focus-visible {
@@ -1569,24 +1580,21 @@ class SmartEVSEFlowCard extends HTMLElement {
         }
 
         .status-hero.tone-charging {
-          border-color: rgba(var(--sdc-led-charging-rgb), 0.24);
-          background:
-            linear-gradient(135deg, rgba(var(--sdc-led-charging-rgb), 0.12), transparent 48%),
-            var(--sdc-surface-elevated);
+          --pulse-weak: rgba(var(--sdc-led-charging-rgb), 0.16);
+          --pulse-strong: rgba(var(--sdc-led-charging-rgb), 0.30);
+          box-shadow: var(--tile-shadow-active);
         }
 
         .status-hero.tone-active {
-          border-color: rgba(var(--sdc-led-idle-rgb), 0.24);
-          background:
-            linear-gradient(135deg, rgba(var(--sdc-led-idle-rgb), 0.11), transparent 48%),
-            var(--sdc-surface-elevated);
+          --pulse-weak: rgba(var(--sdc-led-idle-rgb), 0.16);
+          --pulse-strong: rgba(var(--sdc-led-idle-rgb), 0.30);
+          box-shadow: var(--tile-shadow-active);
         }
 
         .status-hero.tone-error {
-          border-color: rgba(var(--sdc-led-error-rgb), 0.24);
-          background:
-            linear-gradient(135deg, rgba(var(--sdc-led-error-rgb), 0.12), transparent 48%),
-            var(--sdc-surface-elevated);
+          --pulse-weak: rgba(var(--sdc-led-error-rgb), 0.16);
+          --pulse-strong: rgba(var(--sdc-led-error-rgb), 0.30);
+          box-shadow: var(--tile-shadow-active);
         }
 
         .status-copy {
@@ -1614,9 +1622,9 @@ class SmartEVSEFlowCard extends HTMLElement {
           place-items: center;
           width: 30px;
           height: 30px;
-          border-radius: var(--sdc-radius-round);
-          border: 1px solid rgba(148, 163, 184, 0.16);
-          background: rgba(255,255,255,0.045);
+          border-radius: var(--chip-border-radius);
+          border: 0;
+          background: var(--chip-background-color);
           color: var(--sdc-text-muted);
         }
 
@@ -1698,26 +1706,29 @@ class SmartEVSEFlowCard extends HTMLElement {
           align-items: center;
           gap: 4px;
           padding: 2px 5px;
-          border-radius: var(--sdc-radius-round);
-          border: var(--sdc-border-muted);
-          background: var(--sdc-surface-badge);
-          box-shadow: var(--sdc-shadow-badge);
+          border-radius: var(--chip-border-radius);
+          border: 0;
+          background: var(--chip-background-color);
+          box-shadow: var(--tile-shadow-default);
           white-space: nowrap;
         }
 
         .flow-line-badge.tone-charging {
-          border-color: var(--sdc-border-hover);
-          box-shadow: var(--sdc-shadow-badge);
+          --pulse-weak: rgba(var(--sdc-led-charging-rgb), 0.16);
+          --pulse-strong: rgba(var(--sdc-led-charging-rgb), 0.30);
+          box-shadow: var(--tile-shadow-active);
         }
 
         .flow-line-badge.tone-active {
-          border-color: var(--sdc-border-hover);
-          box-shadow: var(--sdc-shadow-badge);
+          --pulse-weak: rgba(var(--sdc-led-idle-rgb), 0.16);
+          --pulse-strong: rgba(var(--sdc-led-idle-rgb), 0.30);
+          box-shadow: var(--tile-shadow-active);
         }
 
         .flow-line-badge.tone-error {
-          border-color: var(--sdc-border-hover);
-          box-shadow: var(--sdc-shadow-badge);
+          --pulse-weak: rgba(var(--sdc-led-error-rgb), 0.16);
+          --pulse-strong: rgba(var(--sdc-led-error-rgb), 0.30);
+          box-shadow: var(--tile-shadow-active);
         }
 
         .flow-line-icon {
@@ -1735,39 +1746,26 @@ class SmartEVSEFlowCard extends HTMLElement {
         .ev-row {
           display: grid;
           grid-template-columns: repeat(2, minmax(0, 1fr));
-          gap: 10px;
+          gap: var(--large-gap);
           align-items: stretch;
           margin-top: -4px;
         }
 
         .smartevse-stack {
           display: grid;
-          gap: 8px;
+          gap: var(--large-gap);
           align-content: start;
         }
 
         .ev-node {
-          border-radius: var(--sdc-radius-2xl);
-          padding: 10px;
-          border: var(--sdc-border-subtle);
-          background: var(--sdc-surface-panel);
-          box-shadow:
-            var(--sdc-shadow-soft),
-            0 0 0 rgba(var(--node-rgb, 148, 163, 184), 0);
+          border-radius: var(--tile-border-radius);
+          padding: var(--tile-padding-large);
+          border: 0;
+          background: var(--ha-card-background, var(--card-background-color));
+          box-shadow: var(--tile-shadow-default);
           position: relative;
-          overflow: hidden;
-        }
-
-        .ev-node::before {
-          content: "";
-          position: absolute;
-          inset: -55% 0 auto 0;
-          width: 100%;
-          height: 70%;
-          background: linear-gradient(180deg, transparent, rgba(var(--node-rgb, 148, 163, 184), 0.24), transparent);
-          opacity: 0;
-          pointer-events: none;
-          transform: translateY(0);
+          overflow: visible;
+          transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
         }
 
         .ev-node-head {
@@ -1797,15 +1795,13 @@ class SmartEVSEFlowCard extends HTMLElement {
         .ev-meta-pills {
           display: grid;
           grid-template-columns: 1fr;
-          gap: 5px;
-          margin-bottom: 5px;
+          gap: var(--medium-gap);
+          margin-bottom: var(--medium-gap);
         }
 
         .ev-meta-pills .ev-pill:first-child {
-          border-radius: var(--sdc-radius-lg);
-          background:
-            linear-gradient(145deg, rgba(255,255,255,0.065), transparent 62%),
-            rgba(255,255,255,0.055);
+          border-radius: var(--chip-border-radius);
+          background: var(--chip-background-color);
         }
 
         .ev-meta-pills .ev-pill:first-child .ev-pill-value {
@@ -1821,14 +1817,13 @@ class SmartEVSEFlowCard extends HTMLElement {
           min-width: 0;
           min-height: 25px;
           padding: 8px 6px 3px;
-          border-radius: var(--sdc-radius-md);
-          background: var(--sdc-surface-glass);
-          border: var(--sdc-border-faint);
+          border-radius: var(--chip-border-radius);
+          background: var(--chip-background-color);
+          border: 0;
           text-align: center;
         }
 
         .ev-pill-accent {
-          border-color: rgba(var(--sdc-led-idle-rgb), 0.22);
           background: rgba(var(--sdc-led-idle-rgb), 0.1);
         }
 
@@ -1860,18 +1855,20 @@ class SmartEVSEFlowCard extends HTMLElement {
         .ev-measure-pills {
           display: grid;
           grid-template-columns: 1fr;
-          gap: 5px;
+          gap: var(--medium-gap);
         }
 
         .vehicle-node {
           display: grid;
           justify-items: center;
-          gap: 8px;
-          border-radius: var(--sdc-radius-xl);
-          padding: 10px;
-          border: var(--sdc-border-soft);
-          background: var(--sdc-surface-glass);
+          gap: var(--medium-gap);
+          border-radius: var(--tile-border-radius);
+          padding: var(--tile-padding-large);
+          border: 0;
+          background: var(--ha-card-background, var(--card-background-color));
+          box-shadow: var(--tile-shadow-default);
           text-align: center;
+          transition: box-shadow 0.12s ease, filter 0.12s ease;
         }
 
         .vehicle-link-wrap {
@@ -1913,10 +1910,10 @@ class SmartEVSEFlowCard extends HTMLElement {
           position: relative;
           width: 100%;
           aspect-ratio: 65 / 18;
-          border: 1px solid var(--sdc-border-hover);
-          background: rgba(15, 23, 42, 0.82);
+          border: 0;
+          background: var(--chip-background-color);
           overflow: visible;
-          box-shadow: inset 0 0 0 1px rgba(255,255,255,0.02);
+          box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.24);
         }
 
         .vehicle-battery-cap {
@@ -1984,150 +1981,96 @@ class SmartEVSEFlowCard extends HTMLElement {
 
         .vehicle-complete-badge {
           display: inline-block;
-          margin-top: 6px;
+          margin-top: var(--medium-gap);
           padding: 2px 8px;
-          border-radius: var(--sdc-radius-xs);
+          border-radius: var(--chip-border-radius);
           font-size: var(--sdc-font-detail);
           font-weight: var(--sdc-weight-strong);
           text-transform: uppercase;
           letter-spacing: var(--sdc-letter-label);
-          border: var(--sdc-border-muted);
-          background: var(--sdc-surface-soft);
+          border: 0;
+          background: var(--chip-background-color);
           color: var(--primary-text-color);
         }
 
         .vehicle-node.tone-complete {
-          border-color: var(--sdc-border-hover);
-          background: var(--sdc-surface-glass);
+          --pulse-weak: rgba(var(--sdc-led-idle-rgb), 0.12);
+          --pulse-strong: rgba(var(--sdc-led-idle-rgb), 0.22);
+          box-shadow: var(--tile-shadow-active);
         }
 
         .ev-node.tone-charging {
-          border-color: rgba(var(--sdc-led-charging-rgb), 0.32);
           color: var(--sdc-led-charging);
         }
 
         .ev-node.tone-active {
-          border-color: rgba(var(--sdc-led-idle-rgb), 0.32);
           color: var(--sdc-led-idle);
         }
 
         .ev-node.tone-idle {
-          border-color: rgba(var(--sdc-led-idle-rgb), 0.22);
           color: var(--primary-text-color);
         }
 
         .ev-node.tone-complete {
-          border-color: rgba(var(--sdc-led-idle-rgb), 0.24);
           color: var(--sdc-led-idle);
         }
 
         .ev-node.tone-unplugged {
-          border-color: rgba(var(--sdc-led-off-rgb), 0.18);
           color: var(--sdc-led-off);
         }
 
         .ev-node.tone-error {
-          border-color: rgba(var(--sdc-led-error-rgb), 0.28);
           color: var(--sdc-led-error);
         }
 
         .ev-node.tone-charging {
-          border-color: rgba(var(--sdc-led-charging-rgb), 0.32);
-          background:
-            radial-gradient(circle at top, rgba(var(--sdc-led-charging-rgb), 0.14), transparent 50%),
-            var(--sdc-surface-panel);
+          --pulse-weak: rgba(var(--sdc-led-charging-rgb), 0.16);
+          --pulse-strong: rgba(var(--sdc-led-charging-rgb), 0.30);
+          box-shadow: var(--tile-shadow-active);
         }
 
         .ev-node.tone-active {
-          border-color: rgba(var(--sdc-led-idle-rgb), 0.32);
-          background:
-            radial-gradient(circle at top, rgba(var(--sdc-led-idle-rgb), 0.12), transparent 50%),
-            var(--sdc-surface-panel);
+          --pulse-weak: rgba(var(--sdc-led-idle-rgb), 0.16);
+          --pulse-strong: rgba(var(--sdc-led-idle-rgb), 0.30);
+          box-shadow: var(--tile-shadow-active);
         }
 
         .ev-node.tone-complete,
         .ev-node.tone-unplugged {
-          background: var(--sdc-surface-soft);
+          background: var(--ha-card-background, var(--card-background-color));
         }
 
         .ev-node.visual-idle {
-          border-color: rgba(var(--sdc-led-idle-rgb), 0.28);
-          box-shadow:
-            var(--sdc-shadow-soft),
-            0 0 18px rgba(var(--sdc-led-idle-rgb), 0.14);
-          animation: idlePulse 2.2s ease-in-out infinite;
+          --pulse-weak: rgba(var(--node-rgb, var(--sdc-led-idle-rgb)), 0.16);
+          --pulse-strong: rgba(var(--node-rgb, var(--sdc-led-idle-rgb)), 0.30);
+          box-shadow: var(--tile-shadow-active);
+          animation: glowPulse 2.4s ease-in-out infinite;
         }
 
         .ev-node.visual-charging {
-          border-color: rgba(var(--sdc-led-charging-rgb), 0.32);
-          box-shadow:
-            var(--sdc-shadow-soft),
-            0 0 22px rgba(var(--sdc-led-charging-rgb), 0.18);
-          animation: chargingPulse 1.6s ease-in-out infinite;
-        }
-
-        .ev-node.visual-charging::before {
-          opacity: 1;
-          animation: chargeSweep 1.8s linear infinite;
+          --pulse-weak: rgba(var(--node-rgb, var(--sdc-led-charging-rgb)), 0.16);
+          --pulse-strong: rgba(var(--node-rgb, var(--sdc-led-charging-rgb)), 0.30);
+          box-shadow: var(--tile-shadow-active);
+          animation: glowPulse 1.8s ease-in-out infinite;
         }
 
         .ev-node.visual-error {
-          border-color: rgba(var(--sdc-led-error-rgb), 0.34);
-          box-shadow:
-            var(--sdc-shadow-soft),
-            0 0 22px rgba(var(--sdc-led-error-rgb), 0.2);
-          animation: errorPulse 1.2s ease-in-out infinite;
+          --pulse-weak: rgba(var(--node-rgb, var(--sdc-led-error-rgb)), 0.16);
+          --pulse-strong: rgba(var(--node-rgb, var(--sdc-led-error-rgb)), 0.30);
+          box-shadow: var(--tile-shadow-active);
+          animation: glowPulse 1.2s ease-in-out infinite;
         }
 
         .ev-node.visual-off {
-          box-shadow: var(--sdc-shadow-soft);
+          box-shadow: var(--tile-shadow-default);
         }
 
-        @keyframes idlePulse {
+        @keyframes glowPulse {
           0%, 100% {
-            box-shadow:
-              var(--sdc-shadow-soft),
-              0 0 12px rgba(var(--sdc-led-idle-rgb), 0.12);
+            box-shadow: 0 10px 20px var(--pulse-weak);
           }
           50% {
-            box-shadow:
-              var(--sdc-shadow-soft),
-              0 0 24px rgba(var(--sdc-led-idle-rgb), 0.26);
-          }
-        }
-
-        @keyframes chargingPulse {
-          0%, 100% {
-            box-shadow:
-              var(--sdc-shadow-soft),
-              0 0 16px rgba(var(--sdc-led-charging-rgb), 0.16);
-          }
-          50% {
-            box-shadow:
-              var(--sdc-shadow-soft),
-              0 0 30px rgba(var(--sdc-led-charging-rgb), 0.3);
-          }
-        }
-
-        @keyframes chargeSweep {
-          from {
-            transform: translateY(-110%);
-          }
-          to {
-            transform: translateY(220%);
-          }
-        }
-
-        @keyframes errorPulse {
-          0%, 100% {
-            box-shadow:
-              var(--sdc-shadow-soft),
-              0 0 12px rgba(var(--sdc-led-error-rgb), 0.16);
-          }
-          50% {
-            box-shadow:
-              var(--sdc-shadow-soft),
-              0 0 28px rgba(var(--sdc-led-error-rgb), 0.28);
+            box-shadow: 0 28px 56px var(--pulse-strong);
           }
         }
 
