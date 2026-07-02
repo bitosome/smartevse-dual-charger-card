@@ -531,7 +531,9 @@ class SmartEVSEFlowCard extends HTMLElement {
     if (!this._editorDrafts) {
       this._editorDrafts = {};
     }
-    this._editorDrafts[entityId] = this._state(entityId) ?? "";
+    if (!Object.prototype.hasOwnProperty.call(this._editorDrafts, entityId)) {
+      this._editorDrafts[entityId] = this._state(entityId) ?? "";
+    }
     this._render();
   }
 
@@ -579,13 +581,29 @@ class SmartEVSEFlowCard extends HTMLElement {
   }
 
   async _chooseEditorOption(entityId, value) {
+    const previousValue = this._editorDraft(entityId);
     this._updateEditorDraft(entityId, value);
-    await this._saveEditor(entityId);
+    this._render();
+    const meta = this._editorMeta(entityId);
+    if (!meta.supported || meta.kind !== "select") {
+      return;
+    }
+    try {
+      await this._hass.callService(meta.serviceDomain, meta.service, {
+        entity_id: entityId,
+        option: value,
+      });
+    } catch (error) {
+      this._updateEditorDraft(entityId, previousValue);
+      this._render();
+      throw error;
+    }
   }
 
   _openSettingsModal() {
     this._settingsModalOpen = true;
     this._settingsSubmenuEntity = null;
+    this._editorDrafts = {};
     this._render();
   }
 
@@ -699,7 +717,7 @@ class SmartEVSEFlowCard extends HTMLElement {
 
     return `
       <div class="settings-backdrop">
-        <div class="dialog-panel settings-panel" role="dialog" aria-modal="true" aria-label="${this._safe(title)}">
+        <div class="dialog-panel settings-panel submenu-panel" role="dialog" aria-modal="true" aria-label="${this._safe(title)}">
           <div class="modal-head modal-head-navigation">
             <button class="modal-back" data-action="back-settings" type="button" aria-label="Back">
               <ha-icon icon="mdi:chevron-left"></ha-icon>
@@ -893,7 +911,13 @@ class SmartEVSEFlowCard extends HTMLElement {
     const chargeReason = String(attrs.charge_reason ?? "").trim();
 
     const rawPolicy = this._state(this._config.charge_policy_entity) || this._pretty(attrs.charge_policy);
-    const policy = this._displayState(this._config.charge_policy_entity, rawPolicy);
+    const policyDraft =
+      this._settingsModalOpen &&
+      this._editorDrafts &&
+      Object.prototype.hasOwnProperty.call(this._editorDrafts, this._config.charge_policy_entity)
+        ? this._editorDrafts[this._config.charge_policy_entity]
+        : null;
+    const policy = this._displayState(this._config.charge_policy_entity, policyDraft ?? rawPolicy);
     const dutyLabel = this._formatSeconds(this._state(this._config.duty_remaining_entity));
     const timerLabel = this._formatSeconds(this._state(this._config.timer_remaining_entity));
     const scheduleState = this._state(this._config.schedule_entity);
@@ -1378,6 +1402,10 @@ class SmartEVSEFlowCard extends HTMLElement {
 
         .settings-panel .setting-tile-editing {
           grid-column: 1 / -1;
+        }
+
+        .submenu-panel {
+          width: min(430px, calc(100vw - 32px));
         }
 
         .modal-head {
