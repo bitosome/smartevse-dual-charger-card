@@ -688,7 +688,7 @@ class SmartEVSEFlowCard extends HTMLElement {
                     type="button"
                   >
                     <span class="modal-option-title">${this._safe(option.label)}</span>
-                    <span class="modal-option-detail">${selected ? "Currently selected" : "Set as priority"}</span>
+                    ${selected ? `<ha-icon class="modal-option-check" icon="mdi:check-circle"></ha-icon>` : ""}
                   </button>
                 `;
               })
@@ -1249,8 +1249,7 @@ class SmartEVSEFlowCard extends HTMLElement {
 
         .setting-detail,
         .status-detail,
-        .modal-subtitle,
-        .modal-option-detail {
+        .modal-subtitle {
           color: var(--sdc-text-muted);
         }
 
@@ -1468,16 +1467,22 @@ class SmartEVSEFlowCard extends HTMLElement {
           color: var(--primary-text-color);
           cursor: pointer;
           display: grid;
-          gap: 4px;
+          grid-template-columns: minmax(0, 1fr) auto;
+          align-items: center;
+          gap: var(--medium-gap);
           min-height: 48px;
-          padding: 9px 10px;
+          padding: 10px 12px;
           text-align: left;
+          transition: box-shadow 0.12s ease, color 0.12s ease, filter 0.12s ease;
         }
 
         .modal-option.selected {
           --pulse-weak: rgba(var(--sdc-led-idle-rgb), 0.16);
           --pulse-strong: rgba(var(--sdc-led-idle-rgb), 0.30);
-          box-shadow: var(--tile-shadow-active);
+          color: var(--sdc-led-idle);
+          box-shadow:
+            0 18px 40px rgba(var(--sdc-led-idle-rgb), 0.30),
+            0 6px 18px rgba(var(--sdc-led-idle-rgb), 0.16);
         }
 
         .modal-option-title {
@@ -1486,10 +1491,9 @@ class SmartEVSEFlowCard extends HTMLElement {
           line-height: 1.15;
         }
 
-        .modal-option-detail {
-          font-size: var(--sdc-font-body);
-          font-weight: var(--sdc-weight-medium);
-          line-height: 1.2;
+        .modal-option-check {
+          --mdc-icon-size: 18px;
+          color: inherit;
         }
 
         .control-tile.tone-ok {
