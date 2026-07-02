@@ -2,7 +2,7 @@
 
 Standalone Lovelace card for the SmartEVSE Dual Charger Home Assistant integration.
 
-Version: `0.0.9`
+Version: `0.0.10`
 
 This repository contains only the frontend card and local preview assets.
 

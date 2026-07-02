@@ -1,4 +1,4 @@
-const CARD_VERSION = "0.0.9";
+const CARD_VERSION = "0.0.10";
 
 const FALLBACK_WLED_NODE_VISUALS = {
   off: {
@@ -2341,7 +2341,44 @@ class SmartEVSEFlowCard extends HTMLElement {
   }
 }
 
-if (!customElements.get("smartevse-flow-card")) {
+const existingSmartEVSEFlowCard = customElements.get("smartevse-flow-card");
+if (existingSmartEVSEFlowCard) {
+  for (const name of Object.getOwnPropertyNames(SmartEVSEFlowCard.prototype)) {
+    if (name === "constructor") {
+      continue;
+    }
+    Object.defineProperty(
+      existingSmartEVSEFlowCard.prototype,
+      name,
+      Object.getOwnPropertyDescriptor(SmartEVSEFlowCard.prototype, name),
+    );
+  }
+  for (const name of Object.getOwnPropertyNames(SmartEVSEFlowCard)) {
+    if (["length", "name", "prototype"].includes(name)) {
+      continue;
+    }
+    Object.defineProperty(
+      existingSmartEVSEFlowCard,
+      name,
+      Object.getOwnPropertyDescriptor(SmartEVSEFlowCard, name),
+    );
+  }
+  queueMicrotask(() => {
+    const findCards = (root) => {
+      const cards = [...root.querySelectorAll("smartevse-flow-card")];
+      for (const element of root.querySelectorAll("*")) {
+        if (element.shadowRoot) {
+          cards.push(...findCards(element.shadowRoot));
+        }
+      }
+      return cards;
+    };
+    for (const card of findCards(document)) {
+      card._lastRenderKey = "";
+      card._render?.();
+    }
+  });
+} else {
   customElements.define("smartevse-flow-card", SmartEVSEFlowCard);
 }
 
