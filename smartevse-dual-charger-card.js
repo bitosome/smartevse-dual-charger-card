@@ -1,4 +1,4 @@
-const CARD_VERSION = "0.0.8";
+const CARD_VERSION = "0.0.9";
 
 const FALLBACK_WLED_NODE_VISUALS = {
   off: {
@@ -431,13 +431,14 @@ class SmartEVSEFlowCard extends HTMLElement {
     };
   }
 
-  _controlTile({ entityId, icon, label, value, tone = "default", action = "toggle" }) {
+  _controlTile({ entityId, icon, label, value, tone = "default", state = "off", action = "toggle" }) {
     if (!entityId) {
       return "";
     }
+    const normalizedState = String(state || "off").toLowerCase();
     return `
       <button
-        class="control-tile tone-${this._safe(tone)}"
+        class="control-tile tone-${this._safe(tone)} state-${this._safe(normalizedState)}"
         data-action="${this._safe(action)}"
         data-entity="${this._safe(entityId)}"
         type="button"
@@ -936,6 +937,7 @@ class SmartEVSEFlowCard extends HTMLElement {
           ? "active"
           : "idle";
     const scheduleValue = scheduleSwitchOn ? (scheduleState === "on" ? "On now" : "Armed") : "Off";
+    const scheduleControlState = scheduleSwitchOn ? (scheduleState === "on" ? "on" : "armed") : "off";
     const scheduleDetail = scheduleSwitchOn
       ? scheduleState === "on"
         ? `Ends ${this._formatDateTime(scheduleNextEvent)}`
@@ -943,11 +945,13 @@ class SmartEVSEFlowCard extends HTMLElement {
       : "Tap to enable";
 
     const forceNowValue = forceChargeOn ? (anyConnected ? "Active" : "Waiting EV") : "Off";
+    const forceNowState = forceChargeOn ? (anyConnected ? "on" : "waiting") : "off";
     const forceNowDetail = forceChargeOn ? (anyConnected ? "Charging requested now" : "Waiting for plug-in") : "Tap to start";
 
     const priceAccepted =
       forcePriceOn && price !== null && acceptablePrice !== null ? price <= acceptablePrice : false;
     const forcePriceValue = forcePriceOn ? (priceAccepted ? "Accepted" : anyConnected ? "Waiting" : "Waiting EV") : "Off";
+    const forcePriceState = forcePriceOn ? (priceAccepted ? "on" : "waiting") : "off";
     const forcePriceDetail = forcePriceOn
       ? priceAccepted
         ? `Current ${priceValue}`
@@ -957,6 +961,7 @@ class SmartEVSEFlowCard extends HTMLElement {
       : "Tap to arm";
 
     const forceTimerValue = forceTimerOn ? (anyConnected ? "Active" : "Waiting EV") : "Off";
+    const forceTimerState = forceTimerOn ? (anyConnected ? "on" : "waiting") : "off";
     const forceTimerDetail = forceTimerOn
       ? anyConnected
         ? `Remaining ${timerLabel}`
@@ -1117,6 +1122,7 @@ class SmartEVSEFlowCard extends HTMLElement {
           color: inherit;
           cursor: pointer;
           font: inherit;
+          position: relative;
           text-align: left;
           transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
         }
@@ -1194,11 +1200,14 @@ class SmartEVSEFlowCard extends HTMLElement {
           height: 28px;
           border-radius: var(--chip-border-radius);
           background: var(--chip-background-color);
+          color: var(--secondary-text-color);
+          transition: color 0.12s ease, background 0.12s ease;
         }
 
         .control-icon ha-icon,
         .setting-icon ha-icon {
           --mdc-icon-size: var(--sdc-font-icon);
+          color: inherit;
           display: inline-grid;
           place-items: center;
           width: var(--sdc-font-icon);
@@ -1255,6 +1264,32 @@ class SmartEVSEFlowCard extends HTMLElement {
           font-size: var(--sdc-font-value);
           line-height: 1.2;
           margin-bottom: 0;
+          transition: color 0.12s ease;
+        }
+
+        .control-tile.state-off {
+          color: var(--secondary-text-color);
+        }
+
+        .control-tile.state-off .control-value {
+          color: var(--secondary-text-color);
+        }
+
+        .control-tile.state-on .control-icon,
+        .control-tile.state-on .control-value {
+          color: var(--sdc-led-charging);
+        }
+
+        .control-tile.state-armed .control-icon,
+        .control-tile.state-armed .control-value,
+        .control-tile.state-waiting .control-icon,
+        .control-tile.state-waiting .control-value {
+          color: var(--sdc-led-idle);
+        }
+
+        .control-tile.state-warn .control-icon,
+        .control-tile.state-warn .control-value {
+          color: var(--sdc-led-error);
         }
 
         .setting-detail {
@@ -1460,19 +1495,25 @@ class SmartEVSEFlowCard extends HTMLElement {
         .control-tile.tone-ok {
           --pulse-weak: rgba(var(--sdc-led-charging-rgb), 0.16);
           --pulse-strong: rgba(var(--sdc-led-charging-rgb), 0.30);
-          box-shadow: var(--tile-shadow-active);
+          box-shadow:
+            0 18px 40px rgba(var(--sdc-led-charging-rgb), 0.30),
+            0 6px 18px rgba(var(--sdc-led-charging-rgb), 0.16);
         }
 
         .control-tile.tone-active {
           --pulse-weak: rgba(var(--sdc-led-idle-rgb), 0.16);
           --pulse-strong: rgba(var(--sdc-led-idle-rgb), 0.30);
-          box-shadow: var(--tile-shadow-active);
+          box-shadow:
+            0 18px 40px rgba(var(--sdc-led-idle-rgb), 0.30),
+            0 6px 18px rgba(var(--sdc-led-idle-rgb), 0.16);
         }
 
         .control-tile.tone-warn {
           --pulse-weak: rgba(var(--sdc-led-error-rgb), 0.16);
           --pulse-strong: rgba(var(--sdc-led-error-rgb), 0.30);
-          box-shadow: var(--tile-shadow-active);
+          box-shadow:
+            0 18px 40px rgba(var(--sdc-led-error-rgb), 0.30),
+            0 6px 18px rgba(var(--sdc-led-error-rgb), 0.16);
         }
 
         .flow-stage {
@@ -2118,6 +2159,7 @@ class SmartEVSEFlowCard extends HTMLElement {
                   label: "Schedule",
                   value: scheduleValue,
                   tone: scheduleSwitchOn ? (scheduleState === "on" ? "ok" : "active") : "default",
+                  state: scheduleControlState,
                 })}
                 ${this._controlTile({
                   entityId: this._config.force_charge_entity,
@@ -2125,13 +2167,15 @@ class SmartEVSEFlowCard extends HTMLElement {
                   label: "Force Charge",
                   value: forceNowValue,
                   tone: forceChargeOn ? "ok" : "default",
+                  state: forceNowState,
                 })}
                 ${this._controlTile({
                   entityId: this._config.force_price_entity,
                   icon: "mdi:currency-eur",
                   label: "Force By Price",
                   value: forcePriceValue,
-                  tone: forcePriceOn ? (priceAccepted ? "ok" : "warn") : "default",
+                  tone: forcePriceOn ? (priceAccepted ? "ok" : "active") : "default",
+                  state: forcePriceState,
                 })}
                 ${this._controlTile({
                   entityId: this._config.force_timer_entity,
@@ -2139,6 +2183,7 @@ class SmartEVSEFlowCard extends HTMLElement {
                   label: "Force Timer",
                   value: forceTimerValue,
                   tone: forceTimerOn ? "ok" : "default",
+                  state: forceTimerState,
                 })}
               </div>
             </section>
