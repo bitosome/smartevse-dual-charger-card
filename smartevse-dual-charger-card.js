@@ -860,42 +860,52 @@ class SmartEVSEFlowCard extends HTMLElement {
             <path class="pipe-active tone-${this._safe(ev.tone)} vehicle-pipe-active" d="${vehicleConnectorPath}"></path>
           </svg>
         </div>
-        <section class="vehicle-node tone-${this._safe(ev.tone)}">
-          <div class="vehicle-title">${this._safe(vehicleTitle)}</div>
-          ${vehicleBatteryMarkup}
-          ${ev.sessionComplete ? `<div class="vehicle-complete-badge">Done</div>` : ""}
-        </section>
+        <div class="vehicle-node-wrap tone-${this._safe(ev.tone)}">
+          <div class="glow-under vehicle-glow" aria-hidden="true">
+            <div class="glow-overlay"></div>
+          </div>
+          <section class="vehicle-node tone-${this._safe(ev.tone)}">
+            <div class="vehicle-title">${this._safe(vehicleTitle)}</div>
+            ${vehicleBatteryMarkup}
+            ${ev.sessionComplete ? `<div class="vehicle-complete-badge">Done</div>` : ""}
+          </section>
+        </div>
       `
       : "";
     const visuals = this._wledVisuals(this._entity(this._config.controller_entity)?.attributes || {});
     const visual = visuals[ev.visual] || visuals.off || FALLBACK_WLED_NODE_VISUALS.off;
     return `
       <div class="smartevse-stack">
-        <section
-          class="ev-node ${this._safe(ev.key)} tone-${this._safe(ev.tone)} visual-${this._safe(ev.visual)}"
+        <div
+          class="ev-node-wrap ${this._safe(ev.key)} tone-${this._safe(ev.tone)} visual-${this._safe(ev.visual)}"
           style="--node-rgb: ${visual.color.join(", ")}; --node-sx: ${visual.sx}; --node-ix: ${visual.ix}; --node-fx: ${visual.fx};"
         >
-          <div class="ev-node-head">
-            <div class="ev-node-badges">
-              <div class="ev-label-text">${this._safe(smartevseTitle)}</div>
+          <div class="glow-under ev-glow" aria-hidden="true">
+            <div class="glow-overlay"></div>
+          </div>
+          <section class="ev-node ${this._safe(ev.key)} tone-${this._safe(ev.tone)} visual-${this._safe(ev.visual)}">
+            <div class="ev-node-head">
+              <div class="ev-node-badges">
+                <div class="ev-label-text">${this._safe(smartevseTitle)}</div>
+              </div>
             </div>
-          </div>
-          <div class="ev-meta-pills">${metaPills}</div>
-          <div class="ev-measure-pills">
-            <span class="ev-pill measure-pill">
-              <span class="ev-pill-label">Offer</span>
-              <span class="ev-pill-value">${this._safe(this._formatCurrent(ev.chargeCurrent))}</span>
-            </span>
-            <span class="ev-pill measure-pill">
-              <span class="ev-pill-label">Max</span>
-              <span class="ev-pill-value">${this._safe(this._formatCurrent(ev.maxCurrent))}</span>
-            </span>
-            <span class="ev-pill measure-pill">
-              <span class="ev-pill-label">Override</span>
-              <span class="ev-pill-value">${this._safe(this._formatCurrent(ev.overrideCurrent))}</span>
-            </span>
-          </div>
-        </section>
+            <div class="ev-meta-pills">${metaPills}</div>
+            <div class="ev-measure-pills">
+              <span class="ev-pill measure-pill">
+                <span class="ev-pill-label">Offer</span>
+                <span class="ev-pill-value">${this._safe(this._formatCurrent(ev.chargeCurrent))}</span>
+              </span>
+              <span class="ev-pill measure-pill">
+                <span class="ev-pill-label">Max</span>
+                <span class="ev-pill-value">${this._safe(this._formatCurrent(ev.maxCurrent))}</span>
+              </span>
+              <span class="ev-pill measure-pill">
+                <span class="ev-pill-label">Override</span>
+                <span class="ev-pill-value">${this._safe(this._formatCurrent(ev.overrideCurrent))}</span>
+              </span>
+            </div>
+          </section>
+        </div>
         ${vehicleNode}
       </div>
     `;
@@ -1064,34 +1074,16 @@ class SmartEVSEFlowCard extends HTMLElement {
           --medium-gap: 6px;
           --large-gap: 12px;
           --sdc-settings-panel-width: min(390px, calc(100vw - 32px));
-          --panel-shadow-color: rgba(0,0,0,0.30);
+          --panel-shadow-color: rgba(0,0,0,0.50);
           --pulse-weak: rgba(0,0,0,0.10);
           --pulse-strong: rgba(0,0,0,0.18);
-          --tile-shadow-default:
-            0 10px 24px rgba(0,0,0,0.22),
-            0 2px 6px rgba(0,0,0,0.10),
-            inset 0 1px 0 rgba(255,255,255,0.025);
-          --tile-shadow-hover:
-            0 14px 30px rgba(0,0,0,0.28),
-            0 4px 10px rgba(0,0,0,0.12),
-            inset 0 1px 0 rgba(255,255,255,0.035);
-          --tile-shadow-active:
-            0 18px 40px var(--pulse-strong),
-            0 10px 24px rgba(0,0,0,0.22),
-            0 6px 18px var(--pulse-weak),
-            inset 0 1px 0 rgba(255,255,255,0.035);
+          --tile-shadow-default: 0 6px 18px rgba(0,0,0,0.10);
+          --tile-shadow-hover: 0 12px 24px rgba(0,0,0,0.16);
+          --tile-shadow-active: 0 18px 40px var(--pulse-strong, rgba(0,0,0,0.18)), 0 6px 18px var(--pulse-weak, rgba(0,0,0,0.10));
           --sdc-card-base: var(--ha-card-background, var(--card-background-color));
-          --sdc-surface-panel: color-mix(
-            in srgb,
-            var(--sdc-card-base) 84%,
-            #000 16%
-          );
-          --sdc-surface-tile: color-mix(
-            in srgb,
-            var(--sdc-card-base) 92%,
-            var(--primary-text-color) 8%
-          );
-          --sdc-surface-chip: color-mix(in srgb, var(--sdc-surface-tile) 82%, #000 18%);
+          --sdc-surface-panel: var(--sdc-card-base);
+          --sdc-surface-tile: var(--sdc-card-base);
+          --sdc-surface-chip: rgba(0,0,0,0.06);
           --chip-background-color: var(--sdc-surface-chip);
           --chip-border-radius: var(--ha-badge-border-radius, 999px);
           --sdc-font-tiny: 7px;
@@ -1179,17 +1171,22 @@ class SmartEVSEFlowCard extends HTMLElement {
           overflow: visible;
         }
 
-        .control-tile-wrap {
+        .control-tile-wrap,
+        .status-hero-wrap,
+        .ev-node-wrap,
+        .vehicle-node-wrap {
           position: relative;
           width: 100%;
           display: block;
           isolation: isolate;
           border-radius: var(--tile-border-radius);
           overflow: visible;
-          z-index: 1;
         }
 
-        .control-tile-wrap .glow-under {
+        .control-tile-wrap .glow-under,
+        .status-hero-wrap .glow-under,
+        .ev-node-wrap .glow-under,
+        .vehicle-node-wrap .glow-under {
           position: absolute;
           inset: 0;
           pointer-events: none;
@@ -1199,7 +1196,10 @@ class SmartEVSEFlowCard extends HTMLElement {
           opacity: 0;
         }
 
-        .control-tile-wrap .glow-overlay {
+        .control-tile-wrap .glow-overlay,
+        .status-hero-wrap .glow-overlay,
+        .ev-node-wrap .glow-overlay,
+        .vehicle-node-wrap .glow-overlay {
           position: absolute;
           inset: -10px -14px -18px -14px;
           border-radius: inherit;
@@ -1232,7 +1232,9 @@ class SmartEVSEFlowCard extends HTMLElement {
           z-index: 1;
           text-align: left;
           overflow: hidden;
+          clip-path: inset(0 round var(--tile-border-radius));
           background-clip: padding-box;
+          --control-button-border-radius: var(--tile-border-radius);
           transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
         }
 
@@ -1291,12 +1293,6 @@ class SmartEVSEFlowCard extends HTMLElement {
           min-height: 62px;
           border-radius: var(--tile-border-radius);
           background: var(--sdc-surface-control);
-        }
-
-        .control-tile:hover,
-        .setting-tile:hover {
-          transform: translateY(-1px);
-          box-shadow: var(--tile-shadow-hover);
         }
 
         .setting-tile-editing {
@@ -1603,6 +1599,7 @@ class SmartEVSEFlowCard extends HTMLElement {
           position: relative;
           text-align: left;
           overflow: hidden;
+          clip-path: inset(0 round var(--tile-border-radius));
           background-clip: padding-box;
           transition: box-shadow 0.12s ease, color 0.12s ease, filter 0.12s ease;
         }
@@ -1636,7 +1633,6 @@ class SmartEVSEFlowCard extends HTMLElement {
           --pulse-strong: rgba(var(--sdc-led-charging-rgb), 0.30);
           opacity: 1;
           box-shadow: 0 18px 40px var(--pulse-strong), 0 6px 18px var(--pulse-weak);
-          animation: glowPulse 2.4s ease-in-out infinite;
         }
 
         .control-tile.tone-active {
@@ -1650,7 +1646,6 @@ class SmartEVSEFlowCard extends HTMLElement {
           --pulse-strong: rgba(var(--sdc-led-idle-rgb), 0.30);
           opacity: 1;
           box-shadow: 0 18px 40px var(--pulse-strong), 0 6px 18px var(--pulse-weak);
-          animation: glowPulse 2.4s ease-in-out infinite;
         }
 
         .control-tile.tone-warn {
@@ -1664,7 +1659,6 @@ class SmartEVSEFlowCard extends HTMLElement {
           --pulse-strong: rgba(var(--sdc-led-error-rgb), 0.30);
           opacity: 1;
           box-shadow: 0 18px 40px var(--pulse-strong), 0 6px 18px var(--pulse-weak);
-          animation: glowPulse 1.6s ease-in-out infinite;
         }
 
         .flow-stage {
@@ -1747,6 +1741,10 @@ class SmartEVSEFlowCard extends HTMLElement {
           overflow: visible;
         }
 
+        .status-hero-wrap {
+          margin-bottom: 6px;
+        }
+
         .status-hero {
           appearance: none;
           position: relative;
@@ -1754,7 +1752,6 @@ class SmartEVSEFlowCard extends HTMLElement {
           width: 100%;
           height: 92px;
           padding: 0;
-          margin-bottom: 6px;
           border-radius: var(--tile-border-radius);
           border: 0;
           background: var(--sdc-surface-control);
@@ -1764,13 +1761,10 @@ class SmartEVSEFlowCard extends HTMLElement {
           font: inherit;
           text-align: left;
           overflow: hidden;
+          clip-path: inset(0 round var(--tile-border-radius));
           background-clip: padding-box;
+          --control-button-border-radius: var(--tile-border-radius);
           transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
-        }
-
-        .status-hero:hover {
-          transform: translateY(-1px);
-          box-shadow: var(--tile-shadow-hover);
         }
 
         .status-hero:focus-visible {
@@ -1784,16 +1778,37 @@ class SmartEVSEFlowCard extends HTMLElement {
           box-shadow: var(--tile-shadow-active);
         }
 
+        .status-hero-wrap.tone-charging .glow-under {
+          --pulse-weak: rgba(var(--sdc-led-charging-rgb), 0.16);
+          --pulse-strong: rgba(var(--sdc-led-charging-rgb), 0.30);
+          opacity: 1;
+          box-shadow: 0 18px 40px var(--pulse-strong), 0 6px 18px var(--pulse-weak);
+        }
+
         .status-hero.tone-active {
           --pulse-weak: rgba(var(--sdc-led-idle-rgb), 0.16);
           --pulse-strong: rgba(var(--sdc-led-idle-rgb), 0.30);
           box-shadow: var(--tile-shadow-active);
         }
 
+        .status-hero-wrap.tone-active .glow-under {
+          --pulse-weak: rgba(var(--sdc-led-idle-rgb), 0.16);
+          --pulse-strong: rgba(var(--sdc-led-idle-rgb), 0.30);
+          opacity: 1;
+          box-shadow: 0 18px 40px var(--pulse-strong), 0 6px 18px var(--pulse-weak);
+        }
+
         .status-hero.tone-error {
           --pulse-weak: rgba(var(--sdc-led-error-rgb), 0.16);
           --pulse-strong: rgba(var(--sdc-led-error-rgb), 0.30);
           box-shadow: var(--tile-shadow-active);
+        }
+
+        .status-hero-wrap.tone-error .glow-under {
+          --pulse-weak: rgba(var(--sdc-led-error-rgb), 0.16);
+          --pulse-strong: rgba(var(--sdc-led-error-rgb), 0.30);
+          opacity: 1;
+          box-shadow: 0 18px 40px var(--pulse-strong), 0 6px 18px var(--pulse-weak);
         }
 
         .status-copy {
@@ -1969,7 +1984,9 @@ class SmartEVSEFlowCard extends HTMLElement {
           box-shadow: var(--tile-shadow-default);
           position: relative;
           overflow: hidden;
+          clip-path: inset(0 round var(--tile-border-radius));
           background-clip: padding-box;
+          --control-button-border-radius: var(--tile-border-radius);
           transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
         }
 
@@ -2074,7 +2091,9 @@ class SmartEVSEFlowCard extends HTMLElement {
           box-shadow: var(--tile-shadow-default);
           text-align: center;
           overflow: hidden;
+          clip-path: inset(0 round var(--tile-border-radius));
           background-clip: padding-box;
+          --control-button-border-radius: var(--tile-border-radius);
           transition: box-shadow 0.12s ease, filter 0.12s ease;
         }
 
@@ -2206,6 +2225,13 @@ class SmartEVSEFlowCard extends HTMLElement {
           box-shadow: var(--tile-shadow-active);
         }
 
+        .vehicle-node-wrap.tone-complete .glow-under {
+          --pulse-weak: rgba(var(--sdc-led-idle-rgb), 0.12);
+          --pulse-strong: rgba(var(--sdc-led-idle-rgb), 0.22);
+          opacity: 1;
+          box-shadow: 0 18px 40px var(--pulse-strong), 0 6px 18px var(--pulse-weak);
+        }
+
         .ev-node.tone-charging {
           color: var(--primary-text-color);
         }
@@ -2251,25 +2277,46 @@ class SmartEVSEFlowCard extends HTMLElement {
           --pulse-weak: rgba(var(--node-rgb, var(--sdc-led-idle-rgb)), 0.16);
           --pulse-strong: rgba(var(--node-rgb, var(--sdc-led-idle-rgb)), 0.30);
           box-shadow: var(--tile-shadow-active);
-          animation: glowPulse 2.4s ease-in-out infinite;
         }
 
         .ev-node.visual-charging {
           --pulse-weak: rgba(var(--node-rgb, var(--sdc-led-charging-rgb)), 0.16);
           --pulse-strong: rgba(var(--node-rgb, var(--sdc-led-charging-rgb)), 0.30);
           box-shadow: var(--tile-shadow-active);
-          animation: glowPulse 1.8s ease-in-out infinite;
         }
 
         .ev-node.visual-error {
           --pulse-weak: rgba(var(--node-rgb, var(--sdc-led-error-rgb)), 0.16);
           --pulse-strong: rgba(var(--node-rgb, var(--sdc-led-error-rgb)), 0.30);
           box-shadow: var(--tile-shadow-active);
-          animation: glowPulse 1.2s ease-in-out infinite;
         }
 
         .ev-node.visual-off {
           box-shadow: var(--tile-shadow-default);
+        }
+
+        .ev-node-wrap.visual-idle .glow-under {
+          --pulse-weak: rgba(var(--node-rgb, var(--sdc-led-idle-rgb)), 0.16);
+          --pulse-strong: rgba(var(--node-rgb, var(--sdc-led-idle-rgb)), 0.30);
+          opacity: 1;
+          box-shadow: 0 18px 40px var(--pulse-strong), 0 6px 18px var(--pulse-weak);
+          animation: glowPulse 2.4s ease-in-out infinite;
+        }
+
+        .ev-node-wrap.visual-charging .glow-under {
+          --pulse-weak: rgba(var(--node-rgb, var(--sdc-led-charging-rgb)), 0.16);
+          --pulse-strong: rgba(var(--node-rgb, var(--sdc-led-charging-rgb)), 0.30);
+          opacity: 1;
+          box-shadow: 0 18px 40px var(--pulse-strong), 0 6px 18px var(--pulse-weak);
+          animation: glowPulse 1.8s ease-in-out infinite;
+        }
+
+        .ev-node-wrap.visual-error .glow-under {
+          --pulse-weak: rgba(var(--node-rgb, var(--sdc-led-error-rgb)), 0.16);
+          --pulse-strong: rgba(var(--node-rgb, var(--sdc-led-error-rgb)), 0.30);
+          opacity: 1;
+          box-shadow: 0 18px 40px var(--pulse-strong), 0 6px 18px var(--pulse-weak);
+          animation: glowPulse 1.2s ease-in-out infinite;
         }
 
         @keyframes glowPulse {
@@ -2297,20 +2344,25 @@ class SmartEVSEFlowCard extends HTMLElement {
         <div class="wrap">
           <div class="flow-stage">
             <section class="house-node">
-              <button
-                class="status-hero tone-${this._safe(statusTone)}"
-                data-action="open-settings"
-                type="button"
-                aria-label="Open policy and limits"
-              >
-                <div class="status-copy">
-                  <div class="status-title">${this._safe(activeTitle)}</div>
-                  <div class="status-details">${heroDetailsMarkup}</div>
+              <div class="status-hero-wrap tone-${this._safe(statusTone)}">
+                <div class="glow-under status-glow" aria-hidden="true">
+                  <div class="glow-overlay"></div>
                 </div>
-                <div class="status-action">
-                  <ha-icon icon="mdi:tune-variant"></ha-icon>
-                </div>
-              </button>
+                <button
+                  class="status-hero tone-${this._safe(statusTone)}"
+                  data-action="open-settings"
+                  type="button"
+                  aria-label="Open policy and limits"
+                >
+                  <div class="status-copy">
+                    <div class="status-title">${this._safe(activeTitle)}</div>
+                    <div class="status-details">${heroDetailsMarkup}</div>
+                  </div>
+                  <div class="status-action">
+                    <ha-icon icon="mdi:tune-variant"></ha-icon>
+                  </div>
+                </button>
+              </div>
               <div class="section-title">
                 <span>Charging modes</span>
                 <small>Tap to toggle</small>
