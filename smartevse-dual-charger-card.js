@@ -1184,7 +1184,6 @@ class SmartEVSEFlowCard extends HTMLElement {
           position: relative;
           text-align: left;
           overflow: hidden;
-          clip-path: inset(0 round var(--tile-border-radius));
           background-clip: padding-box;
           transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
         }
@@ -1540,7 +1539,6 @@ class SmartEVSEFlowCard extends HTMLElement {
           padding: 10px 12px;
           text-align: left;
           overflow: hidden;
-          clip-path: inset(0 round var(--tile-border-radius));
           background-clip: padding-box;
           transition: box-shadow 0.12s ease, color 0.12s ease, filter 0.12s ease;
         }
@@ -1673,7 +1671,6 @@ class SmartEVSEFlowCard extends HTMLElement {
           font: inherit;
           text-align: left;
           overflow: hidden;
-          clip-path: inset(0 round var(--tile-border-radius));
           background-clip: padding-box;
           transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
         }
@@ -1874,7 +1871,6 @@ class SmartEVSEFlowCard extends HTMLElement {
           box-shadow: var(--tile-shadow-default);
           position: relative;
           overflow: hidden;
-          clip-path: inset(0 round var(--tile-border-radius));
           background-clip: padding-box;
           transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
         }
@@ -1980,7 +1976,6 @@ class SmartEVSEFlowCard extends HTMLElement {
           box-shadow: var(--tile-shadow-default);
           text-align: center;
           overflow: hidden;
-          clip-path: inset(0 round var(--tile-border-radius));
           background-clip: padding-box;
           transition: box-shadow 0.12s ease, filter 0.12s ease;
         }
@@ -2180,18 +2175,9 @@ class SmartEVSEFlowCard extends HTMLElement {
         }
 
         @keyframes glowPulse {
-          0%, 100% {
-            box-shadow:
-              0 14px 30px var(--pulse-weak),
-              0 10px 24px rgba(0,0,0,0.22),
-              0 2px 6px rgba(0,0,0,0.10);
-          }
-          50% {
-            box-shadow:
-              0 28px 56px var(--pulse-strong),
-              0 10px 24px rgba(0,0,0,0.22),
-              0 6px 18px var(--pulse-weak);
-          }
+          0% { box-shadow: 0 10px 20px var(--pulse-weak); }
+          50% { box-shadow: 0 28px 56px var(--pulse-strong); }
+          100% { box-shadow: 0 10px 20px var(--pulse-weak); }
         }
 
         @media (max-width: 840px) {
