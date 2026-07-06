@@ -1173,6 +1173,7 @@ class SmartEVSEFlowCard extends HTMLElement {
 
         .wrap {
           padding: 0;
+          overflow: visible;
         }
 
         .controls {
@@ -1180,6 +1181,7 @@ class SmartEVSEFlowCard extends HTMLElement {
           grid-template-columns: repeat(2, minmax(0, 1fr));
           gap: var(--large-gap);
           margin: 0;
+          overflow: visible;
         }
 
         .control-tile-wrap {
@@ -1194,26 +1196,22 @@ class SmartEVSEFlowCard extends HTMLElement {
 
         .control-tile-wrap .glow-under {
           position: absolute;
-          inset: 3px;
+          left: 10px;
+          right: 10px;
+          bottom: -16px;
+          height: 34px;
           z-index: 0;
           display: block;
           pointer-events: none;
-          border-radius: var(--tile-border-radius);
+          border-radius: var(--sdc-radius-round);
           opacity: 0;
+          background: radial-gradient(ellipse at 50% 50%, var(--pulse-strong) 0%, var(--pulse-weak) 42%, transparent 76%);
+          filter: blur(12px);
+          transform: translateZ(0);
         }
 
         .control-tile-wrap .glow-overlay {
-          position: absolute;
-          inset: -8px -10px -12px;
-          border-radius: inherit;
-          pointer-events: none;
-          mix-blend-mode: screen;
-          opacity: 0.72;
-          background: radial-gradient(ellipse at 50% 78%, var(--pulse-strong) 0%, var(--pulse-weak) 36%, transparent 74%);
-          -webkit-mask-image: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.28) 12px, rgba(0,0,0,0.9) 32px, rgba(0,0,0,1) 100%);
-          mask-image: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.28) 12px, rgba(0,0,0,0.9) 32px, rgba(0,0,0,1) 100%);
-          -webkit-mask-repeat: no-repeat;
-          mask-repeat: no-repeat;
+          display: none;
         }
 
         .control-tile,
@@ -1601,26 +1599,22 @@ class SmartEVSEFlowCard extends HTMLElement {
 
         .modal-option-wrap .glow-under {
           position: absolute;
-          inset: 3px;
+          left: 10px;
+          right: 10px;
+          bottom: -14px;
+          height: 30px;
           z-index: 0;
           display: block;
           pointer-events: none;
-          border-radius: var(--tile-border-radius);
+          border-radius: var(--sdc-radius-round);
           opacity: 0;
+          background: radial-gradient(ellipse at 50% 50%, var(--pulse-strong) 0%, var(--pulse-weak) 42%, transparent 76%);
+          filter: blur(10px);
+          transform: translateZ(0);
         }
 
         .modal-option-wrap .glow-overlay {
-          position: absolute;
-          inset: -8px -10px -12px;
-          border-radius: inherit;
-          pointer-events: none;
-          mix-blend-mode: screen;
-          opacity: 0.72;
-          background: radial-gradient(ellipse at 50% 78%, var(--pulse-strong) 0%, var(--pulse-weak) 36%, transparent 74%);
-          -webkit-mask-image: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.28) 12px, rgba(0,0,0,0.9) 32px, rgba(0,0,0,1) 100%);
-          mask-image: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.28) 12px, rgba(0,0,0,0.9) 32px, rgba(0,0,0,1) 100%);
-          -webkit-mask-repeat: no-repeat;
-          mask-repeat: no-repeat;
+          display: none;
         }
 
         .modal-option {
@@ -1721,6 +1715,7 @@ class SmartEVSEFlowCard extends HTMLElement {
           border: 0;
           background: transparent;
           padding: 0;
+          overflow: visible;
         }
 
         .flow-svg {
@@ -1789,6 +1784,7 @@ class SmartEVSEFlowCard extends HTMLElement {
           background: transparent;
           box-shadow: none;
           text-align: left;
+          overflow: visible;
         }
 
         .status-hero {
@@ -1897,6 +1893,7 @@ class SmartEVSEFlowCard extends HTMLElement {
 
         .home-controls {
           margin-bottom: 0;
+          overflow: visible;
         }
 
         .setting-controls {
@@ -1925,6 +1922,7 @@ class SmartEVSEFlowCard extends HTMLElement {
           position: relative;
           z-index: 2;
           margin: 0 0 0;
+          pointer-events: none;
         }
 
         .flow-line-badges {
