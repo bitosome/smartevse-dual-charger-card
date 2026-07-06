@@ -1052,15 +1052,35 @@ class SmartEVSEFlowCard extends HTMLElement {
           --small-gap: 2px;
           --medium-gap: 6px;
           --large-gap: 12px;
-          --panel-shadow-color: rgba(0,0,0,0.22);
+          --panel-shadow-color: rgba(0,0,0,0.30);
           --pulse-weak: rgba(0,0,0,0.10);
           --pulse-strong: rgba(0,0,0,0.18);
-          --tile-shadow-default: 0 6px 18px rgba(0,0,0,0.10);
-          --tile-shadow-hover: 0 12px 24px rgba(0,0,0,0.16);
+          --tile-shadow-default:
+            0 10px 24px rgba(0,0,0,0.22),
+            0 2px 6px rgba(0,0,0,0.10),
+            inset 0 1px 0 rgba(255,255,255,0.025);
+          --tile-shadow-hover:
+            0 14px 30px rgba(0,0,0,0.28),
+            0 4px 10px rgba(0,0,0,0.12),
+            inset 0 1px 0 rgba(255,255,255,0.035);
           --tile-shadow-active:
-            0 18px 40px var(--pulse-strong, rgba(0,0,0,0.18)),
-            0 6px 18px var(--pulse-weak, rgba(0,0,0,0.10));
-          --chip-background-color: rgba(0,0,0,0.06);
+            0 18px 40px var(--pulse-strong),
+            0 10px 24px rgba(0,0,0,0.22),
+            0 6px 18px var(--pulse-weak),
+            inset 0 1px 0 rgba(255,255,255,0.035);
+          --sdc-card-base: var(--ha-card-background, var(--card-background-color));
+          --sdc-surface-panel: color-mix(
+            in srgb,
+            var(--sdc-card-base) 84%,
+            #000 16%
+          );
+          --sdc-surface-tile: color-mix(
+            in srgb,
+            var(--sdc-card-base) 92%,
+            var(--primary-text-color) 8%
+          );
+          --sdc-surface-chip: color-mix(in srgb, var(--sdc-surface-tile) 82%, #000 18%);
+          --chip-background-color: var(--sdc-surface-chip);
           --chip-border-radius: var(--ha-badge-border-radius, 999px);
           --sdc-font-tiny: 7px;
           --sdc-font-label: 8px;
@@ -1100,8 +1120,7 @@ class SmartEVSEFlowCard extends HTMLElement {
           --sdc-border-hover: rgba(148, 163, 184, 0.28);
           --sdc-surface-muted: rgba(15, 23, 42, 0.08);
           --sdc-surface-soft: rgba(15, 23, 42, 0.12);
-          --sdc-surface-panel: var(--ha-card-background, var(--card-background-color));
-          --sdc-surface-control: var(--ha-card-background, var(--card-background-color));
+          --sdc-surface-control: var(--sdc-surface-tile);
           --sdc-surface-elevated: var(--sdc-surface-control);
           --sdc-surface-input: rgba(2, 6, 23, 0.52);
           --sdc-surface-badge: var(--chip-background-color);
