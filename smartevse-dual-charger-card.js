@@ -330,6 +330,23 @@ class SmartEVSEFlowCard extends HTMLElement {
     `;
   }
 
+  _homeAssistantDateTimeFormatOptions() {
+    const locale = this._hass?.locale;
+    const timeFormat = String(locale?.time_format || "").toLowerCase();
+    const options = {
+      weekday: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+    };
+    if (timeFormat === "12") {
+      options.hour12 = true;
+    }
+    if (timeFormat === "24") {
+      options.hour12 = false;
+    }
+    return { locale: locale?.language, options };
+  }
+
   _formatDateTime(value) {
     if (!value) {
       return "n/a";
@@ -338,11 +355,8 @@ class SmartEVSEFlowCard extends HTMLElement {
     if (Number.isNaN(date.getTime())) {
       return "n/a";
     }
-    return new Intl.DateTimeFormat(undefined, {
-      weekday: "short",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(date);
+    const { locale, options } = this._homeAssistantDateTimeFormatOptions();
+    return new Intl.DateTimeFormat(locale, options).format(date);
   }
 
   _homeConnectorPath(side) {
@@ -1038,31 +1052,15 @@ class SmartEVSEFlowCard extends HTMLElement {
           --small-gap: 2px;
           --medium-gap: 6px;
           --large-gap: 12px;
-          --panel-shadow-color: rgba(0,0,0,0.30);
+          --panel-shadow-color: rgba(0,0,0,0.22);
           --pulse-weak: rgba(0,0,0,0.10);
           --pulse-strong: rgba(0,0,0,0.18);
-          --tile-shadow-default:
-            0 10px 24px rgba(0,0,0,0.22),
-            0 2px 6px rgba(0,0,0,0.10);
-          --tile-shadow-hover:
-            0 14px 30px rgba(0,0,0,0.28),
-            0 4px 10px rgba(0,0,0,0.12);
+          --tile-shadow-default: 0 6px 18px rgba(0,0,0,0.10);
+          --tile-shadow-hover: 0 12px 24px rgba(0,0,0,0.16);
           --tile-shadow-active:
-            0 18px 40px var(--pulse-strong),
-            0 10px 24px rgba(0,0,0,0.22),
-            0 6px 18px var(--pulse-weak);
-          --sdc-surface-panel: color-mix(
-            in srgb,
-            var(--ha-card-background, var(--card-background-color)) 84%,
-            #000 16%
-          );
-          --sdc-surface-tile: color-mix(
-            in srgb,
-            var(--ha-card-background, var(--card-background-color)) 94%,
-            var(--primary-text-color) 6%
-          );
-          --sdc-surface-chip: color-mix(in srgb, var(--sdc-surface-tile) 84%, #000 16%);
-          --chip-background-color: var(--sdc-surface-chip);
+            0 18px 40px var(--pulse-strong, rgba(0,0,0,0.18)),
+            0 6px 18px var(--pulse-weak, rgba(0,0,0,0.10));
+          --chip-background-color: rgba(0,0,0,0.06);
           --chip-border-radius: var(--ha-badge-border-radius, 999px);
           --sdc-font-tiny: 7px;
           --sdc-font-label: 8px;
@@ -1102,8 +1100,9 @@ class SmartEVSEFlowCard extends HTMLElement {
           --sdc-border-hover: rgba(148, 163, 184, 0.28);
           --sdc-surface-muted: rgba(15, 23, 42, 0.08);
           --sdc-surface-soft: rgba(15, 23, 42, 0.12);
-          --sdc-surface-control: var(--sdc-surface-tile);
-          --sdc-surface-elevated: var(--sdc-surface-tile);
+          --sdc-surface-panel: var(--ha-card-background, var(--card-background-color));
+          --sdc-surface-control: var(--ha-card-background, var(--card-background-color));
+          --sdc-surface-elevated: var(--sdc-surface-control);
           --sdc-surface-input: rgba(2, 6, 23, 0.52);
           --sdc-surface-badge: var(--chip-background-color);
           --sdc-surface-glass: rgba(0,0,0,0.06);
@@ -1165,6 +1164,9 @@ class SmartEVSEFlowCard extends HTMLElement {
           font: inherit;
           position: relative;
           text-align: left;
+          overflow: hidden;
+          clip-path: inset(0 round var(--tile-border-radius));
+          background-clip: padding-box;
           transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
         }
 
@@ -1518,6 +1520,9 @@ class SmartEVSEFlowCard extends HTMLElement {
           min-height: 48px;
           padding: 10px 12px;
           text-align: left;
+          overflow: hidden;
+          clip-path: inset(0 round var(--tile-border-radius));
+          background-clip: padding-box;
           transition: box-shadow 0.12s ease, color 0.12s ease, filter 0.12s ease;
         }
 
@@ -1648,6 +1653,9 @@ class SmartEVSEFlowCard extends HTMLElement {
           cursor: pointer;
           font: inherit;
           text-align: left;
+          overflow: hidden;
+          clip-path: inset(0 round var(--tile-border-radius));
+          background-clip: padding-box;
           transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
         }
 
@@ -1846,7 +1854,9 @@ class SmartEVSEFlowCard extends HTMLElement {
           background: var(--sdc-surface-control);
           box-shadow: var(--tile-shadow-default);
           position: relative;
-          overflow: visible;
+          overflow: hidden;
+          clip-path: inset(0 round var(--tile-border-radius));
+          background-clip: padding-box;
           transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
         }
 
@@ -1950,6 +1960,9 @@ class SmartEVSEFlowCard extends HTMLElement {
           background: var(--sdc-surface-control);
           box-shadow: var(--tile-shadow-default);
           text-align: center;
+          overflow: hidden;
+          clip-path: inset(0 round var(--tile-border-radius));
+          background-clip: padding-box;
           transition: box-shadow 0.12s ease, filter 0.12s ease;
         }
 
@@ -2082,11 +2095,11 @@ class SmartEVSEFlowCard extends HTMLElement {
         }
 
         .ev-node.tone-charging {
-          color: var(--sdc-led-charging);
+          color: var(--primary-text-color);
         }
 
         .ev-node.tone-active {
-          color: var(--sdc-led-idle);
+          color: var(--primary-text-color);
         }
 
         .ev-node.tone-idle {
@@ -2094,15 +2107,15 @@ class SmartEVSEFlowCard extends HTMLElement {
         }
 
         .ev-node.tone-complete {
-          color: var(--sdc-led-idle);
+          color: var(--primary-text-color);
         }
 
         .ev-node.tone-unplugged {
-          color: var(--sdc-led-off);
+          color: var(--sdc-text-muted);
         }
 
         .ev-node.tone-error {
-          color: var(--sdc-led-error);
+          color: var(--primary-text-color);
         }
 
         .ev-node.tone-charging {
