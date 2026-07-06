@@ -171,12 +171,19 @@
             <option value="both_idle">Both Idle</option>
             <option value="unknown_ev">Unknown EV</option>
             <option value="communication_error">Communication Error</option>
+            <option value="hero_priority_stress">Hero Priority Stress</option>
           </select>
         </div>
         <div class="toolbar-group panel">
           <button class="control active" data-width="390">Mobile</button>
           <button class="control" data-width="680">Tablet</button>
           <button class="control" data-width="960">Wide</button>
+        </div>
+        <div class="toolbar-group panel">
+          <select id="time-format" class="control select" aria-label="Home Assistant time format">
+            <option value="24" selected>HA time: 24-hour</option>
+            <option value="12">HA time: 12-hour</option>
+          </select>
         </div>
         <div class="toolbar-group panel">
           <button class="control" id="reset">Reset Scenario</button>
@@ -192,6 +199,7 @@
             This page renders the real custom card with mock Home Assistant state.
             Toggle tiles call mock Home Assistant services. Setting tiles open inline
             editors in the card and apply changes immediately to the mock state.
+            Use the time-format selector to test Home Assistant locale formatting.
           </div>
 
           <h2 style="margin-top: 14px;">Interaction Log</h2>
@@ -518,6 +526,50 @@
           "sensor.smartevse_dual_charger_duty_cycle_remaining": entity("1800"),
           "sensor.smartevse_dual_charger_timer_remaining": entity("2592"),
         },
+        hero_priority_stress: {
+          [controllerEntity]: entity("schedule_force_price_timer", {
+            controller_error: "",
+            charge_reason: "schedule_window",
+            charge_allowed: true,
+            active_smartevse: "SmartEVSE 2",
+            active_smartevse_raw: "smartevse_2",
+            mains_peak: 14.2,
+            smartevse_1_name: "SmartEVSE 1",
+            smartevse_2_name: "SmartEVSE 2",
+            smartevse_1_connected_ev: "Volvo XC40",
+            smartevse_2_connected_ev: "Volvo EX30",
+            smartevse_1_battery: "83%",
+            smartevse_2_battery: "37%",
+            smartevse_1_state: "Ready to Charge",
+            smartevse_1_plug_state: "Connected",
+            smartevse_1_mode: "Off",
+            smartevse_1_charge_current: 0,
+            smartevse_1_max_current: 16,
+            smartevse_1_override_current: 0,
+            smartevse_1_error: "None",
+            smartevse_1_session_complete: false,
+            smartevse_2_state: "Charging",
+            smartevse_2_plug_state: "Connected",
+            smartevse_2_mode: "Smart",
+            smartevse_2_charge_current: 13.6,
+            smartevse_2_max_current: 16,
+            smartevse_2_override_current: 14,
+            smartevse_2_error: "None",
+            smartevse_2_session_complete: false,
+          }),
+          "sensor.real_electricity_price_current_price": entity("0.049"),
+          "schedule.charge_schedule": entity("on", { next_event: "2026-04-05T06:30:00+03:00" }),
+          "switch.smartevse_dual_charger_charge_with_schedule": entity("on"),
+          "switch.smartevse_dual_charger_force_charge": entity("on"),
+          "switch.smartevse_dual_charger_force_charge_by_price": entity("on"),
+          "switch.smartevse_dual_charger_force_charge_timer": entity("on"),
+          "number.smartevse_dual_charger_acceptable_price": entity("0.070"),
+          "select.smartevse_dual_charger_charge_policy": entity("SmartEVSE 2 first"),
+          "number.smartevse_dual_charger_duty_cycle": entity("45"),
+          "number.smartevse_dual_charger_force_charge_duration": entity("120"),
+          "sensor.smartevse_dual_charger_duty_cycle_remaining": entity("1185"),
+          "sensor.smartevse_dual_charger_timer_remaining": entity("4120"),
+        },
         both_idle: {
           [controllerEntity]: entity("blocked", {
             controller_error: "",
@@ -658,10 +710,12 @@
       const frame = document.getElementById("frame");
       const log = document.getElementById("log");
       const scenarioSelect = document.getElementById("scenario");
+      const timeFormatSelect = document.getElementById("time-format");
       const resetButton = document.getElementById("reset");
       const widthButtons = [...document.querySelectorAll("[data-width]")];
 
       let currentScenario = scenarioSelect.value;
+      let currentTimeFormat = timeFormatSelect.value;
       let states = hydrateControllerScenario(deepClone(scenarios[currentScenario]));
       let card;
 
@@ -741,6 +795,10 @@
       function makeHass() {
         return {
           states,
+          locale: {
+            language: currentTimeFormat === "24" ? "en-GB" : "en-US",
+            time_format: currentTimeFormat,
+          },
           callService(domain, service, data) {
             appendLog(`${domain}.${service} -> ${data.entity_id}`);
             if (domain === "homeassistant" && iconToggles.has(data.entity_id)) {
@@ -810,6 +868,13 @@
       }
 
       scenarioSelect.addEventListener("change", () => resetScenario(scenarioSelect.value));
+      timeFormatSelect.addEventListener("change", () => {
+        currentTimeFormat = timeFormatSelect.value;
+        if (card) {
+          card.hass = makeHass();
+        }
+        appendLog(`HA time format -> ${currentTimeFormat}-hour`);
+      });
       resetButton.addEventListener("click", () => resetScenario(currentScenario));
       widthButtons.forEach((button) => {
         button.addEventListener("click", () => setWidth(Number(button.dataset.width)));
