@@ -1038,13 +1038,31 @@ class SmartEVSEFlowCard extends HTMLElement {
           --small-gap: 2px;
           --medium-gap: 6px;
           --large-gap: 12px;
-          --panel-shadow-color: rgba(0,0,0,0.22);
+          --panel-shadow-color: rgba(0,0,0,0.30);
           --pulse-weak: rgba(0,0,0,0.10);
           --pulse-strong: rgba(0,0,0,0.18);
-          --tile-shadow-default: 0 6px 18px rgba(0,0,0,0.10);
-          --tile-shadow-hover: 0 12px 24px rgba(0,0,0,0.16);
-          --tile-shadow-active: 0 18px 40px var(--pulse-strong), 0 6px 18px var(--pulse-weak);
-          --chip-background-color: rgba(0,0,0,0.06);
+          --tile-shadow-default:
+            0 10px 24px rgba(0,0,0,0.22),
+            0 2px 6px rgba(0,0,0,0.10);
+          --tile-shadow-hover:
+            0 14px 30px rgba(0,0,0,0.28),
+            0 4px 10px rgba(0,0,0,0.12);
+          --tile-shadow-active:
+            0 18px 40px var(--pulse-strong),
+            0 10px 24px rgba(0,0,0,0.22),
+            0 6px 18px var(--pulse-weak);
+          --sdc-surface-panel: color-mix(
+            in srgb,
+            var(--ha-card-background, var(--card-background-color)) 84%,
+            #000 16%
+          );
+          --sdc-surface-tile: color-mix(
+            in srgb,
+            var(--ha-card-background, var(--card-background-color)) 94%,
+            var(--primary-text-color) 6%
+          );
+          --sdc-surface-chip: color-mix(in srgb, var(--sdc-surface-tile) 84%, #000 16%);
+          --chip-background-color: var(--sdc-surface-chip);
           --chip-border-radius: var(--ha-badge-border-radius, 999px);
           --sdc-font-tiny: 7px;
           --sdc-font-label: 8px;
@@ -1084,9 +1102,8 @@ class SmartEVSEFlowCard extends HTMLElement {
           --sdc-border-hover: rgba(148, 163, 184, 0.28);
           --sdc-surface-muted: rgba(15, 23, 42, 0.08);
           --sdc-surface-soft: rgba(15, 23, 42, 0.12);
-          --sdc-surface-panel: var(--ha-card-background, var(--card-background-color));
-          --sdc-surface-control: var(--ha-card-background, var(--card-background-color));
-          --sdc-surface-elevated: var(--ha-card-background, var(--card-background-color));
+          --sdc-surface-control: var(--sdc-surface-tile);
+          --sdc-surface-elevated: var(--sdc-surface-tile);
           --sdc-surface-input: rgba(2, 6, 23, 0.52);
           --sdc-surface-badge: var(--chip-background-color);
           --sdc-surface-glass: rgba(0,0,0,0.06);
@@ -1107,7 +1124,7 @@ class SmartEVSEFlowCard extends HTMLElement {
           position: relative;
           border-radius: var(--ha-card-border-radius, 16px);
           border: 0;
-          background: var(--ha-card-background, var(--card-background-color));
+          background: var(--sdc-surface-panel);
           box-shadow: 0 10px 30px var(--panel-shadow-color);
           padding: var(--tile-padding-large);
           color: var(--primary-text-color);
@@ -1141,7 +1158,7 @@ class SmartEVSEFlowCard extends HTMLElement {
           padding: var(--tile-padding);
           border-radius: var(--tile-border-radius);
           border: 0;
-          background: var(--ha-card-background, var(--card-background-color));
+          background: var(--sdc-surface-control);
           box-shadow: var(--tile-shadow-default);
           color: inherit;
           cursor: pointer;
@@ -1163,7 +1180,7 @@ class SmartEVSEFlowCard extends HTMLElement {
           align-items: center;
           padding: var(--tile-padding);
           border-radius: var(--tile-border-radius);
-          background: var(--ha-card-background, var(--card-background-color));
+          background: var(--sdc-surface-control);
           box-shadow: var(--tile-shadow-default);
         }
 
@@ -1201,7 +1218,7 @@ class SmartEVSEFlowCard extends HTMLElement {
         .setting-controls .setting-tile {
           min-height: 62px;
           border-radius: var(--tile-border-radius);
-          background: var(--ha-card-background, var(--card-background-color));
+          background: var(--sdc-surface-control);
         }
 
         .control-tile:hover,
@@ -1386,7 +1403,7 @@ class SmartEVSEFlowCard extends HTMLElement {
           padding: 18px;
           border-radius: var(--tile-border-radius);
           border: 0;
-          background: var(--ha-card-background, var(--card-background-color));
+          background: var(--sdc-surface-panel);
           box-shadow: 0 22px 52px rgba(0, 0, 0, 0.36);
           color: var(--primary-text-color);
         }
@@ -1490,7 +1507,7 @@ class SmartEVSEFlowCard extends HTMLElement {
           appearance: none;
           border: 0;
           border-radius: var(--tile-border-radius);
-          background: var(--ha-card-background, var(--card-background-color));
+          background: var(--sdc-surface-control);
           box-shadow: var(--tile-shadow-default);
           color: var(--primary-text-color);
           cursor: pointer;
@@ -1508,9 +1525,7 @@ class SmartEVSEFlowCard extends HTMLElement {
           --pulse-weak: rgba(var(--sdc-led-idle-rgb), 0.16);
           --pulse-strong: rgba(var(--sdc-led-idle-rgb), 0.30);
           color: var(--sdc-led-idle);
-          box-shadow:
-            0 18px 40px rgba(var(--sdc-led-idle-rgb), 0.30),
-            0 6px 18px rgba(var(--sdc-led-idle-rgb), 0.16);
+          box-shadow: var(--tile-shadow-active);
         }
 
         .modal-option-title {
@@ -1527,25 +1542,19 @@ class SmartEVSEFlowCard extends HTMLElement {
         .control-tile.tone-ok {
           --pulse-weak: rgba(var(--sdc-led-charging-rgb), 0.16);
           --pulse-strong: rgba(var(--sdc-led-charging-rgb), 0.30);
-          box-shadow:
-            0 18px 40px rgba(var(--sdc-led-charging-rgb), 0.30),
-            0 6px 18px rgba(var(--sdc-led-charging-rgb), 0.16);
+          box-shadow: var(--tile-shadow-active);
         }
 
         .control-tile.tone-active {
           --pulse-weak: rgba(var(--sdc-led-idle-rgb), 0.16);
           --pulse-strong: rgba(var(--sdc-led-idle-rgb), 0.30);
-          box-shadow:
-            0 18px 40px rgba(var(--sdc-led-idle-rgb), 0.30),
-            0 6px 18px rgba(var(--sdc-led-idle-rgb), 0.16);
+          box-shadow: var(--tile-shadow-active);
         }
 
         .control-tile.tone-warn {
           --pulse-weak: rgba(var(--sdc-led-error-rgb), 0.16);
           --pulse-strong: rgba(var(--sdc-led-error-rgb), 0.30);
-          box-shadow:
-            0 18px 40px rgba(var(--sdc-led-error-rgb), 0.30),
-            0 6px 18px rgba(var(--sdc-led-error-rgb), 0.16);
+          box-shadow: var(--tile-shadow-active);
         }
 
         .flow-stage {
@@ -1633,7 +1642,7 @@ class SmartEVSEFlowCard extends HTMLElement {
           margin-bottom: 8px;
           border-radius: var(--tile-border-radius);
           border: 0;
-          background: var(--ha-card-background, var(--card-background-color));
+          background: var(--sdc-surface-control);
           box-shadow: var(--tile-shadow-default);
           color: var(--primary-text-color);
           cursor: pointer;
@@ -1834,7 +1843,7 @@ class SmartEVSEFlowCard extends HTMLElement {
           border-radius: var(--tile-border-radius);
           padding: var(--tile-padding-large);
           border: 0;
-          background: var(--ha-card-background, var(--card-background-color));
+          background: var(--sdc-surface-control);
           box-shadow: var(--tile-shadow-default);
           position: relative;
           overflow: visible;
@@ -1938,7 +1947,7 @@ class SmartEVSEFlowCard extends HTMLElement {
           border-radius: var(--tile-border-radius);
           padding: var(--tile-padding-large);
           border: 0;
-          background: var(--ha-card-background, var(--card-background-color));
+          background: var(--sdc-surface-control);
           box-shadow: var(--tile-shadow-default);
           text-align: center;
           transition: box-shadow 0.12s ease, filter 0.12s ease;
@@ -2110,7 +2119,7 @@ class SmartEVSEFlowCard extends HTMLElement {
 
         .ev-node.tone-complete,
         .ev-node.tone-unplugged {
-          background: var(--ha-card-background, var(--card-background-color));
+          background: var(--sdc-surface-control);
         }
 
         .ev-node.visual-idle {
@@ -2140,10 +2149,16 @@ class SmartEVSEFlowCard extends HTMLElement {
 
         @keyframes glowPulse {
           0%, 100% {
-            box-shadow: 0 10px 20px var(--pulse-weak);
+            box-shadow:
+              0 14px 30px var(--pulse-weak),
+              0 10px 24px rgba(0,0,0,0.22),
+              0 2px 6px rgba(0,0,0,0.10);
           }
           50% {
-            box-shadow: 0 28px 56px var(--pulse-strong);
+            box-shadow:
+              0 28px 56px var(--pulse-strong),
+              0 10px 24px rgba(0,0,0,0.22),
+              0 6px 18px var(--pulse-weak);
           }
         }
 
