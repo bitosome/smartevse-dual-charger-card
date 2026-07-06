@@ -1082,7 +1082,10 @@ class SmartEVSEFlowCard extends HTMLElement {
           --tile-shadow-active: 0 18px 40px var(--pulse-strong, rgba(0,0,0,0.18)), 0 6px 18px var(--pulse-weak, rgba(0,0,0,0.10));
           --sdc-card-base: var(--ha-card-background, var(--card-background-color));
           --sdc-surface-panel: var(--sdc-card-base);
-          --sdc-surface-tile: var(--sdc-card-base);
+          --sdc-surface-tile: var(
+            --space-hub-tile-background,
+            color-mix(in srgb, var(--sdc-card-base) 94%, var(--primary-text-color) 6%)
+          );
           --sdc-surface-chip: rgba(0,0,0,0.06);
           --chip-background-color: var(--sdc-surface-chip);
           --chip-border-radius: var(--ha-badge-border-radius, 999px);
