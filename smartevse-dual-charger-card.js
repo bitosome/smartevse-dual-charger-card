@@ -717,21 +717,16 @@ class SmartEVSEFlowCard extends HTMLElement {
                   (entityId === this._config.charge_policy_entity &&
                     option.label === this._chargePolicyDisplay(draft));
                 return `
-                  <div class="modal-option-wrap ${selected ? "selected" : ""}">
-                    <div class="glow-under modal-option-glow" aria-hidden="true">
-                      <div class="glow-overlay"></div>
-                    </div>
-                    <button
-                      class="modal-option ${selected ? "selected" : ""}"
-                      data-action="choose-option"
-                      data-entity="${this._safe(entityId)}"
-                      data-value="${this._safe(option.value)}"
-                      type="button"
-                    >
-                      <span class="modal-option-title">${this._safe(option.label)}</span>
-                      ${selected ? `<ha-icon class="modal-option-check" icon="mdi:check-circle"></ha-icon>` : ""}
-                    </button>
-                  </div>
+                  <button
+                    class="modal-option ${selected ? "selected" : ""}"
+                    data-action="choose-option"
+                    data-entity="${this._safe(entityId)}"
+                    data-value="${this._safe(option.value)}"
+                    type="button"
+                  >
+                    <span class="modal-option-title">${this._safe(option.label)}</span>
+                    ${selected ? `<ha-icon class="modal-option-check" icon="mdi:check-circle"></ha-icon>` : ""}
+                  </button>
                 `;
               })
               .join("")}
@@ -1591,38 +1586,6 @@ class SmartEVSEFlowCard extends HTMLElement {
           gap: 8px;
         }
 
-        .modal-option-wrap {
-          position: relative;
-          width: 100%;
-          display: block;
-          isolation: isolate;
-          border-radius: var(--tile-border-radius);
-          overflow: visible;
-        }
-
-        .modal-option-wrap .glow-under {
-          position: absolute;
-          inset: 0;
-          pointer-events: none;
-          z-index: 0;
-          display: block;
-          border-radius: var(--tile-border-radius);
-          opacity: 0;
-        }
-
-        .modal-option-wrap .glow-overlay {
-          position: absolute;
-          inset: -10px -14px -18px -14px;
-          border-radius: inherit;
-          pointer-events: none;
-          mix-blend-mode: screen;
-          opacity: 0.9;
-          -webkit-mask-image: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.25) 18px, rgba(0,0,0,0.9) 44px, rgba(0,0,0,1) 100%);
-          mask-image: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.25) 18px, rgba(0,0,0,0.9) 44px, rgba(0,0,0,1) 100%);
-          -webkit-mask-repeat: no-repeat;
-          mask-repeat: no-repeat;
-        }
-
         .modal-option {
           appearance: none;
           border: 0;
@@ -1638,7 +1601,6 @@ class SmartEVSEFlowCard extends HTMLElement {
           min-height: 44px;
           padding: 9px 10px;
           position: relative;
-          z-index: 1;
           text-align: left;
           overflow: hidden;
           background-clip: padding-box;
@@ -1650,14 +1612,6 @@ class SmartEVSEFlowCard extends HTMLElement {
           --pulse-strong: rgba(var(--sdc-led-idle-rgb), 0.30);
           color: var(--sdc-led-idle);
           box-shadow: var(--tile-shadow-active);
-        }
-
-        .modal-option-wrap.selected .glow-under {
-          --pulse-weak: rgba(var(--sdc-led-idle-rgb), 0.16);
-          --pulse-strong: rgba(var(--sdc-led-idle-rgb), 0.30);
-          opacity: 1;
-          box-shadow: 0 18px 40px var(--pulse-strong), 0 6px 18px var(--pulse-weak);
-          animation: glowPulse 2.4s ease-in-out infinite;
         }
 
         .modal-option-title {
