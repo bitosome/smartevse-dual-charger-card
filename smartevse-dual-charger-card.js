@@ -1,4 +1,4 @@
-const CARD_VERSION = "0.0.10";
+const CARD_VERSION = "0.0.11";
 
 const FALLBACK_WLED_NODE_VISUALS = {
   off: {
@@ -1066,6 +1066,8 @@ class SmartEVSEFlowCard extends HTMLElement {
       <style>
         :host {
           display: block;
+          /* --- Canonical bitosome card design tokens (keep in sync with
+             space-hub-card/src/shared/design-tokens.ts — single source of truth) --- */
           --connector-stroke: 4px;
           --tile-padding: 8px;
           --tile-padding-large: 12px;
@@ -1080,6 +1082,20 @@ class SmartEVSEFlowCard extends HTMLElement {
           --tile-shadow-default: 0 6px 18px rgba(0,0,0,0.10);
           --tile-shadow-hover: 0 12px 24px rgba(0,0,0,0.16);
           --tile-shadow-active: 0 18px 40px var(--pulse-strong, rgba(0,0,0,0.18)), 0 6px 18px var(--pulse-weak, rgba(0,0,0,0.10));
+          /* Shared semantic status palette (single source of truth across cards) */
+          --status-on-color: #ffc107;
+          --status-active-color: #42a5f5;
+          --status-success-color: #66bb6a;
+          --status-alert-color: #e53935;
+          --status-warn-color: #ff9800;
+          --status-cool-color: #00aaff;
+          --status-heat-color: #ff7043;
+          --status-dry-color: #ffca28;
+          --status-fan-color: #66bb6a;
+          --status-auto-color: #26c6da;
+          --status-smartplug-on-color: #ff9800;
+          --status-presence-color: #42a5f5;
+          --status-icon-on-color: #ffffff;
           --sdc-card-base: var(--ha-card-background, var(--card-background-color));
           --sdc-surface-panel: var(--sdc-card-base);
           --sdc-surface-tile: var(
