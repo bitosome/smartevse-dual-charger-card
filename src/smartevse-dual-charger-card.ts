@@ -2,7 +2,7 @@ import { LitElement, html } from "lit";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { DESIGN_TOKENS_CSS } from "./shared/design-tokens";
 
-const CARD_VERSION = "0.0.12";
+const CARD_VERSION = "0.0.13";
 
 const FALLBACK_WLED_NODE_VISUALS = {
   off: {
@@ -1212,6 +1212,8 @@ class SmartEVSEFlowCard extends LitElement {
           gap: var(--large-gap);
           margin: 0;
           overflow: visible;
+          /* Shared stacking context so a tile glow never paints over a sibling tile. */
+          isolation: isolate;
         }
 
         .control-tile-wrap,
@@ -1221,7 +1223,6 @@ class SmartEVSEFlowCard extends LitElement {
           position: relative;
           width: 100%;
           display: block;
-          isolation: isolate;
           border-radius: var(--tile-border-radius);
           overflow: visible;
         }
@@ -2026,6 +2027,7 @@ class SmartEVSEFlowCard extends LitElement {
           background: var(--sdc-surface-control);
           box-shadow: var(--tile-shadow-default);
           position: relative;
+          z-index: 1;
           overflow: hidden;
           clip-path: inset(0 round var(--tile-border-radius));
           background-clip: padding-box;
