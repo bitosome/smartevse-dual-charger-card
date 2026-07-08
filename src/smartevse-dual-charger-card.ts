@@ -1,3 +1,10 @@
+// @ts-nocheck
+// NOTE: This file was migrated verbatim from the original vanilla-JS card as
+// phase 1 of the TS + Rollup migration (build tooling + single-sourced design
+// tokens). Full LitElement typing/templating is phase 2 — until then type
+// checking is disabled for this legacy module.
+import { DESIGN_TOKENS_CSS } from "./shared/design-tokens";
+
 const CARD_VERSION = "0.0.11";
 
 const FALLBACK_WLED_NODE_VISUALS = {
@@ -1064,38 +1071,13 @@ class SmartEVSEFlowCard extends HTMLElement {
 
     this.shadowRoot.innerHTML = `
       <style>
+        ${DESIGN_TOKENS_CSS}
         :host {
-          display: block;
-          /* --- Canonical bitosome card design tokens (keep in sync with
-             space-hub-card/src/shared/design-tokens.ts — single source of truth) --- */
           --connector-stroke: 4px;
-          --tile-padding: 8px;
-          --tile-padding-large: 12px;
-          --tile-border-radius: var(--ha-card-border-radius, 12px);
-          --small-gap: 2px;
-          --medium-gap: 6px;
-          --large-gap: 12px;
           --sdc-settings-panel-width: min(390px, calc(100vw - 32px));
           --panel-shadow-color: rgba(0,0,0,0.50);
           --pulse-weak: rgba(0,0,0,0.10);
           --pulse-strong: rgba(0,0,0,0.18);
-          --tile-shadow-default: 0 6px 18px rgba(0,0,0,0.10);
-          --tile-shadow-hover: 0 12px 24px rgba(0,0,0,0.16);
-          --tile-shadow-active: 0 18px 40px var(--pulse-strong, rgba(0,0,0,0.18)), 0 6px 18px var(--pulse-weak, rgba(0,0,0,0.10));
-          /* Shared semantic status palette (single source of truth across cards) */
-          --status-on-color: #ffc107;
-          --status-active-color: #42a5f5;
-          --status-success-color: #66bb6a;
-          --status-alert-color: #e53935;
-          --status-warn-color: #ff9800;
-          --status-cool-color: #00aaff;
-          --status-heat-color: #ff7043;
-          --status-dry-color: #ffca28;
-          --status-fan-color: #66bb6a;
-          --status-auto-color: #26c6da;
-          --status-smartplug-on-color: #ff9800;
-          --status-presence-color: #42a5f5;
-          --status-icon-on-color: #ffffff;
           --sdc-card-base: var(--ha-card-background, var(--card-background-color));
           --sdc-surface-panel: var(--sdc-card-base);
           --sdc-surface-tile: var(
@@ -2616,9 +2598,12 @@ if (existingSmartEVSEFlowCard) {
   customElements.define("smartevse-flow-card", SmartEVSEFlowCard);
 }
 
-window.customCards = window.customCards || [];
-if (!window.customCards.some((entry) => entry.type === "smartevse-flow-card")) {
-  window.customCards.push({
+const _customCardsWindow = window as unknown as {
+  customCards?: Array<Record<string, unknown>>;
+};
+_customCardsWindow.customCards = _customCardsWindow.customCards || [];
+if (!_customCardsWindow.customCards.some((entry) => entry.type === "smartevse-flow-card")) {
+  _customCardsWindow.customCards.push({
     type: "smartevse-flow-card",
     name: "SmartEVSE Flow Card",
     description: "Visual SmartEVSE state and current-routing card for SmartEVSE Dual Charger.",
