@@ -1,9 +1,3 @@
-// @ts-nocheck
-// NOTE: Migrated to LitElement (phase 2): the card now extends LitElement,
-// renders through render()/unsafeHTML and updates via requestUpdate(), with
-// delegated event handling. Behavior is preserved from the original vanilla
-// card. Full per-element `html` templating + TypeScript typing is a further
-// refinement; type checking stays disabled for this legacy module until then.
 import { LitElement, html } from "lit";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { DESIGN_TOKENS_CSS } from "./shared/design-tokens";
@@ -41,7 +35,51 @@ const FALLBACK_WLED_NODE_VISUALS = {
   },
 };
 
+interface HassEntity {
+  state: string;
+  attributes?: Record<string, any>;
+}
+
+interface HassLocale {
+  language?: string;
+  time_format?: string;
+}
+
+interface HomeAssistant {
+  states: Record<string, HassEntity | undefined>;
+  locale?: HassLocale;
+  callService(domain: string, service: string, data?: Record<string, any>): Promise<unknown>;
+}
+
+interface SmartEvseCardConfig {
+  type?: string;
+  currency?: string;
+  controller_entity: string;
+  price_entity?: string;
+  schedule_entity?: string;
+  schedule_switch_entity?: string;
+  force_charge_entity?: string;
+  force_price_entity?: string;
+  force_timer_entity?: string;
+  acceptable_price_entity?: string;
+  charge_policy_entity?: string;
+  duty_cycle_entity?: string;
+  force_charge_duration_entity?: string;
+  duty_remaining_entity?: string;
+  timer_remaining_entity?: string;
+  [key: string]: unknown;
+}
+
 class SmartEVSEFlowCard extends LitElement {
+  private _hass?: HomeAssistant;
+  private _config?: SmartEvseCardConfig;
+  private _currency = "EUR/kWh";
+  private _editingEntity: string | null = null;
+  private _editorDrafts: Record<string, string> = {};
+  private _settingsModalOpen = false;
+  private _settingsSubmenuEntity: string | null = null;
+  private _lastRenderKey = "";
+
   static getStubConfig() {
     return {
       type: "custom:smartevse-flow-card",
@@ -61,7 +99,7 @@ class SmartEVSEFlowCard extends LitElement {
     };
   }
 
-  setConfig(config) {
+  setConfig(config: SmartEvseCardConfig) {
     if (!config.controller_entity) {
       throw new Error("controller_entity is required");
     }
@@ -70,7 +108,7 @@ class SmartEVSEFlowCard extends LitElement {
     this.requestUpdate();
   }
 
-  set hass(hass) {
+  set hass(hass: HomeAssistant) {
     this._hass = hass;
     if (this._editingEntity) {
       return;
@@ -165,7 +203,7 @@ class SmartEVSEFlowCard extends LitElement {
     if (!entity) {
       return null;
     }
-    const snapshot = { state: entity.state };
+    const snapshot: { state: unknown; attrs?: Record<string, unknown> } = { state: entity.state };
     if (attrs.length > 0) {
       snapshot.attrs = {};
       for (const attr of attrs) {
@@ -341,7 +379,7 @@ class SmartEVSEFlowCard extends LitElement {
   _homeAssistantDateTimeFormatOptions() {
     const locale = this._hass?.locale;
     const timeFormat = String(locale?.time_format || "").toLowerCase();
-    const options = {
+    const options: Intl.DateTimeFormatOptions = {
       weekday: "short",
       hour: "2-digit",
       minute: "2-digit",
@@ -583,7 +621,7 @@ class SmartEVSEFlowCard extends LitElement {
       return;
     }
     const rawValue = this._editorDraft(entityId);
-    let serviceData = { entity_id: entityId };
+    const serviceData: Record<string, any> = { entity_id: entityId };
     if (meta.kind === "select") {
       serviceData.option = rawValue;
     } else if (meta.kind === "number") {
@@ -2464,15 +2502,16 @@ class SmartEVSEFlowCard extends LitElement {
   }
 
   _bindDelegatedActions() {
-    const root = this.renderRoot;
+    const root: EventTarget = this.renderRoot;
 
-    root.addEventListener("click", async (event) => {
-      const backdrop = event.target.closest?.(".settings-backdrop");
+    root.addEventListener("click", async (event: Event) => {
+      const target = event.target as HTMLElement | null;
+      const backdrop = target?.closest<HTMLElement>(".settings-backdrop");
       if (backdrop && event.target === backdrop) {
         this._closeSettingsModal();
         return;
       }
-      const element = event.target.closest?.("[data-action]");
+      const element = target?.closest<HTMLElement>("[data-action]");
       if (!element) {
         return;
       }
@@ -2519,35 +2558,39 @@ class SmartEVSEFlowCard extends LitElement {
       }
     });
 
-    root.addEventListener("input", (event) => {
-      const element = event.target.closest?.(".setting-input[data-entity]");
+    root.addEventListener("input", (event: Event) => {
+      const element = (event.target as HTMLElement | null)?.closest<HTMLInputElement>(
+        ".setting-input[data-entity]",
+      );
       if (!element) {
         return;
       }
       this._updateEditorDraft(element.dataset.entity, element.value);
     });
 
-    root.addEventListener("change", (event) => {
-      const element = event.target.closest?.(".setting-select[data-entity]");
+    root.addEventListener("change", (event: Event) => {
+      const element = (event.target as HTMLElement | null)?.closest<HTMLSelectElement>(
+        ".setting-select[data-entity]",
+      );
       if (!element) {
         return;
       }
       this._updateEditorDraft(element.dataset.entity, element.value);
     });
 
-    root.addEventListener("keydown", async (event) => {
-      const element = event.target.closest?.(
+    root.addEventListener("keydown", async (event: Event) => {
+      const element = (event.target as HTMLElement | null)?.closest<HTMLElement>(
         ".setting-input[data-entity], .setting-select[data-entity]",
       );
       if (!element) {
         return;
       }
       const entityId = element.dataset.entity;
-      if (event.key === "Enter") {
+      if ((event as KeyboardEvent).key === "Enter") {
         event.preventDefault();
         await this._saveEditor(entityId);
       }
-      if (event.key === "Escape") {
+      if ((event as KeyboardEvent).key === "Escape") {
         event.preventDefault();
         this._closeEditor();
       }
