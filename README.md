@@ -118,3 +118,25 @@ Then open:
 - `http://localhost:8000/preview/`
 
 The preview renders the real card against mock Home Assistant state.
+
+## Design System & UI Implementation
+
+This card is part of the `bitosome` Home Assistant card family and follows a shared design system. The **single source of truth** is [`space-hub-card`](https://github.com/bitosome/space-hub-card) — specifically `space-hub-card/src/shared/design-tokens.ts`. See its [Design System & UI Implementation](https://github.com/bitosome/space-hub-card#design-system--ui-implementation) section for the full approach and file map.
+
+This card is built with **TypeScript + Lit + Rollup** (`src/smartevse-dual-charger-card.ts`, output to `dist/`), matching the rest of the family. The design tokens are **vendored** into this repo at `src/shared/design-tokens.ts` (carrying an `AUTO-SYNCED … DO NOT EDIT` banner); its `DESIGN_TOKENS_CSS` is injected at the top of the card's `<style>` block. Update tokens in `space-hub-card` and run its `scripts/sync-design-tokens.sh` — never edit the vendored copy directly.
+
+Rules when implementing or changing UI (these mirror `space-hub-card`, so every card looks and behaves the same):
+
+1. **Never hardcode** colors, spacing, radii, or shadows. Reference the CSS custom properties instead — e.g. `var(--tile-border-radius)`, `var(--tile-shadow-default)`, `var(--large-gap)`, `var(--status-active-color)`.
+2. **Reuse Home Assistant primitives** (`ha-card`, `ha-icon`) rather than reimplementing them.
+3. **Glow layers render below tile surfaces**: each tile's glow (`.glow-under`) uses `z-index: 0` and the tile surface uses `z-index: 1`, with the tile group container (e.g. `.controls`, `.ev-row`) as a **single stacking context** so a glow never paints over a neighbouring tile. Individual tile wrappers must not create their own stacking context.
+4. **Use the semantic status palette** (`--status-*`) for state colors.
+
+Development:
+
+```bash
+npm install
+npm run build      # bundles src/ -> dist/smartevse-dual-charger-card.js
+npm test           # headless smoke test (happy-dom)
+npm run typecheck  # tsc --noEmit
+```
