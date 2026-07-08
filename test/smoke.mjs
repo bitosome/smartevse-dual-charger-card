@@ -71,5 +71,26 @@ if (toggle) {
   console.log('SKIP: no toggle action element found');
 }
 
+// Settings modal open/close flow (delegated actions + requestUpdate render cycle).
+const openSettings = root.querySelector('[data-action="open-settings"]');
+if (openSettings) {
+  openSettings.dispatchEvent(new win.MouseEvent('click', { bubbles: true, composed: true }));
+  await new Promise((r) => setTimeout(r, 40));
+  const opened = !!root.querySelector('.settings-backdrop');
+  console.log(`${opened ? 'PASS' : 'FAIL'}: open-settings renders the settings modal`);
+  if (!opened) ok = false;
+
+  const closeSettings = root.querySelector('[data-action="close-settings"]');
+  if (opened && closeSettings) {
+    closeSettings.dispatchEvent(new win.MouseEvent('click', { bubbles: true, composed: true }));
+    await new Promise((r) => setTimeout(r, 40));
+    const closed = !root.querySelector('.settings-backdrop');
+    console.log(`${closed ? 'PASS' : 'FAIL'}: close-settings dismisses the settings modal`);
+    if (!closed) ok = false;
+  }
+} else {
+  console.log('SKIP: no open-settings control found');
+}
+
 console.log(ok ? '\nSMOKE TEST OK' : '\nSMOKE TEST FAILED');
 process.exit(ok ? 0 : 1);
