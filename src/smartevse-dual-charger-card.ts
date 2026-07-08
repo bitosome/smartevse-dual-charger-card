@@ -1,11 +1,14 @@
 // @ts-nocheck
-// NOTE: This file was migrated verbatim from the original vanilla-JS card as
-// phase 1 of the TS + Rollup migration (build tooling + single-sourced design
-// tokens). Full LitElement typing/templating is phase 2 — until then type
-// checking is disabled for this legacy module.
+// NOTE: Migrated to LitElement (phase 2): the card now extends LitElement,
+// renders through render()/unsafeHTML and updates via requestUpdate(), with
+// delegated event handling. Behavior is preserved from the original vanilla
+// card. Full per-element `html` templating + TypeScript typing is a further
+// refinement; type checking stays disabled for this legacy module until then.
+import { LitElement, html } from "lit";
+import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { DESIGN_TOKENS_CSS } from "./shared/design-tokens";
 
-const CARD_VERSION = "0.0.11";
+const CARD_VERSION = "0.0.12";
 
 const FALLBACK_WLED_NODE_VISUALS = {
   off: {
@@ -38,7 +41,7 @@ const FALLBACK_WLED_NODE_VISUALS = {
   },
 };
 
-class SmartEVSEFlowCard extends HTMLElement {
+class SmartEVSEFlowCard extends LitElement {
   static getStubConfig() {
     return {
       type: "custom:smartevse-flow-card",
@@ -64,9 +67,7 @@ class SmartEVSEFlowCard extends HTMLElement {
     }
     this._config = config;
     this._currency = config.currency || "EUR/kWh";
-    if (!this.shadowRoot) {
-      this.attachShadow({ mode: "open" });
-    }
+    this.requestUpdate();
   }
 
   set hass(hass) {
@@ -919,18 +920,21 @@ class SmartEVSEFlowCard extends HTMLElement {
   }
 
   _render() {
+    this.requestUpdate();
+  }
+
+  render() {
     if (!this._config || !this._hass) {
-      return;
+      return html``;
     }
 
     const controller = this._entity(this._config.controller_entity);
     if (!controller) {
-      this.shadowRoot.innerHTML = `
+      return html`${unsafeHTML(`
         <ha-card>
           <div class="missing">Controller entity not found: ${this._safe(this._config.controller_entity)}</div>
         </ha-card>
-      `;
-      return;
+      `)}`;
     }
 
     const attrs = controller.attributes || {};
@@ -1069,7 +1073,7 @@ class SmartEVSEFlowCard extends HTMLElement {
     const leftConnectorPath = this._homeConnectorPath("left");
     const rightConnectorPath = this._homeConnectorPath("right");
 
-    this.shadowRoot.innerHTML = `
+    const markup = `
       <style>
         ${DESIGN_TOKENS_CSS}
         :host {
@@ -2452,99 +2456,102 @@ class SmartEVSEFlowCard extends HTMLElement {
       </ha-card>
     `;
 
-    this._bindActions();
+    return html`${unsafeHTML(markup)}`;
   }
 
-  _bindActions() {
-    for (const element of this.shadowRoot.querySelectorAll("[data-action]")) {
-      element.addEventListener("click", async (event) => {
+  firstUpdated() {
+    this._bindDelegatedActions();
+  }
+
+  _bindDelegatedActions() {
+    const root = this.renderRoot;
+
+    root.addEventListener("click", async (event) => {
+      const backdrop = event.target.closest?.(".settings-backdrop");
+      if (backdrop && event.target === backdrop) {
+        this._closeSettingsModal();
+        return;
+      }
+      const element = event.target.closest?.("[data-action]");
+      if (!element) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      const { action, entity, value } = element.dataset;
+      if (action === "open-settings") {
+        this._openSettingsModal();
+        return;
+      }
+      if (action === "close-settings") {
+        this._closeSettingsModal();
+        return;
+      }
+      if (action === "back-settings") {
+        this._closeSettingsSubmenu();
+        return;
+      }
+      if (!entity) {
+        return;
+      }
+      if (action === "toggle") {
+        await this._toggleEntity(entity);
+        return;
+      }
+      if (action === "edit") {
+        this._openEditor(entity);
+        return;
+      }
+      if (action === "open-submenu") {
+        this._openSettingsSubmenu(entity);
+        return;
+      }
+      if (action === "choose-option") {
+        await this._chooseEditorOption(entity, value);
+        return;
+      }
+      if (action === "cancel-edit") {
+        this._closeEditor();
+        return;
+      }
+      if (action === "save-edit") {
+        await this._saveEditor(entity);
+      }
+    });
+
+    root.addEventListener("input", (event) => {
+      const element = event.target.closest?.(".setting-input[data-entity]");
+      if (!element) {
+        return;
+      }
+      this._updateEditorDraft(element.dataset.entity, element.value);
+    });
+
+    root.addEventListener("change", (event) => {
+      const element = event.target.closest?.(".setting-select[data-entity]");
+      if (!element) {
+        return;
+      }
+      this._updateEditorDraft(element.dataset.entity, element.value);
+    });
+
+    root.addEventListener("keydown", async (event) => {
+      const element = event.target.closest?.(
+        ".setting-input[data-entity], .setting-select[data-entity]",
+      );
+      if (!element) {
+        return;
+      }
+      const entityId = element.dataset.entity;
+      if (event.key === "Enter") {
         event.preventDefault();
-        event.stopPropagation();
-        const { action, entity, value } = element.dataset;
-        if (action === "open-settings") {
-          this._openSettingsModal();
-          return;
-        }
-        if (action === "close-settings") {
-          this._closeSettingsModal();
-          return;
-        }
-        if (action === "back-settings") {
-          this._closeSettingsSubmenu();
-          return;
-        }
-        if (!entity) {
-          return;
-        }
-        if (action === "toggle") {
-          await this._toggleEntity(entity);
-          return;
-        }
-        if (action === "edit") {
-          this._openEditor(entity);
-          return;
-        }
-        if (action === "open-submenu") {
-          this._openSettingsSubmenu(entity);
-          return;
-        }
-        if (action === "choose-option") {
-          await this._chooseEditorOption(entity, value);
-          return;
-        }
-        if (action === "cancel-edit") {
-          this._closeEditor();
-          return;
-        }
-        if (action === "save-edit") {
-          await this._saveEditor(entity);
-        }
-      });
-    }
-
-    for (const backdrop of this.shadowRoot.querySelectorAll(".settings-backdrop")) {
-      backdrop.addEventListener("click", (event) => {
-        if (event.target === event.currentTarget) {
-          this._closeSettingsModal();
-        }
-      });
-    }
-
-    for (const element of this.shadowRoot.querySelectorAll(".setting-input[data-entity]")) {
-      element.addEventListener("input", (event) => {
-        const entityId = event.currentTarget.dataset.entity;
-        this._updateEditorDraft(entityId, event.currentTarget.value);
-      });
-      element.addEventListener("keydown", async (event) => {
-        const entityId = event.currentTarget.dataset.entity;
-        if (event.key === "Enter") {
-          event.preventDefault();
-          await this._saveEditor(entityId);
-        }
-        if (event.key === "Escape") {
-          event.preventDefault();
-          this._closeEditor();
-        }
-      });
-    }
-
-    for (const element of this.shadowRoot.querySelectorAll(".setting-select[data-entity]")) {
-      element.addEventListener("change", (event) => {
-        const entityId = event.currentTarget.dataset.entity;
-        this._updateEditorDraft(entityId, event.currentTarget.value);
-      });
-      element.addEventListener("keydown", async (event) => {
-        const entityId = event.currentTarget.dataset.entity;
-        if (event.key === "Enter") {
-          event.preventDefault();
-          await this._saveEditor(entityId);
-        }
-        if (event.key === "Escape") {
-          event.preventDefault();
-          this._closeEditor();
-        }
-      });
-    }
+        await this._saveEditor(entityId);
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        this._closeEditor();
+      }
+    });
   }
 
   async _toggleEntity(entityId) {
@@ -2557,44 +2564,7 @@ class SmartEVSEFlowCard extends HTMLElement {
   }
 }
 
-const existingSmartEVSEFlowCard = customElements.get("smartevse-flow-card");
-if (existingSmartEVSEFlowCard) {
-  for (const name of Object.getOwnPropertyNames(SmartEVSEFlowCard.prototype)) {
-    if (name === "constructor") {
-      continue;
-    }
-    Object.defineProperty(
-      existingSmartEVSEFlowCard.prototype,
-      name,
-      Object.getOwnPropertyDescriptor(SmartEVSEFlowCard.prototype, name),
-    );
-  }
-  for (const name of Object.getOwnPropertyNames(SmartEVSEFlowCard)) {
-    if (["length", "name", "prototype"].includes(name)) {
-      continue;
-    }
-    Object.defineProperty(
-      existingSmartEVSEFlowCard,
-      name,
-      Object.getOwnPropertyDescriptor(SmartEVSEFlowCard, name),
-    );
-  }
-  queueMicrotask(() => {
-    const findCards = (root) => {
-      const cards = [...root.querySelectorAll("smartevse-flow-card")];
-      for (const element of root.querySelectorAll("*")) {
-        if (element.shadowRoot) {
-          cards.push(...findCards(element.shadowRoot));
-        }
-      }
-      return cards;
-    };
-    for (const card of findCards(document)) {
-      card._lastRenderKey = "";
-      card._render?.();
-    }
-  });
-} else {
+if (!customElements.get("smartevse-flow-card")) {
   customElements.define("smartevse-flow-card", SmartEVSEFlowCard);
 }
 
