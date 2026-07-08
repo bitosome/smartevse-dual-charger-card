@@ -1,4 +1,8 @@
-const CARD_VERSION = "0.0.11";
+import { LitElement, html } from "lit";
+import { unsafeHTML } from "lit/directives/unsafe-html.js";
+import { DESIGN_TOKENS_CSS } from "./shared/design-tokens";
+
+const CARD_VERSION = "0.0.12";
 
 const FALLBACK_WLED_NODE_VISUALS = {
   off: {
@@ -31,7 +35,51 @@ const FALLBACK_WLED_NODE_VISUALS = {
   },
 };
 
-class SmartEVSEFlowCard extends HTMLElement {
+interface HassEntity {
+  state: string;
+  attributes?: Record<string, any>;
+}
+
+interface HassLocale {
+  language?: string;
+  time_format?: string;
+}
+
+interface HomeAssistant {
+  states: Record<string, HassEntity | undefined>;
+  locale?: HassLocale;
+  callService(domain: string, service: string, data?: Record<string, any>): Promise<unknown>;
+}
+
+interface SmartEvseCardConfig {
+  type?: string;
+  currency?: string;
+  controller_entity: string;
+  price_entity?: string;
+  schedule_entity?: string;
+  schedule_switch_entity?: string;
+  force_charge_entity?: string;
+  force_price_entity?: string;
+  force_timer_entity?: string;
+  acceptable_price_entity?: string;
+  charge_policy_entity?: string;
+  duty_cycle_entity?: string;
+  force_charge_duration_entity?: string;
+  duty_remaining_entity?: string;
+  timer_remaining_entity?: string;
+  [key: string]: unknown;
+}
+
+class SmartEVSEFlowCard extends LitElement {
+  private _hass?: HomeAssistant;
+  private _config?: SmartEvseCardConfig;
+  private _currency = "EUR/kWh";
+  private _editingEntity: string | null = null;
+  private _editorDrafts: Record<string, string> = {};
+  private _settingsModalOpen = false;
+  private _settingsSubmenuEntity: string | null = null;
+  private _lastRenderKey = "";
+
   static getStubConfig() {
     return {
       type: "custom:smartevse-flow-card",
@@ -51,18 +99,16 @@ class SmartEVSEFlowCard extends HTMLElement {
     };
   }
 
-  setConfig(config) {
+  setConfig(config: SmartEvseCardConfig) {
     if (!config.controller_entity) {
       throw new Error("controller_entity is required");
     }
     this._config = config;
     this._currency = config.currency || "EUR/kWh";
-    if (!this.shadowRoot) {
-      this.attachShadow({ mode: "open" });
-    }
+    this.requestUpdate();
   }
 
-  set hass(hass) {
+  set hass(hass: HomeAssistant) {
     this._hass = hass;
     if (this._editingEntity) {
       return;
@@ -157,7 +203,7 @@ class SmartEVSEFlowCard extends HTMLElement {
     if (!entity) {
       return null;
     }
-    const snapshot = { state: entity.state };
+    const snapshot: { state: unknown; attrs?: Record<string, unknown> } = { state: entity.state };
     if (attrs.length > 0) {
       snapshot.attrs = {};
       for (const attr of attrs) {
@@ -333,7 +379,7 @@ class SmartEVSEFlowCard extends HTMLElement {
   _homeAssistantDateTimeFormatOptions() {
     const locale = this._hass?.locale;
     const timeFormat = String(locale?.time_format || "").toLowerCase();
-    const options = {
+    const options: Intl.DateTimeFormatOptions = {
       weekday: "short",
       hour: "2-digit",
       minute: "2-digit",
@@ -575,7 +621,7 @@ class SmartEVSEFlowCard extends HTMLElement {
       return;
     }
     const rawValue = this._editorDraft(entityId);
-    let serviceData = { entity_id: entityId };
+    const serviceData: Record<string, any> = { entity_id: entityId };
     if (meta.kind === "select") {
       serviceData.option = rawValue;
     } else if (meta.kind === "number") {
@@ -912,18 +958,21 @@ class SmartEVSEFlowCard extends HTMLElement {
   }
 
   _render() {
+    this.requestUpdate();
+  }
+
+  render() {
     if (!this._config || !this._hass) {
-      return;
+      return html``;
     }
 
     const controller = this._entity(this._config.controller_entity);
     if (!controller) {
-      this.shadowRoot.innerHTML = `
+      return html`${unsafeHTML(`
         <ha-card>
           <div class="missing">Controller entity not found: ${this._safe(this._config.controller_entity)}</div>
         </ha-card>
-      `;
-      return;
+      `)}`;
     }
 
     const attrs = controller.attributes || {};
@@ -1062,40 +1111,15 @@ class SmartEVSEFlowCard extends HTMLElement {
     const leftConnectorPath = this._homeConnectorPath("left");
     const rightConnectorPath = this._homeConnectorPath("right");
 
-    this.shadowRoot.innerHTML = `
+    const markup = `
       <style>
+        ${DESIGN_TOKENS_CSS}
         :host {
-          display: block;
-          /* --- Canonical bitosome card design tokens (keep in sync with
-             space-hub-card/src/shared/design-tokens.ts — single source of truth) --- */
           --connector-stroke: 4px;
-          --tile-padding: 8px;
-          --tile-padding-large: 12px;
-          --tile-border-radius: var(--ha-card-border-radius, 12px);
-          --small-gap: 2px;
-          --medium-gap: 6px;
-          --large-gap: 12px;
           --sdc-settings-panel-width: min(390px, calc(100vw - 32px));
           --panel-shadow-color: rgba(0,0,0,0.50);
           --pulse-weak: rgba(0,0,0,0.10);
           --pulse-strong: rgba(0,0,0,0.18);
-          --tile-shadow-default: 0 6px 18px rgba(0,0,0,0.10);
-          --tile-shadow-hover: 0 12px 24px rgba(0,0,0,0.16);
-          --tile-shadow-active: 0 18px 40px var(--pulse-strong, rgba(0,0,0,0.18)), 0 6px 18px var(--pulse-weak, rgba(0,0,0,0.10));
-          /* Shared semantic status palette (single source of truth across cards) */
-          --status-on-color: #ffc107;
-          --status-active-color: #42a5f5;
-          --status-success-color: #66bb6a;
-          --status-alert-color: #e53935;
-          --status-warn-color: #ff9800;
-          --status-cool-color: #00aaff;
-          --status-heat-color: #ff7043;
-          --status-dry-color: #ffca28;
-          --status-fan-color: #66bb6a;
-          --status-auto-color: #26c6da;
-          --status-smartplug-on-color: #ff9800;
-          --status-presence-color: #42a5f5;
-          --status-icon-on-color: #ffffff;
           --sdc-card-base: var(--ha-card-background, var(--card-background-color));
           --sdc-surface-panel: var(--sdc-card-base);
           --sdc-surface-tile: var(
@@ -2470,99 +2494,107 @@ class SmartEVSEFlowCard extends HTMLElement {
       </ha-card>
     `;
 
-    this._bindActions();
+    return html`${unsafeHTML(markup)}`;
   }
 
-  _bindActions() {
-    for (const element of this.shadowRoot.querySelectorAll("[data-action]")) {
-      element.addEventListener("click", async (event) => {
+  firstUpdated() {
+    this._bindDelegatedActions();
+  }
+
+  _bindDelegatedActions() {
+    const root: EventTarget = this.renderRoot;
+
+    root.addEventListener("click", async (event: Event) => {
+      const target = event.target as HTMLElement | null;
+      const backdrop = target?.closest<HTMLElement>(".settings-backdrop");
+      if (backdrop && event.target === backdrop) {
+        this._closeSettingsModal();
+        return;
+      }
+      const element = target?.closest<HTMLElement>("[data-action]");
+      if (!element) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      const { action, entity, value } = element.dataset;
+      if (action === "open-settings") {
+        this._openSettingsModal();
+        return;
+      }
+      if (action === "close-settings") {
+        this._closeSettingsModal();
+        return;
+      }
+      if (action === "back-settings") {
+        this._closeSettingsSubmenu();
+        return;
+      }
+      if (!entity) {
+        return;
+      }
+      if (action === "toggle") {
+        await this._toggleEntity(entity);
+        return;
+      }
+      if (action === "edit") {
+        this._openEditor(entity);
+        return;
+      }
+      if (action === "open-submenu") {
+        this._openSettingsSubmenu(entity);
+        return;
+      }
+      if (action === "choose-option") {
+        await this._chooseEditorOption(entity, value);
+        return;
+      }
+      if (action === "cancel-edit") {
+        this._closeEditor();
+        return;
+      }
+      if (action === "save-edit") {
+        await this._saveEditor(entity);
+      }
+    });
+
+    root.addEventListener("input", (event: Event) => {
+      const element = (event.target as HTMLElement | null)?.closest<HTMLInputElement>(
+        ".setting-input[data-entity]",
+      );
+      if (!element) {
+        return;
+      }
+      this._updateEditorDraft(element.dataset.entity, element.value);
+    });
+
+    root.addEventListener("change", (event: Event) => {
+      const element = (event.target as HTMLElement | null)?.closest<HTMLSelectElement>(
+        ".setting-select[data-entity]",
+      );
+      if (!element) {
+        return;
+      }
+      this._updateEditorDraft(element.dataset.entity, element.value);
+    });
+
+    root.addEventListener("keydown", async (event: Event) => {
+      const element = (event.target as HTMLElement | null)?.closest<HTMLElement>(
+        ".setting-input[data-entity], .setting-select[data-entity]",
+      );
+      if (!element) {
+        return;
+      }
+      const entityId = element.dataset.entity;
+      if ((event as KeyboardEvent).key === "Enter") {
         event.preventDefault();
-        event.stopPropagation();
-        const { action, entity, value } = element.dataset;
-        if (action === "open-settings") {
-          this._openSettingsModal();
-          return;
-        }
-        if (action === "close-settings") {
-          this._closeSettingsModal();
-          return;
-        }
-        if (action === "back-settings") {
-          this._closeSettingsSubmenu();
-          return;
-        }
-        if (!entity) {
-          return;
-        }
-        if (action === "toggle") {
-          await this._toggleEntity(entity);
-          return;
-        }
-        if (action === "edit") {
-          this._openEditor(entity);
-          return;
-        }
-        if (action === "open-submenu") {
-          this._openSettingsSubmenu(entity);
-          return;
-        }
-        if (action === "choose-option") {
-          await this._chooseEditorOption(entity, value);
-          return;
-        }
-        if (action === "cancel-edit") {
-          this._closeEditor();
-          return;
-        }
-        if (action === "save-edit") {
-          await this._saveEditor(entity);
-        }
-      });
-    }
-
-    for (const backdrop of this.shadowRoot.querySelectorAll(".settings-backdrop")) {
-      backdrop.addEventListener("click", (event) => {
-        if (event.target === event.currentTarget) {
-          this._closeSettingsModal();
-        }
-      });
-    }
-
-    for (const element of this.shadowRoot.querySelectorAll(".setting-input[data-entity]")) {
-      element.addEventListener("input", (event) => {
-        const entityId = event.currentTarget.dataset.entity;
-        this._updateEditorDraft(entityId, event.currentTarget.value);
-      });
-      element.addEventListener("keydown", async (event) => {
-        const entityId = event.currentTarget.dataset.entity;
-        if (event.key === "Enter") {
-          event.preventDefault();
-          await this._saveEditor(entityId);
-        }
-        if (event.key === "Escape") {
-          event.preventDefault();
-          this._closeEditor();
-        }
-      });
-    }
-
-    for (const element of this.shadowRoot.querySelectorAll(".setting-select[data-entity]")) {
-      element.addEventListener("change", (event) => {
-        const entityId = event.currentTarget.dataset.entity;
-        this._updateEditorDraft(entityId, event.currentTarget.value);
-      });
-      element.addEventListener("keydown", async (event) => {
-        const entityId = event.currentTarget.dataset.entity;
-        if (event.key === "Enter") {
-          event.preventDefault();
-          await this._saveEditor(entityId);
-        }
-        if (event.key === "Escape") {
-          event.preventDefault();
-          this._closeEditor();
-        }
-      });
-    }
+        await this._saveEditor(entityId);
+      }
+      if ((event as KeyboardEvent).key === "Escape") {
+        event.preventDefault();
+        this._closeEditor();
+      }
+    });
   }
 
   async _toggleEntity(entityId) {
@@ -2575,50 +2607,16 @@ class SmartEVSEFlowCard extends HTMLElement {
   }
 }
 
-const existingSmartEVSEFlowCard = customElements.get("smartevse-flow-card");
-if (existingSmartEVSEFlowCard) {
-  for (const name of Object.getOwnPropertyNames(SmartEVSEFlowCard.prototype)) {
-    if (name === "constructor") {
-      continue;
-    }
-    Object.defineProperty(
-      existingSmartEVSEFlowCard.prototype,
-      name,
-      Object.getOwnPropertyDescriptor(SmartEVSEFlowCard.prototype, name),
-    );
-  }
-  for (const name of Object.getOwnPropertyNames(SmartEVSEFlowCard)) {
-    if (["length", "name", "prototype"].includes(name)) {
-      continue;
-    }
-    Object.defineProperty(
-      existingSmartEVSEFlowCard,
-      name,
-      Object.getOwnPropertyDescriptor(SmartEVSEFlowCard, name),
-    );
-  }
-  queueMicrotask(() => {
-    const findCards = (root) => {
-      const cards = [...root.querySelectorAll("smartevse-flow-card")];
-      for (const element of root.querySelectorAll("*")) {
-        if (element.shadowRoot) {
-          cards.push(...findCards(element.shadowRoot));
-        }
-      }
-      return cards;
-    };
-    for (const card of findCards(document)) {
-      card._lastRenderKey = "";
-      card._render?.();
-    }
-  });
-} else {
+if (!customElements.get("smartevse-flow-card")) {
   customElements.define("smartevse-flow-card", SmartEVSEFlowCard);
 }
 
-window.customCards = window.customCards || [];
-if (!window.customCards.some((entry) => entry.type === "smartevse-flow-card")) {
-  window.customCards.push({
+const _customCardsWindow = window as unknown as {
+  customCards?: Array<Record<string, unknown>>;
+};
+_customCardsWindow.customCards = _customCardsWindow.customCards || [];
+if (!_customCardsWindow.customCards.some((entry) => entry.type === "smartevse-flow-card")) {
+  _customCardsWindow.customCards.push({
     type: "smartevse-flow-card",
     name: "SmartEVSE Flow Card",
     description: "Visual SmartEVSE state and current-routing card for SmartEVSE Dual Charger.",
