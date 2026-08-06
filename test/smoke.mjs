@@ -79,8 +79,10 @@ const checks = {
   'renders ha-card': htmlOut.includes('<ha-card') || htmlOut.includes('ha-card'),
   'has data-action elements': !!root.querySelector('[data-action]'),
   'non-trivial markup': htmlOut.length > 500,
-  'shows exactly two charging controls': root.querySelectorAll('.primary-controls .control-tile').length === 2,
-  'hides separate price and timer triggers': !htmlOut.includes('Force By Price') && !htmlOut.includes('Force Timer'),
+  'shows one charging-plan control': root.querySelectorAll('.primary-controls .control-tile').length === 1,
+  'removes separate schedule and settings controls':
+    !root.querySelector('[data-action="toggle"][data-entity="switch.schedule"]') &&
+    !root.querySelector('[data-action="open-settings"]'),
 };
 let ok = true;
 for (const [name, pass] of Object.entries(checks)) {
@@ -88,19 +90,7 @@ for (const [name, pass] of Object.entries(checks)) {
   if (!pass) ok = false;
 }
 
-// Scheduled charging remains a direct toggle.
-const toggle = root.querySelector('[data-action="toggle"][data-entity="switch.schedule"]');
-if (toggle) {
-  toggle.dispatchEvent(new win.MouseEvent('click', { bubbles: true, composed: true }));
-  await new Promise((r) => setTimeout(r, 20));
-  const called = calls.some((c) => c[0] === 'homeassistant' && (c[1] === 'turn_on' || c[1] === 'turn_off'));
-  console.log(`${called ? 'PASS' : 'FAIL'}: toggle action calls hass.callService`);
-  if (!called) ok = false;
-} else {
-  console.log('SKIP: no toggle action element found');
-}
-
-// Force charging is configured through a three-path wizard.
+// All charging behavior is configured through one four-path wizard.
 const openForceWizard = () => {
   const trigger = root.querySelector('[data-action="open-force-wizard"]');
   trigger?.dispatchEvent(new win.MouseEvent('click', { bubbles: true, composed: true }));
@@ -110,10 +100,59 @@ openForceWizard();
 await new Promise((r) => setTimeout(r, 40));
 const forceWizardOpened = !!root.querySelector('.force-wizard-panel');
 const forceChoices = root.querySelectorAll('[data-action="choose-force-mode"]');
-console.log(`${forceWizardOpened ? 'PASS' : 'FAIL'}: force tile opens wizard`);
-console.log(`${forceChoices.length === 3 ? 'PASS' : 'FAIL'}: wizard offers three force-charge modes`);
-if (!forceWizardOpened || forceChoices.length !== 3) ok = false;
+console.log(`${forceWizardOpened ? 'PASS' : 'FAIL'}: charging-plan tile opens wizard`);
+console.log(`${forceChoices.length === 4 ? 'PASS' : 'FAIL'}: wizard offers schedule, price, immediate, and timer plans`);
+if (!forceWizardOpened || forceChoices.length !== 4) ok = false;
 
+// Schedule + acceptable price enables both gates and saves the threshold.
+const scheduleChoice = root.querySelector('[data-action="choose-force-mode"][data-mode="schedule"]');
+scheduleChoice?.dispatchEvent(new win.MouseEvent('click', { bubbles: true, composed: true }));
+await new Promise((r) => setTimeout(r, 30));
+const schedulePriceToggle = root.querySelector('[data-action="toggle-schedule-price"]');
+schedulePriceToggle?.dispatchEvent(new win.MouseEvent('click', { bubbles: true, composed: true }));
+await new Promise((r) => setTimeout(r, 30));
+const schedulePriceInput = root.querySelector('.force-input[data-entity="number.price"]');
+if (schedulePriceInput) {
+  schedulePriceInput.value = '0.15';
+  schedulePriceInput.dispatchEvent(new win.Event('input', { bubbles: true, composed: true }));
+}
+const scheduleCallStart = calls.length;
+root.querySelector('[data-action="apply-force-mode"][data-mode="schedule"]')
+  ?.dispatchEvent(new win.MouseEvent('click', { bubbles: true, composed: true }));
+await new Promise((r) => setTimeout(r, 60));
+const scheduleCalls = calls.slice(scheduleCallStart);
+const savedSchedulePrice = scheduleCalls.some((c) => c[0] === 'number' && c[1] === 'set_value' && c[2].entity_id === 'number.price' && c[2].value === 0.15);
+const enabledSchedule = scheduleCalls.some((c) => c[1] === 'turn_on' && c[2].entity_id === 'switch.schedule');
+const enabledScheduledPrice = scheduleCalls.some((c) => c[1] === 'turn_on' && c[2].entity_id === 'switch.force_price');
+console.log(`${savedSchedulePrice && enabledSchedule && enabledScheduledPrice ? 'PASS' : 'FAIL'}: schedule can require an acceptable price`);
+if (!savedSchedulePrice || !enabledSchedule || !enabledScheduledPrice) ok = false;
+
+openForceWizard();
+await new Promise((r) => setTimeout(r, 30));
+const schedulePriceExplained =
+  root.querySelector('.wizard-active')?.textContent.includes('Schedule + price') &&
+  root.querySelector('.wizard-active')?.textContent.includes('Waiting for the schedule window');
+console.log(`${schedulePriceExplained ? 'PASS' : 'FAIL'}: active schedule-plus-price state is explained`);
+if (!schedulePriceExplained) ok = false;
+
+root.querySelector('[data-action="choose-force-mode"][data-mode="schedule"]')
+  ?.dispatchEvent(new win.MouseEvent('click', { bubbles: true, composed: true }));
+await new Promise((r) => setTimeout(r, 30));
+root.querySelector('[data-action="toggle-schedule-price"]')
+  ?.dispatchEvent(new win.MouseEvent('click', { bubbles: true, composed: true }));
+await new Promise((r) => setTimeout(r, 30));
+const scheduleOnlyCallStart = calls.length;
+root.querySelector('[data-action="apply-force-mode"][data-mode="schedule"]')
+  ?.dispatchEvent(new win.MouseEvent('click', { bubbles: true, composed: true }));
+await new Promise((r) => setTimeout(r, 50));
+const scheduleOnlyCalls = calls.slice(scheduleOnlyCallStart);
+const disabledScheduledPrice = scheduleOnlyCalls.some((c) => c[1] === 'turn_off' && c[2].entity_id === 'switch.force_price');
+const scheduleRemainsEnabled = states['switch.schedule'].state === 'on';
+console.log(`${disabledScheduledPrice && scheduleRemainsEnabled ? 'PASS' : 'FAIL'}: plain schedule removes only the price condition`);
+if (!disabledScheduledPrice || !scheduleRemainsEnabled) ok = false;
+
+openForceWizard();
+await new Promise((r) => setTimeout(r, 30));
 const priceChoice = root.querySelector('[data-action="choose-force-mode"][data-mode="price"]');
 priceChoice?.dispatchEvent(new win.MouseEvent('click', { bubbles: true, composed: true }));
 await new Promise((r) => setTimeout(r, 30));
@@ -125,10 +164,10 @@ if (priceInput) {
 root.querySelector('[data-action="apply-force-mode"][data-mode="price"]')
   ?.dispatchEvent(new win.MouseEvent('click', { bubbles: true, composed: true }));
 await new Promise((r) => setTimeout(r, 50));
-const savedPrice = calls.some((c) => c[0] === 'number' && c[1] === 'set_value' && c[2].entity_id === 'number.price' && c[2].value === 0.15);
-const enabledPriceMode = calls.some((c) => c[0] === 'homeassistant' && c[1] === 'turn_on' && c[2].entity_id === 'switch.force_price');
-console.log(`${savedPrice && enabledPriceMode ? 'PASS' : 'FAIL'}: price path saves threshold and enables price mode`);
-if (!savedPrice || !enabledPriceMode) ok = false;
+const disabledSchedule = calls.some((c) => c[1] === 'turn_off' && c[2].entity_id === 'switch.schedule');
+const priceRemainsEnabled = states['switch.force_price'].state === 'on';
+console.log(`${disabledSchedule && priceRemainsEnabled ? 'PASS' : 'FAIL'}: standalone price plan explicitly disables schedule gating`);
+if (!disabledSchedule || !priceRemainsEnabled) ok = false;
 
 openForceWizard();
 await new Promise((r) => setTimeout(r, 30));
@@ -161,34 +200,6 @@ await new Promise((r) => setTimeout(r, 40));
 const stoppedTimer = calls.some((c) => c[1] === 'turn_off' && c[2].entity_id === 'switch.force_timer');
 console.log(`${hasActiveMode && stoppedTimer ? 'PASS' : 'FAIL'}: active force mode can be stopped from wizard`);
 if (!hasActiveMode || !stoppedTimer) ok = false;
-
-// Settings modal open/close flow (delegated actions + requestUpdate render cycle).
-const openSettings = root.querySelector('[data-action="open-settings"]');
-if (openSettings) {
-  openSettings.dispatchEvent(new win.MouseEvent('click', { bubbles: true, composed: true }));
-  await new Promise((r) => setTimeout(r, 40));
-  const opened = !!root.querySelector('.settings-backdrop');
-  console.log(`${opened ? 'PASS' : 'FAIL'}: open-settings renders the settings modal`);
-  if (!opened) ok = false;
-  const settingsPanel = root.querySelector('.settings-panel');
-  const forceSettingsMoved =
-    settingsPanel?.querySelectorAll('.setting-tile').length === 2 &&
-    !settingsPanel.textContent.includes('Acceptable Price') &&
-    !settingsPanel.textContent.includes('Force Duration');
-  console.log(`${forceSettingsMoved ? 'PASS' : 'FAIL'}: force parameters appear only in the wizard`);
-  if (!forceSettingsMoved) ok = false;
-
-  const closeSettings = root.querySelector('[data-action="close-settings"]');
-  if (opened && closeSettings) {
-    closeSettings.dispatchEvent(new win.MouseEvent('click', { bubbles: true, composed: true }));
-    await new Promise((r) => setTimeout(r, 40));
-    const closed = !root.querySelector('.settings-backdrop');
-    console.log(`${closed ? 'PASS' : 'FAIL'}: close-settings dismisses the settings modal`);
-    if (!closed) ok = false;
-  }
-} else {
-  console.log('SKIP: no open-settings control found');
-}
 
 console.log(ok ? '\nSMOKE TEST OK' : '\nSMOKE TEST FAILED');
 process.exit(ok ? 0 : 1);

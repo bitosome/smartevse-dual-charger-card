@@ -2,7 +2,7 @@
 
 Standalone Lovelace card for the SmartEVSE Dual Charger Home Assistant integration.
 
-Version: `0.0.14`
+Version: `0.0.15`
 
 This repository contains only the frontend card and local preview assets.
 
@@ -12,10 +12,9 @@ This repository contains only the frontend card and local preview assets.
 - Animated flow line to the active SmartEVSE using the same charging/idle/error color vocabulary as the integration WLED visuals.
 - Per-SmartEVSE state cards with state, mode, offered current, max current, override current, and detected battery level.
 - Optional EV battery node below each SmartEVSE when the integration reports a connected EV.
-- Two primary charging controls: a direct scheduled-charging toggle and one Force Charge entry point.
-- Guided Force Charge wizard for immediate/conditional charging, timed charging, or price-limited charging.
-- Hero tile shows the current controller state and opens the Policy & limits modal when tapped.
-- Policy & limits modal edits charge policy and duty cycle without opening the native Home Assistant entity dialog.
+- One Charging Plan control for all schedule and force-charge behavior.
+- Guided wizard for scheduled charging, schedule plus acceptable price, price-controlled charging at any time, immediate charging, or timed charging.
+- Hero tile presents the current controller state without a separate settings action.
 - Charge policy labels are always based on `SmartEVSE 1` and `SmartEVSE 2`, not vehicle names.
 - Local preview page with several mock charging scenarios for UI iteration.
 
@@ -92,13 +91,12 @@ The card also expects the related control entities configured in `card_flow.yaml
 
 ## Interaction Model
 
-- Tap the hero tile to open Policy & limits.
-- Tap Schedule to turn scheduled charging on or off.
-- Tap Force Charge to choose immediate/conditional, timed, or price-limited charging.
+- Tap Charging Plan to configure all charging behavior.
+- Scheduled charging can run with or without a price limit. With the price requirement enabled, both the schedule window and acceptable-price condition must be satisfied.
+- Price-controlled charging outside the schedule explicitly turns scheduled charging off.
+- Immediate and timed charging override the current gate; an enabled schedule remains available to resume afterward.
 - Timer duration and acceptable price are configured directly in their respective wizard paths.
-- Starting a force-charge mode replaces any other active force-charge mode; use Stop in the wizard to turn it off.
-- In Policy & limits, charge policy opens as an in-modal submenu with a back button.
-- Number/time-like values are edited directly inside the modal.
+- Use Turn off in the wizard to disable the current plan.
 
 ## Naming Rules
 
