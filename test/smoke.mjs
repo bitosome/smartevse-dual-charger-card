@@ -79,7 +79,10 @@ const checks = {
   'renders ha-card': htmlOut.includes('<ha-card') || htmlOut.includes('ha-card'),
   'has data-action elements': !!root.querySelector('[data-action]'),
   'non-trivial markup': htmlOut.length > 500,
-  'shows one charging-plan control': root.querySelectorAll('.primary-controls .control-tile').length === 1,
+  'uses the hero as the only charging-plan control':
+    root.querySelectorAll('[data-action="open-force-wizard"]').length === 1 &&
+    root.querySelector('[data-action="open-force-wizard"]')?.classList.contains('status-hero') &&
+    !root.querySelector('.primary-controls'),
   'removes separate schedule and settings controls':
     !root.querySelector('[data-action="toggle"][data-entity="switch.schedule"]') &&
     !root.querySelector('[data-action="open-settings"]'),
@@ -100,7 +103,7 @@ openForceWizard();
 await new Promise((r) => setTimeout(r, 40));
 const forceWizardOpened = !!root.querySelector('.force-wizard-panel');
 const forceChoices = root.querySelectorAll('[data-action="choose-force-mode"]');
-console.log(`${forceWizardOpened ? 'PASS' : 'FAIL'}: charging-plan tile opens wizard`);
+console.log(`${forceWizardOpened ? 'PASS' : 'FAIL'}: hero tile opens charging-plan wizard`);
 console.log(`${forceChoices.length === 4 ? 'PASS' : 'FAIL'}: wizard offers schedule, price, immediate, and timer plans`);
 if (!forceWizardOpened || forceChoices.length !== 4) ok = false;
 

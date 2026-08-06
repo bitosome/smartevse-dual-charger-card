@@ -2,7 +2,7 @@ import { LitElement, html } from "lit";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { DESIGN_TOKENS_CSS } from "./shared/design-tokens";
 
-const CARD_VERSION = "0.0.15";
+const CARD_VERSION = "0.0.16";
 
 const FALLBACK_WLED_NODE_VISUALS = {
   off: {
@@ -1613,37 +1613,6 @@ class SmartEVSEFlowCard extends LitElement {
         ? `Remaining ${timerLabel}`
         : "Waiting for plug-in"
       : `Duration ${this._formatMinutes(forceDuration)}`;
-    const activeChargingMode = this._activeForceMode();
-    const chargingPlanValue =
-      activeChargingMode === "timer"
-        ? timerLabel !== "n/a"
-          ? `Timer · ${timerLabel}`
-          : anyConnected
-            ? "Timer active"
-            : "Timer · waiting EV"
-        : activeChargingMode === "schedule_price"
-          ? scheduleState !== "on"
-            ? "Schedule + price · waiting schedule"
-            : priceAccepted
-              ? "Schedule + price · ready"
-              : "Schedule + price · waiting price"
-        : activeChargingMode === "schedule"
-          ? scheduleState === "on"
-            ? "Schedule · window open"
-            : "Schedule · armed"
-        : activeChargingMode === "price"
-          ? priceAccepted
-            ? "Price accepted"
-            : anyConnected
-              ? "Price · waiting"
-              : "Price · waiting EV"
-          : activeChargingMode === "simple"
-            ? anyConnected
-              ? "Charge now · active"
-              : "Charge now · waiting EV"
-            : "Off";
-    const chargingPlanState = activeChargingMode ? (chargeAllowed ? "on" : "waiting") : "off";
-    const chargingPlanTone = chargingPlanState === "on" ? "ok" : chargingPlanState === "waiting" ? "active" : "default";
     const hasControllerError = controllerError && !["NONE", "None", "unknown", "unavailable"].includes(controllerError);
     const acceptablePriceValue = acceptablePrice !== null ? `${acceptablePrice.toFixed(3)} ${this._currency}` : "n/a";
     const activeTitle = hasControllerError
@@ -2639,7 +2608,7 @@ class SmartEVSEFlowCard extends LitElement {
         }
 
         .status-hero-wrap {
-          margin-bottom: 6px;
+          margin-bottom: 0;
         }
 
         .status-hero {
@@ -2662,10 +2631,6 @@ class SmartEVSEFlowCard extends LitElement {
           background-clip: padding-box;
           --control-button-border-radius: var(--tile-border-radius);
           transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
-        }
-
-        .status-hero-static {
-          cursor: default;
         }
 
         .status-hero:focus-visible {
@@ -3250,31 +3215,20 @@ class SmartEVSEFlowCard extends LitElement {
                 <div class="glow-under status-glow" aria-hidden="true">
                   <div class="glow-overlay"></div>
                 </div>
-                <div class="status-hero status-hero-static tone-${this._safe(statusTone)}">
+                <button
+                  class="status-hero tone-${this._safe(statusTone)}"
+                  data-action="open-force-wizard"
+                  type="button"
+                  aria-label="Open charging plan"
+                >
                   <div class="status-copy">
                     <div class="status-title">${this._safe(activeTitle)}</div>
                     <div class="status-details">${heroDetailsMarkup}</div>
                   </div>
-                </div>
-              </div>
-              <div class="section-title">
-                <span>Charging control</span>
-                <small>Tap to configure</small>
-              </div>
-              <div class="controls home-controls primary-controls">
-                ${this._controlTile({
-                  entityId:
-                    this._config.schedule_switch_entity ||
-                    this._config.force_charge_entity ||
-                    this._config.force_price_entity ||
-                    this._config.force_timer_entity,
-                  icon: "mdi:ev-station",
-                  label: "Charging Plan",
-                  value: chargingPlanValue,
-                  tone: chargingPlanTone,
-                  state: chargingPlanState,
-                  action: "open-force-wizard",
-                })}
+                  <div class="status-action">
+                    <ha-icon icon="mdi:ev-station"></ha-icon>
+                  </div>
+                </button>
               </div>
             </section>
 

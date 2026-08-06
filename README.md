@@ -2,7 +2,7 @@
 
 Standalone Lovelace card for the SmartEVSE Dual Charger Home Assistant integration.
 
-Version: `0.0.15`
+Version: `0.0.16`
 
 This repository contains only the frontend card and local preview assets.
 
@@ -12,9 +12,9 @@ This repository contains only the frontend card and local preview assets.
 - Animated flow line to the active SmartEVSE using the same charging/idle/error color vocabulary as the integration WLED visuals.
 - Per-SmartEVSE state cards with state, mode, offered current, max current, override current, and detected battery level.
 - Optional EV battery node below each SmartEVSE when the integration reports a connected EV.
-- One Charging Plan control for all schedule and force-charge behavior.
+- The hero tile is the single Charging Plan control for all schedule and force-charge behavior.
 - Guided wizard for scheduled charging, schedule plus acceptable price, price-controlled charging at any time, immediate charging, or timed charging.
-- Hero tile presents the current controller state without a separate settings action.
+- Power-flow branches originate directly beneath the hero tile.
 - Charge policy labels are always based on `SmartEVSE 1` and `SmartEVSE 2`, not vehicle names.
 - Local preview page with several mock charging scenarios for UI iteration.
 
@@ -91,7 +91,7 @@ The card also expects the related control entities configured in `card_flow.yaml
 
 ## Interaction Model
 
-- Tap Charging Plan to configure all charging behavior.
+- Tap the hero tile to configure all charging behavior.
 - Scheduled charging can run with or without a price limit. With the price requirement enabled, both the schedule window and acceptable-price condition must be satisfied.
 - Price-controlled charging outside the schedule explicitly turns scheduled charging off.
 - Immediate and timed charging override the current gate; an enabled schedule remains available to resume afterward.
