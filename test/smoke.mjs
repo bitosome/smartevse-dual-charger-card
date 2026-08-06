@@ -212,6 +212,12 @@ openForceWizard();
 await new Promise((r) => setTimeout(r, 30));
 click('[data-action="choose-force-mode"][data-mode="now"]');
 await new Promise((r) => setTimeout(r, 30));
+const chargeNowIsConcise =
+  !root.querySelector('.wizard-confirmation') &&
+  !root.textContent.includes('Ready to charge') &&
+  !root.textContent.includes('Charging begins when you confirm this plan');
+console.log(`${chargeNowIsConcise ? 'PASS' : 'FAIL'}: charge-now page omits redundant readiness copy`);
+if (!chargeNowIsConcise) ok = false;
 click('[data-action="toggle-force-now-price"]');
 await new Promise((r) => setTimeout(r, 30));
 const priceInput = root.querySelector('.force-input[data-entity="number.price"]');

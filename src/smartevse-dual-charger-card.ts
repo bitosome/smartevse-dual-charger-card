@@ -3,7 +3,7 @@ import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { DESIGN_TOKENS_CSS } from "./shared/design-tokens";
 import { buildGlow, type PulseColors } from "./shared/glow";
 
-const CARD_VERSION = "0.0.19";
+const CARD_VERSION = "0.0.20";
 
 const ACTIVE_GLOW: PulseColors = {
   weak: "rgba(var(--sdc-led-idle-rgb), 0.16)",
@@ -1089,7 +1089,6 @@ class SmartEVSEFlowCard extends LitElement {
     acceptablePrice,
     forceDuration,
     timerLabel,
-    anyConnected,
     scheduleState,
     scheduleNextEvent,
     priceAccepted,
@@ -1297,17 +1296,6 @@ class SmartEVSEFlowCard extends LitElement {
           </div>
         `
       : `
-          <div class="wizard-confirmation">
-            <ha-icon icon="mdi:lightning-bolt"></ha-icon>
-            <div>
-              <strong>${anyConnected ? "Ready to charge" : "Waiting for an eligible EV"}</strong>
-              <span>${
-                anyConnected
-                  ? "Charging begins when you confirm this plan."
-                  : "The request stays ready and begins after an eligible EV connects."
-              }</span>
-            </div>
-          </div>
           <div class="wizard-expandable ${this._forceNowTimer ? "expanded" : ""}">
             <button
               class="wizard-toggle ${this._forceNowTimer ? "selected" : ""}"
@@ -2410,7 +2398,6 @@ class SmartEVSEFlowCard extends LitElement {
         }
 
         .wizard-option-copy,
-        .wizard-confirmation > div,
         .wizard-toggle-copy {
           display: grid;
           gap: 3px;
@@ -2418,7 +2405,6 @@ class SmartEVSEFlowCard extends LitElement {
         }
 
         .wizard-option-title,
-        .wizard-confirmation strong,
         .wizard-toggle-copy strong,
         .wizard-field-label {
           font-size: var(--sdc-font-value);
@@ -2427,7 +2413,6 @@ class SmartEVSEFlowCard extends LitElement {
         }
 
         .wizard-option-detail,
-        .wizard-confirmation span,
         .wizard-toggle-copy span,
         .wizard-field-helper {
           color: var(--sdc-text-muted);
@@ -2440,27 +2425,6 @@ class SmartEVSEFlowCard extends LitElement {
         }
 
         .wizard-option.selected .wizard-option-next {
-          color: var(--sdc-led-idle);
-        }
-
-        .wizard-confirmation {
-          display: grid;
-          grid-template-columns: minmax(0, 1fr) auto;
-          align-items: center;
-          gap: var(--medium-gap);
-          padding: var(--tile-padding);
-          margin-bottom: var(--medium-gap);
-          border-radius: var(--tile-border-radius);
-          background: var(--sdc-surface-control);
-        }
-
-        .wizard-confirmation {
-          grid-template-columns: 36px minmax(0, 1fr);
-          margin-bottom: 0;
-        }
-
-        .wizard-confirmation > ha-icon {
-          --mdc-icon-size: 22px;
           color: var(--sdc-led-idle);
         }
 
@@ -3461,7 +3425,6 @@ class SmartEVSEFlowCard extends LitElement {
             acceptablePrice,
             forceDuration,
             timerLabel,
-            anyConnected,
             scheduleState,
             scheduleNextEvent,
             priceAccepted,
