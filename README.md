@@ -2,7 +2,7 @@
 
 Standalone Lovelace card for the SmartEVSE Dual Charger Home Assistant integration.
 
-Version: `0.0.18`
+Version: `0.0.19`
 
 This repository contains only the frontend card and local preview assets.
 
@@ -127,7 +127,7 @@ The preview renders the real card against mock Home Assistant state.
 
 This card is part of the `bitosome` Home Assistant card family and follows a shared design system. The **single source of truth** is [`space-hub-card`](https://github.com/bitosome/space-hub-card) — specifically `space-hub-card/src/shared/design-tokens.ts`. See its [Design System & UI Implementation](https://github.com/bitosome/space-hub-card#design-system--ui-implementation) section for the full approach and file map.
 
-This card is built with **TypeScript + Lit + Rollup** (`src/smartevse-dual-charger-card.ts`, output to `dist/`), matching the rest of the family. The design tokens are **vendored** into this repo at `src/shared/design-tokens.ts` (carrying an `AUTO-SYNCED … DO NOT EDIT` banner); its `DESIGN_TOKENS_CSS` is injected at the top of the card's `<style>` block. Update tokens in `space-hub-card` and run its `scripts/sync-design-tokens.sh` — never edit the vendored copy directly.
+This card is built with **TypeScript + Lit + Rollup** (`src/smartevse-dual-charger-card.ts`, output to `dist/`), matching the rest of the family. The design tokens are **vendored** into this repo at `src/shared/design-tokens.ts` (carrying an `AUTO-SYNCED … DO NOT EDIT` banner); its `DESIGN_TOKENS_CSS` is injected at the top of the card's `<style>` block. The canonical `buildGlow()` helper is vendored from `space-hub-card/src/glow.ts` into `src/shared/glow.ts` and is used for hero and selected-plan glows. Update shared UI primitives in `space-hub-card` first and keep the vendored copies aligned.
 
 Rules when implementing or changing UI (these mirror `space-hub-card`, so every card looks and behaves the same):
 

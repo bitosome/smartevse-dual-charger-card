@@ -105,6 +105,9 @@ const checks = {
   'hero glow follows physical WLED while charging is paused':
     root.querySelector('.status-hero-wrap')?.classList.contains('visual-idle') &&
     root.querySelector('.status-hero')?.classList.contains('visual-idle'),
+  'hero glow uses the canonical shared pulse':
+    root.querySelector('.status-glow')?.getAttribute('style')?.includes('animation: glowPulse 2.4s ease-in-out infinite') &&
+    root.querySelector('.status-glow')?.getAttribute('style')?.includes('box-shadow: 0 18px 40px'),
 };
 let ok = true;
 for (const [name, pass] of Object.entries(checks)) {
@@ -172,6 +175,14 @@ const enabledSchedule = scheduleCalls.some((c) => c[1] === 'turn_on' && c[2].ent
 const enabledScheduledPrice = scheduleCalls.some((c) => c[1] === 'turn_on' && c[2].entity_id === 'switch.force_price');
 console.log(`${savedSchedulePrice && enabledSchedule && enabledScheduledPrice ? 'PASS' : 'FAIL'}: schedule can require an acceptable price`);
 if (!savedSchedulePrice || !enabledSchedule || !enabledScheduledPrice) ok = false;
+
+const heroPlanDetails = [...root.querySelectorAll('.status-detail')].map((node) => node.textContent.trim());
+const heroShowsCombinedPlan =
+  heroPlanDetails[0] === 'Schedule + acceptable price' &&
+  heroPlanDetails[1] === 'Waiting for schedule window' &&
+  heroPlanDetails.filter((detail) => detail === 'Waiting for schedule window').length === 1;
+console.log(`${heroShowsCombinedPlan ? 'PASS' : 'FAIL'}: hero identifies schedule plus acceptable price without duplicate status text`);
+if (!heroShowsCombinedPlan) ok = false;
 
 openForceWizard();
 await new Promise((r) => setTimeout(r, 30));

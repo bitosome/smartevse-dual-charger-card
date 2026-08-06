@@ -1,8 +1,14 @@
 import { LitElement, html } from "lit";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { DESIGN_TOKENS_CSS } from "./shared/design-tokens";
+import { buildGlow, type PulseColors } from "./shared/glow";
 
-const CARD_VERSION = "0.0.18";
+const CARD_VERSION = "0.0.19";
+
+const ACTIVE_GLOW: PulseColors = {
+  weak: "rgba(var(--sdc-led-idle-rgb), 0.16)",
+  strong: "rgba(var(--sdc-led-idle-rgb), 0.30)",
+};
 
 const FALLBACK_WLED_NODE_VISUALS = {
   off: {
@@ -1171,9 +1177,10 @@ class SmartEVSEFlowCard extends LitElement {
                       ? activeMode === "schedule" || activeMode === "schedule_price"
                       : Boolean(activeMode && !["schedule", "schedule_price"].includes(activeMode));
                   const detail = selected && activeDetail ? activeDetail : choice.detail;
+                  const glowStyle = buildGlow(ACTIVE_GLOW, "pulse", selected).style;
                   return `
                     <div class="wizard-option-wrap ${selected ? "selected" : ""}">
-                      <div class="glow-under wizard-option-glow" aria-hidden="true"><div class="glow-overlay"></div></div>
+                      <div class="glow-under wizard-option-glow" style="${this._safe(glowStyle)}" aria-hidden="true"><div class="glow-overlay"></div></div>
                       <button
                         class="wizard-option ${selected ? "selected" : ""}"
                         data-action="choose-force-mode"
@@ -1697,6 +1704,7 @@ class SmartEVSEFlowCard extends LitElement {
 
     const priceAccepted =
       forcePriceOn && price !== null && acceptablePrice !== null ? price <= acceptablePrice : false;
+    const scheduleWithPrice = scheduleSwitchOn && forcePriceOn;
     const forcePriceDetail = forcePriceOn
       ? priceAccepted
         ? `Current ${priceValue}`
@@ -1723,9 +1731,11 @@ class SmartEVSEFlowCard extends LitElement {
           : "Charging paused";
     const currentDetail = hasControllerError
       ? this._pretty(controllerError)
-      : activeEv
-        ? `${activeEv.state} / ${this._formatCurrent(activeEv.chargeCurrent)} offered`
-        : this._pretty(chargeReason);
+      : scheduleWithPrice
+        ? "Schedule + acceptable price"
+        : activeEv
+          ? `${activeEv.state} / ${this._formatCurrent(activeEv.chargeCurrent)} offered`
+          : this._pretty(chargeReason);
     const modeDetail = (() => {
       if (activeRaw && dutyLabel !== "n/a") {
         return `Duty left: ${dutyLabel}`;
@@ -1756,6 +1766,21 @@ class SmartEVSEFlowCard extends LitElement {
     const heroDetailsMarkup = heroDetails
       .map((detail) => `<div class="status-detail">${this._safe(detail)}</div>`)
       .join("");
+    const heroGlowColors: PulseColors | undefined =
+      heroVisual === "charging"
+        ? {
+            weak: "rgba(var(--sdc-led-charging-rgb), 0.16)",
+            strong: "rgba(var(--sdc-led-charging-rgb), 0.30)",
+          }
+        : heroVisual === "error"
+          ? {
+              weak: "rgba(var(--sdc-led-error-rgb), 0.16)",
+              strong: "rgba(var(--sdc-led-error-rgb), 0.30)",
+            }
+          : heroVisual === "idle"
+            ? ACTIVE_GLOW
+            : undefined;
+    const heroGlowStyle = buildGlow(heroGlowColors, "pulse", heroVisual !== "off").style;
     const leftConnectorPath = this._homeConnectorPath("left");
     const rightConnectorPath = this._homeConnectorPath("right");
 
@@ -2355,11 +2380,7 @@ class SmartEVSEFlowCard extends LitElement {
         }
 
         .wizard-option-wrap.selected .glow-under {
-          --pulse-weak: rgba(var(--sdc-led-idle-rgb), 0.16);
-          --pulse-strong: rgba(var(--sdc-led-idle-rgb), 0.30);
           opacity: 1;
-          box-shadow: 0 18px 40px var(--pulse-strong), 0 6px 18px var(--pulse-weak);
-          animation: glowPulse 2.4s ease-in-out infinite;
         }
 
         .wizard-option:disabled,
@@ -2814,11 +2835,7 @@ class SmartEVSEFlowCard extends LitElement {
         }
 
         .status-hero-wrap.visual-charging .glow-under {
-          --pulse-weak: rgba(var(--sdc-led-charging-rgb), 0.16);
-          --pulse-strong: rgba(var(--sdc-led-charging-rgb), 0.30);
           opacity: 1;
-          box-shadow: 0 18px 40px var(--pulse-strong), 0 6px 18px var(--pulse-weak);
-          animation: glowPulse 1.8s ease-in-out infinite;
         }
 
         .status-hero.visual-idle {
@@ -2828,11 +2845,7 @@ class SmartEVSEFlowCard extends LitElement {
         }
 
         .status-hero-wrap.visual-idle .glow-under {
-          --pulse-weak: rgba(var(--sdc-led-idle-rgb), 0.16);
-          --pulse-strong: rgba(var(--sdc-led-idle-rgb), 0.30);
           opacity: 1;
-          box-shadow: 0 18px 40px var(--pulse-strong), 0 6px 18px var(--pulse-weak);
-          animation: glowPulse 2.4s ease-in-out infinite;
         }
 
         .status-hero.visual-error {
@@ -2842,11 +2855,7 @@ class SmartEVSEFlowCard extends LitElement {
         }
 
         .status-hero-wrap.visual-error .glow-under {
-          --pulse-weak: rgba(var(--sdc-led-error-rgb), 0.16);
-          --pulse-strong: rgba(var(--sdc-led-error-rgb), 0.30);
           opacity: 1;
-          box-shadow: 0 18px 40px var(--pulse-strong), 0 6px 18px var(--pulse-weak);
-          animation: glowPulse 1.2s ease-in-out infinite;
         }
 
         .status-copy {
@@ -3384,7 +3393,7 @@ class SmartEVSEFlowCard extends LitElement {
           <div class="flow-stage">
             <section class="house-node">
               <div class="status-hero-wrap visual-${this._safe(heroVisual)}">
-                <div class="glow-under status-glow" aria-hidden="true">
+                <div class="glow-under status-glow" style="${this._safe(heroGlowStyle)}" aria-hidden="true">
                   <div class="glow-overlay"></div>
                 </div>
                 <button
