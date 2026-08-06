@@ -2,7 +2,7 @@ import { LitElement, html } from "lit";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { DESIGN_TOKENS_CSS } from "./shared/design-tokens";
 
-const CARD_VERSION = "0.0.13";
+const CARD_VERSION = "0.0.14";
 
 const FALLBACK_WLED_NODE_VISUALS = {
   off: {
@@ -78,6 +78,10 @@ class SmartEVSEFlowCard extends LitElement {
   private _editorDrafts: Record<string, string> = {};
   private _settingsModalOpen = false;
   private _settingsSubmenuEntity: string | null = null;
+  private _forceWizardOpen = false;
+  private _forceWizardStep: "choose" | "simple" | "price" | "timer" = "choose";
+  private _forceWizardBusy = false;
+  private _forceWizardError = "";
   private _lastRenderKey = "";
 
   static getStubConfig() {
@@ -666,6 +670,7 @@ class SmartEVSEFlowCard extends LitElement {
   }
 
   _openSettingsModal() {
+    this._forceWizardOpen = false;
     this._settingsModalOpen = true;
     this._settingsSubmenuEntity = null;
     this._editorDrafts = {};
@@ -679,7 +684,184 @@ class SmartEVSEFlowCard extends LitElement {
     this._render();
   }
 
-  _settingsControls({ policy, acceptablePrice, forceDuration, dutyCycleMinutes }) {
+  _forceModeEntity(mode) {
+    if (mode === "price") {
+      return this._config.force_price_entity;
+    }
+    if (mode === "timer") {
+      return this._config.force_timer_entity;
+    }
+    return this._config.force_charge_entity;
+  }
+
+  _activeForceMode() {
+    if (this._state(this._config.force_timer_entity) === "on") {
+      return "timer";
+    }
+    if (this._state(this._config.force_price_entity) === "on") {
+      return "price";
+    }
+    if (this._state(this._config.force_charge_entity) === "on") {
+      return "simple";
+    }
+    return null;
+  }
+
+  _openForceWizard() {
+    this._settingsModalOpen = false;
+    this._forceWizardOpen = true;
+    this._forceWizardStep = "choose";
+    this._forceWizardBusy = false;
+    this._forceWizardError = "";
+    if (this._config.acceptable_price_entity) {
+      this._editorDrafts[this._config.acceptable_price_entity] = this._state(this._config.acceptable_price_entity);
+    }
+    if (this._config.force_charge_duration_entity) {
+      this._editorDrafts[this._config.force_charge_duration_entity] = this._state(
+        this._config.force_charge_duration_entity,
+      );
+    }
+    this._render();
+  }
+
+  _closeForceWizard() {
+    if (this._forceWizardBusy) {
+      return;
+    }
+    this._forceWizardOpen = false;
+    this._forceWizardStep = "choose";
+    this._forceWizardError = "";
+    this._render();
+  }
+
+  _selectForceMode(mode) {
+    if (!["simple", "price", "timer"].includes(mode)) {
+      return;
+    }
+    this._forceWizardStep = mode;
+    this._forceWizardError = "";
+    this._render();
+  }
+
+  _backForceWizard() {
+    if (this._forceWizardBusy) {
+      return;
+    }
+    this._forceWizardStep = "choose";
+    this._forceWizardError = "";
+    this._render();
+  }
+
+  _forceModeLabel(mode) {
+    if (mode === "price") {
+      return "Price limit";
+    }
+    if (mode === "timer") {
+      return "Timer";
+    }
+    return "Charge now";
+  }
+
+  async _setSwitchState(entityId, enabled) {
+    if (!entityId || !this._entity(entityId)) {
+      throw new Error(`Required ${enabled ? "force-charge" : "switch"} entity is unavailable.`);
+    }
+    const isOn = this._state(entityId) === "on";
+    if (isOn === enabled) {
+      return;
+    }
+    await this._hass.callService("homeassistant", enabled ? "turn_on" : "turn_off", {
+      entity_id: entityId,
+    });
+  }
+
+  async _setWizardNumber(entityId) {
+    const meta = this._editorMeta(entityId);
+    if (!meta.supported || meta.kind !== "number") {
+      throw new Error("This force-charge setting is unavailable or is not a number entity.");
+    }
+    const value = Number.parseFloat(this._editorDraft(entityId));
+    if (!Number.isFinite(value)) {
+      throw new Error("Enter a valid number before continuing.");
+    }
+    if (meta.min !== null && value < meta.min) {
+      throw new Error(`Value must be at least ${meta.min}${meta.unit ? ` ${meta.unit}` : ""}.`);
+    }
+    if (meta.max !== null && value > meta.max) {
+      throw new Error(`Value must be at most ${meta.max}${meta.unit ? ` ${meta.unit}` : ""}.`);
+    }
+    await this._hass.callService(meta.serviceDomain, meta.service, {
+      entity_id: entityId,
+      value,
+    });
+  }
+
+  async _applyForceMode(mode) {
+    if (this._forceWizardBusy || !["simple", "price", "timer"].includes(mode)) {
+      return;
+    }
+    this._forceWizardBusy = true;
+    this._forceWizardError = "";
+    this._render();
+    try {
+      const target = this._forceModeEntity(mode);
+      if (!target || !this._entity(target)) {
+        throw new Error("The switch for this force-charge mode is unavailable.");
+      }
+      if (mode === "price") {
+        await this._setWizardNumber(this._config.acceptable_price_entity);
+      } else if (mode === "timer") {
+        await this._setWizardNumber(this._config.force_charge_duration_entity);
+      }
+
+      const forceEntities = [
+        this._config.force_charge_entity,
+        this._config.force_price_entity,
+        this._config.force_timer_entity,
+      ].filter(Boolean);
+      for (const entityId of forceEntities) {
+        if (entityId !== target && this._state(entityId) === "on") {
+          await this._setSwitchState(entityId, false);
+        }
+      }
+      await this._setSwitchState(target, true);
+      this._forceWizardOpen = false;
+      this._forceWizardStep = "choose";
+    } catch (error) {
+      this._forceWizardError = error instanceof Error ? error.message : "Unable to start force charging.";
+    } finally {
+      this._forceWizardBusy = false;
+      this._render();
+    }
+  }
+
+  async _stopForceCharge() {
+    if (this._forceWizardBusy) {
+      return;
+    }
+    this._forceWizardBusy = true;
+    this._forceWizardError = "";
+    this._render();
+    try {
+      const activeEntities = [
+        this._config.force_charge_entity,
+        this._config.force_price_entity,
+        this._config.force_timer_entity,
+      ].filter((entityId) => entityId && this._state(entityId) === "on");
+      for (const entityId of activeEntities) {
+        await this._setSwitchState(entityId, false);
+      }
+      this._forceWizardOpen = false;
+      this._forceWizardStep = "choose";
+    } catch (error) {
+      this._forceWizardError = error instanceof Error ? error.message : "Unable to stop force charging.";
+    } finally {
+      this._forceWizardBusy = false;
+      this._render();
+    }
+  }
+
+  _settingsControls({ policy, dutyCycleMinutes }) {
     return `
       <div class="controls home-controls setting-controls">
         ${this._settingTile({
@@ -689,20 +871,6 @@ class SmartEVSEFlowCard extends LitElement {
           value: policy,
           detail: "Tap to edit",
           presentation: "submenu",
-        })}
-        ${this._settingTile({
-          entityId: this._config.acceptable_price_entity,
-          icon: "mdi:cash-edit",
-          label: "Acceptable Price",
-          value: acceptablePrice !== null ? `${acceptablePrice.toFixed(3)} ${this._currency}` : "n/a",
-          detail: "Tap to edit",
-        })}
-        ${this._settingTile({
-          entityId: this._config.force_charge_duration_entity,
-          icon: "mdi:clock-time-four-outline",
-          label: "Force Duration",
-          value: this._formatMinutes(forceDuration),
-          detail: "Tap to edit",
         })}
         ${this._settingTile({
           entityId: this._config.duty_cycle_entity,
@@ -729,11 +897,200 @@ class SmartEVSEFlowCard extends LitElement {
             <div>
               <div class="modal-kicker">Controls</div>
               <div class="modal-title">Policy & limits</div>
-              <div class="modal-subtitle">Configure priority, price threshold, force timer duration, and duty cycle.</div>
+              <div class="modal-subtitle">Configure charging priority and duty cycle.</div>
             </div>
             <button class="modal-close" data-action="close-settings" type="button">Close</button>
           </div>
           ${settingsControls}
+        </div>
+      </div>
+    `;
+  }
+
+  _forceWizardNumberField(entityId, label, helper) {
+    const meta = this._editorMeta(entityId);
+    if (!meta.supported || meta.kind !== "number") {
+      return `<div class="wizard-error">The configured ${this._safe(label.toLowerCase())} entity is unavailable.</div>`;
+    }
+    const min = meta.min !== null ? `min="${this._safe(meta.min)}"` : "";
+    const max = meta.max !== null ? `max="${this._safe(meta.max)}"` : "";
+    const step = meta.step !== null ? `step="${this._safe(meta.step)}"` : "";
+    return `
+      <label class="wizard-field">
+        <span class="wizard-field-label">${this._safe(label)}</span>
+        <span class="wizard-input-wrap">
+          <input
+            class="setting-input force-input"
+            data-entity="${this._safe(entityId)}"
+            type="number"
+            inputmode="decimal"
+            value="${this._safe(this._editorDraft(entityId))}"
+            ${min}
+            ${max}
+            ${step}
+          />
+          ${meta.unit ? `<span class="wizard-input-unit">${this._safe(meta.unit)}</span>` : ""}
+        </span>
+        <span class="wizard-field-helper">${this._safe(helper)}</span>
+      </label>
+    `;
+  }
+
+  _forceWizardModal({ priceValue, acceptablePrice, forceDuration, timerLabel, anyConnected }) {
+    if (!this._forceWizardOpen) {
+      return "";
+    }
+
+    const activeMode = this._activeForceMode();
+    const activeLabel = activeMode ? this._forceModeLabel(activeMode) : "";
+    const busy = this._forceWizardBusy;
+    const error = this._forceWizardError
+      ? `<div class="wizard-error" role="alert">${this._safe(this._forceWizardError)}</div>`
+      : "";
+
+    if (this._forceWizardStep === "choose") {
+      const choices = [
+        {
+          mode: "simple",
+          icon: "mdi:lightning-bolt",
+          title: "Charge now",
+          detail: "Charge whenever an eligible EV is connected, with no time or price limit.",
+        },
+        {
+          mode: "timer",
+          icon: "mdi:timer-outline",
+          title: "With a timer",
+          detail: `Stop automatically after ${this._formatMinutes(forceDuration)}.`,
+        },
+        {
+          mode: "price",
+          icon: "mdi:cash-clock",
+          title: "With a price limit",
+          detail: `Charge while the price is at or below ${
+            acceptablePrice !== null ? `${acceptablePrice.toFixed(3)} ${this._currency}` : "your threshold"
+          }.`,
+        },
+      ];
+      return `
+        <div class="force-backdrop settings-backdrop">
+          <div class="dialog-panel force-wizard-panel" role="dialog" aria-modal="true" aria-label="Set up force charging">
+            <div class="modal-head">
+              <div>
+                <div class="modal-kicker">Force charge</div>
+                <div class="modal-title">How should charging run?</div>
+                <div class="modal-subtitle">Choose one mode. Starting it will replace any force-charge mode already active.</div>
+              </div>
+              <button class="modal-close" data-action="close-force-wizard" type="button" ${busy ? "disabled" : ""}>Close</button>
+            </div>
+            ${
+              activeMode
+                ? `
+                  <div class="wizard-active">
+                    <div class="wizard-active-copy">
+                      <span class="wizard-active-label">Active mode</span>
+                      <strong>${this._safe(activeLabel)}</strong>
+                    </div>
+                    <button class="wizard-stop" data-action="stop-force-charge" type="button" ${busy ? "disabled" : ""}>
+                      ${busy ? "Stopping…" : "Stop"}
+                    </button>
+                  </div>
+                `
+                : ""
+            }
+            <div class="wizard-options">
+              ${choices
+                .map((choice) => {
+                  const available = Boolean(this._entity(this._forceModeEntity(choice.mode)));
+                  return `
+                    <button
+                      class="wizard-option ${activeMode === choice.mode ? "selected" : ""}"
+                      data-action="choose-force-mode"
+                      data-mode="${this._safe(choice.mode)}"
+                      type="button"
+                      ${!available || busy ? "disabled" : ""}
+                    >
+                      <span class="wizard-option-icon"><ha-icon icon="${this._safe(choice.icon)}"></ha-icon></span>
+                      <span class="wizard-option-copy">
+                        <span class="wizard-option-title">${this._safe(choice.title)}</span>
+                        <span class="wizard-option-detail">${
+                          available ? this._safe(choice.detail) : "Required switch entity is unavailable."
+                        }</span>
+                      </span>
+                      <ha-icon class="wizard-option-next" icon="mdi:chevron-right"></ha-icon>
+                    </button>
+                  `;
+                })
+                .join("")}
+            </div>
+            ${error}
+          </div>
+        </div>
+      `;
+    }
+
+    const mode = this._forceWizardStep;
+    const isSimple = mode === "simple";
+    const isPrice = mode === "price";
+    const title = isSimple ? "Charge now" : isPrice ? "Set a price limit" : "Set a timer";
+    const subtitle = isSimple
+      ? "This mode requests charging immediately whenever an eligible EV is connected."
+      : isPrice
+        ? `Current price: ${priceValue}. Charging waits whenever the price is above your limit.`
+        : `Choose how long force charging may run. Current remaining time: ${timerLabel}.`;
+    const field = isPrice
+      ? this._forceWizardNumberField(
+          this._config.acceptable_price_entity,
+          "Maximum acceptable price",
+          `Price in ${this._currency}.`,
+        )
+      : mode === "timer"
+        ? this._forceWizardNumberField(
+            this._config.force_charge_duration_entity,
+            "Charging duration",
+            "The integration defines this value in minutes.",
+          )
+        : `
+          <div class="wizard-confirmation">
+            <ha-icon icon="mdi:lightning-bolt"></ha-icon>
+            <div>
+              <strong>${anyConnected ? "An EV is connected" : "No eligible EV is connected yet"}</strong>
+              <span>${
+                anyConnected
+                  ? "Charging will be requested as soon as you start this mode."
+                  : "The request will remain ready and charging will begin after an eligible EV is connected."
+              }</span>
+            </div>
+          </div>
+        `;
+
+    return `
+      <div class="force-backdrop settings-backdrop">
+        <div class="dialog-panel force-wizard-panel" role="dialog" aria-modal="true" aria-label="${this._safe(title)}">
+          <div class="modal-head modal-head-navigation">
+            <button class="modal-back" data-action="back-force-wizard" type="button" aria-label="Back" ${busy ? "disabled" : ""}>
+              <ha-icon icon="mdi:chevron-left"></ha-icon>
+            </button>
+            <div class="modal-copy">
+              <div class="modal-kicker">Force charge</div>
+              <div class="modal-title">${this._safe(title)}</div>
+              <div class="modal-subtitle">${this._safe(subtitle)}</div>
+            </div>
+            <button class="modal-close" data-action="close-force-wizard" type="button" ${busy ? "disabled" : ""}>Close</button>
+          </div>
+          <div class="wizard-step-body">${field}</div>
+          ${error}
+          <div class="wizard-actions">
+            <button class="wizard-secondary" data-action="back-force-wizard" type="button" ${busy ? "disabled" : ""}>Back</button>
+            <button
+              class="wizard-primary"
+              data-action="apply-force-mode"
+              data-mode="${this._safe(mode)}"
+              type="button"
+              ${busy ? "disabled" : ""}
+            >
+              ${busy ? "Starting…" : activeMode === mode ? "Apply changes" : "Start force charge"}
+            </button>
+          </div>
         </div>
       </div>
     `;
@@ -1036,14 +1393,10 @@ class SmartEVSEFlowCard extends LitElement {
         : `Starts ${this._formatDateTime(scheduleNextEvent)}`
       : "Tap to enable";
 
-    const forceNowValue = forceChargeOn ? (anyConnected ? "Active" : "Waiting EV") : "Off";
-    const forceNowState = forceChargeOn ? (anyConnected ? "on" : "waiting") : "off";
     const forceNowDetail = forceChargeOn ? (anyConnected ? "Charging requested now" : "Waiting for plug-in") : "Tap to start";
 
     const priceAccepted =
       forcePriceOn && price !== null && acceptablePrice !== null ? price <= acceptablePrice : false;
-    const forcePriceValue = forcePriceOn ? (priceAccepted ? "Accepted" : anyConnected ? "Waiting" : "Waiting EV") : "Off";
-    const forcePriceState = forcePriceOn ? (priceAccepted ? "on" : "waiting") : "off";
     const forcePriceDetail = forcePriceOn
       ? priceAccepted
         ? `Current ${priceValue}`
@@ -1052,13 +1405,32 @@ class SmartEVSEFlowCard extends LitElement {
           : "Waiting for plug-in"
       : "Tap to arm";
 
-    const forceTimerValue = forceTimerOn ? (anyConnected ? "Active" : "Waiting EV") : "Off";
-    const forceTimerState = forceTimerOn ? (anyConnected ? "on" : "waiting") : "off";
     const forceTimerDetail = forceTimerOn
       ? anyConnected
         ? `Remaining ${timerLabel}`
         : "Waiting for plug-in"
       : `Duration ${this._formatMinutes(forceDuration)}`;
+    const activeForceMode = this._activeForceMode();
+    const forceControlValue =
+      activeForceMode === "timer"
+        ? timerLabel !== "n/a"
+          ? `Timer · ${timerLabel}`
+          : anyConnected
+            ? "Timer active"
+            : "Timer · waiting EV"
+        : activeForceMode === "price"
+          ? priceAccepted
+            ? "Price accepted"
+            : anyConnected
+              ? "Price · waiting"
+              : "Price · waiting EV"
+          : activeForceMode === "simple"
+            ? anyConnected
+              ? "Charge now · active"
+              : "Charge now · waiting EV"
+            : "Off";
+    const forceControlState = activeForceMode ? (anyConnected && (activeForceMode !== "price" || priceAccepted) ? "on" : "waiting") : "off";
+    const forceControlTone = forceControlState === "on" ? "ok" : forceControlState === "waiting" ? "active" : "default";
     const hasControllerError = controllerError && !["NONE", "None", "unknown", "unavailable"].includes(controllerError);
     const acceptablePriceValue = acceptablePrice !== null ? `${acceptablePrice.toFixed(3)} ${this._currency}` : "n/a";
     const activeTitle = hasControllerError
@@ -1104,8 +1476,6 @@ class SmartEVSEFlowCard extends LitElement {
       .join("");
     const settingsControls = this._settingsControls({
       policy,
-      acceptablePrice,
-      forceDuration,
       dutyCycleMinutes,
     });
     const leftConnectorPath = this._homeConnectorPath("left");
@@ -1664,6 +2034,196 @@ class SmartEVSEFlowCard extends LitElement {
         .modal-option-check {
           --mdc-icon-size: 18px;
           color: inherit;
+        }
+
+        .force-wizard-panel {
+          width: min(430px, calc(100vw - 32px));
+        }
+
+        .wizard-options,
+        .wizard-step-body {
+          display: grid;
+          gap: var(--medium-gap);
+        }
+
+        .wizard-option {
+          appearance: none;
+          display: grid;
+          grid-template-columns: 36px minmax(0, 1fr) 18px;
+          align-items: center;
+          gap: var(--medium-gap);
+          min-height: 64px;
+          width: 100%;
+          padding: var(--tile-padding);
+          border: 0;
+          border-radius: var(--tile-border-radius);
+          background: var(--sdc-surface-control);
+          box-shadow: var(--tile-shadow-default);
+          color: var(--primary-text-color);
+          cursor: pointer;
+          font: inherit;
+          text-align: left;
+        }
+
+        .wizard-option.selected {
+          --pulse-weak: rgba(var(--sdc-led-idle-rgb), 0.16);
+          --pulse-strong: rgba(var(--sdc-led-idle-rgb), 0.30);
+          box-shadow: var(--tile-shadow-active);
+        }
+
+        .wizard-option:disabled,
+        .wizard-primary:disabled,
+        .wizard-secondary:disabled,
+        .wizard-stop:disabled,
+        .modal-close:disabled,
+        .modal-back:disabled {
+          cursor: default;
+          opacity: 0.55;
+        }
+
+        .wizard-option-icon {
+          display: grid;
+          place-items: center;
+          width: 36px;
+          height: 36px;
+          border-radius: var(--chip-border-radius);
+          background: var(--chip-background-color);
+          color: var(--sdc-led-idle);
+        }
+
+        .wizard-option-icon ha-icon,
+        .wizard-option-next {
+          --mdc-icon-size: 18px;
+        }
+
+        .wizard-option-copy,
+        .wizard-active-copy,
+        .wizard-confirmation > div {
+          display: grid;
+          gap: 3px;
+          min-width: 0;
+        }
+
+        .wizard-option-title,
+        .wizard-active-copy strong,
+        .wizard-confirmation strong,
+        .wizard-field-label {
+          font-size: var(--sdc-font-value);
+          font-weight: var(--sdc-weight-strong);
+          line-height: 1.2;
+        }
+
+        .wizard-option-detail,
+        .wizard-confirmation span,
+        .wizard-field-helper {
+          color: var(--sdc-text-muted);
+          font-size: var(--sdc-font-detail);
+          line-height: 1.35;
+        }
+
+        .wizard-option-next {
+          color: var(--sdc-text-muted);
+        }
+
+        .wizard-active,
+        .wizard-confirmation {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) auto;
+          align-items: center;
+          gap: var(--medium-gap);
+          padding: var(--tile-padding);
+          margin-bottom: var(--medium-gap);
+          border-radius: var(--tile-border-radius);
+          background: var(--sdc-surface-control);
+        }
+
+        .wizard-active {
+          box-shadow: inset 3px 0 0 var(--sdc-led-charging);
+        }
+
+        .wizard-active-label {
+          color: var(--sdc-text-muted);
+          font-size: var(--sdc-font-label);
+          font-weight: var(--sdc-weight-strong);
+          letter-spacing: var(--sdc-letter-label);
+          text-transform: uppercase;
+        }
+
+        .wizard-confirmation {
+          grid-template-columns: 36px minmax(0, 1fr);
+          margin-bottom: 0;
+        }
+
+        .wizard-confirmation > ha-icon {
+          --mdc-icon-size: 22px;
+          color: var(--sdc-led-idle);
+        }
+
+        .wizard-field {
+          display: grid;
+          gap: 6px;
+          padding: var(--tile-padding);
+          border-radius: var(--tile-border-radius);
+          background: var(--sdc-surface-control);
+        }
+
+        .wizard-input-wrap {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) auto;
+          align-items: center;
+          gap: var(--medium-gap);
+        }
+
+        .wizard-input-unit {
+          color: var(--sdc-text-muted);
+          font-size: var(--sdc-font-body);
+          font-weight: var(--sdc-weight-medium);
+        }
+
+        .wizard-error {
+          margin-top: var(--medium-gap);
+          padding: 8px 10px;
+          border-radius: var(--tile-border-radius);
+          background: rgba(var(--sdc-led-error-rgb), 0.12);
+          color: var(--sdc-led-error);
+          font-size: var(--sdc-font-body);
+          font-weight: var(--sdc-weight-medium);
+          line-height: 1.35;
+        }
+
+        .wizard-actions {
+          display: grid;
+          grid-template-columns: auto minmax(0, 1fr);
+          gap: var(--medium-gap);
+          margin-top: var(--medium-gap);
+        }
+
+        .wizard-primary,
+        .wizard-secondary,
+        .wizard-stop {
+          appearance: none;
+          border: 0;
+          border-radius: var(--chip-border-radius);
+          cursor: pointer;
+          font: inherit;
+          font-size: var(--sdc-font-button);
+          font-weight: var(--sdc-weight-strong);
+          padding: 8px 12px;
+        }
+
+        .wizard-primary {
+          background: var(--sdc-led-idle);
+          color: var(--sdc-surface-panel);
+        }
+
+        .wizard-secondary {
+          background: var(--chip-background-color);
+          color: var(--primary-text-color);
+        }
+
+        .wizard-stop {
+          background: rgba(var(--sdc-led-error-rgb), 0.12);
+          color: var(--sdc-led-error);
         }
 
         .control-tile.tone-ok {
@@ -2410,7 +2970,7 @@ class SmartEVSEFlowCard extends LitElement {
               </div>
               <div class="section-title">
                 <span>Charging modes</span>
-                <small>Tap to toggle</small>
+                <small>Tap to control</small>
               </div>
               <div class="controls home-controls primary-controls">
                 ${this._controlTile({
@@ -2422,28 +2982,16 @@ class SmartEVSEFlowCard extends LitElement {
                   state: scheduleControlState,
                 })}
                 ${this._controlTile({
-                  entityId: this._config.force_charge_entity,
+                  entityId:
+                    this._config.force_charge_entity ||
+                    this._config.force_price_entity ||
+                    this._config.force_timer_entity,
                   icon: "mdi:lightning-bolt",
                   label: "Force Charge",
-                  value: forceNowValue,
-                  tone: forceChargeOn ? "ok" : "default",
-                  state: forceNowState,
-                })}
-                ${this._controlTile({
-                  entityId: this._config.force_price_entity,
-                  icon: "mdi:currency-eur",
-                  label: "Force By Price",
-                  value: forcePriceValue,
-                  tone: forcePriceOn ? (priceAccepted ? "ok" : "active") : "default",
-                  state: forcePriceState,
-                })}
-                ${this._controlTile({
-                  entityId: this._config.force_timer_entity,
-                  icon: "mdi:timer-sand",
-                  label: "Force Timer",
-                  value: forceTimerValue,
-                  tone: forceTimerOn ? "ok" : "default",
-                  state: forceTimerState,
+                  value: forceControlValue,
+                  tone: forceControlTone,
+                  state: forceControlState,
+                  action: "open-force-wizard",
                 })}
               </div>
             </section>
@@ -2492,6 +3040,7 @@ class SmartEVSEFlowCard extends LitElement {
           </div>
 
           ${this._settingsModal(settingsControls)}
+          ${this._forceWizardModal({ priceValue, acceptablePrice, forceDuration, timerLabel, anyConnected })}
         </div>
       </ha-card>
     `;
@@ -2508,6 +3057,11 @@ class SmartEVSEFlowCard extends LitElement {
 
     root.addEventListener("click", async (event: Event) => {
       const target = event.target as HTMLElement | null;
+      const forceBackdrop = target?.closest<HTMLElement>(".force-backdrop");
+      if (forceBackdrop && event.target === forceBackdrop) {
+        this._closeForceWizard();
+        return;
+      }
       const backdrop = target?.closest<HTMLElement>(".settings-backdrop");
       if (backdrop && event.target === backdrop) {
         this._closeSettingsModal();
@@ -2519,9 +3073,33 @@ class SmartEVSEFlowCard extends LitElement {
       }
       event.preventDefault();
       event.stopPropagation();
-      const { action, entity, value } = element.dataset;
+      const { action, entity, value, mode } = element.dataset;
       if (action === "open-settings") {
         this._openSettingsModal();
+        return;
+      }
+      if (action === "open-force-wizard") {
+        this._openForceWizard();
+        return;
+      }
+      if (action === "close-force-wizard") {
+        this._closeForceWizard();
+        return;
+      }
+      if (action === "back-force-wizard") {
+        this._backForceWizard();
+        return;
+      }
+      if (action === "choose-force-mode") {
+        this._selectForceMode(mode);
+        return;
+      }
+      if (action === "apply-force-mode") {
+        await this._applyForceMode(mode);
+        return;
+      }
+      if (action === "stop-force-charge") {
+        await this._stopForceCharge();
         return;
       }
       if (action === "close-settings") {
@@ -2588,6 +3166,17 @@ class SmartEVSEFlowCard extends LitElement {
         return;
       }
       const entityId = element.dataset.entity;
+      if (element.classList.contains("force-input")) {
+        if ((event as KeyboardEvent).key === "Enter") {
+          event.preventDefault();
+          await this._applyForceMode(this._forceWizardStep);
+        }
+        if ((event as KeyboardEvent).key === "Escape") {
+          event.preventDefault();
+          this._backForceWizard();
+        }
+        return;
+      }
       if ((event as KeyboardEvent).key === "Enter") {
         event.preventDefault();
         await this._saveEditor(entityId);
