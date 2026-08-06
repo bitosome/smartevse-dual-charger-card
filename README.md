@@ -2,7 +2,7 @@
 
 Standalone Lovelace card for the SmartEVSE Dual Charger Home Assistant integration.
 
-Version: `0.0.16`
+Version: `0.0.17`
 
 This repository contains only the frontend card and local preview assets.
 
@@ -13,7 +13,8 @@ This repository contains only the frontend card and local preview assets.
 - Per-SmartEVSE state cards with state, mode, offered current, max current, override current, and detected battery level.
 - Optional EV battery node below each SmartEVSE when the integration reports a connected EV.
 - The hero tile is the single Charging Plan control for all schedule and force-charge behavior.
-- Guided wizard for scheduled charging, schedule plus acceptable price, price-controlled charging at any time, immediate charging, or timed charging.
+- Hero glow always mirrors the physical WLED state: off when disconnected, blue while connected/idle, green while charging, and red on a SmartEVSE error.
+- Guided two-path wizard for scheduled charging or charging now, with optional timer and acceptable-price limits that can be combined.
 - Power-flow branches originate directly beneath the hero tile.
 - Charge policy labels are always based on `SmartEVSE 1` and `SmartEVSE 2`, not vehicle names.
 - Local preview page with several mock charging scenarios for UI iteration.
@@ -92,10 +93,11 @@ The card also expects the related control entities configured in `card_flow.yaml
 ## Interaction Model
 
 - Tap the hero tile to configure all charging behavior.
+- Tap the schedule entity inside the schedule page to edit it through Home Assistant’s native schedule dialog.
 - Scheduled charging can run with or without a price limit. With the price requirement enabled, both the schedule window and acceptable-price condition must be satisfied.
-- Price-controlled charging outside the schedule explicitly turns scheduled charging off.
-- Immediate and timed charging override the current gate; an enabled schedule remains available to resume afterward.
-- Timer duration and acceptable price are configured directly in their respective wizard paths.
+- Charge now supports unrestricted force charging, timer only, acceptable price only, or timer plus acceptable price.
+- Price-controlled charge-now plans explicitly turn scheduled charging off; unrestricted and timer-only plans can leave it available to resume afterward.
+- Timer duration and acceptable price are configured directly on the Charge now page.
 - Use Turn off in the wizard to disable the current plan.
 
 ## Naming Rules
