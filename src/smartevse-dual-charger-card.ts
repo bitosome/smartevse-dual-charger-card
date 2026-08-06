@@ -2,7 +2,7 @@ import { LitElement, html } from "lit";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { DESIGN_TOKENS_CSS } from "./shared/design-tokens";
 
-const CARD_VERSION = "0.0.17";
+const CARD_VERSION = "0.0.18";
 
 const FALLBACK_WLED_NODE_VISUALS = {
   off: {
@@ -1255,35 +1255,39 @@ class SmartEVSEFlowCard extends LitElement {
             </span>
             <ha-icon class="wizard-option-next" icon="mdi:chevron-right"></ha-icon>
           </button>
-          <button
-            class="wizard-toggle ${this._schedulePriceGate ? "selected" : ""}"
-            data-action="toggle-schedule-price"
-            type="button"
-            role="switch"
-            aria-checked="${this._schedulePriceGate ? "true" : "false"}"
-            ${busy ? "disabled" : ""}
-          >
-            <span class="wizard-toggle-copy">
-              <strong>Also require an acceptable price</strong>
-              <span>Charging starts only when both the schedule and price conditions are satisfied.</span>
-            </span>
-            <span class="wizard-toggle-track"><span class="wizard-toggle-thumb"></span></span>
-          </button>
-          ${
-            this._schedulePriceGate
-              ? `
-                ${this._forceWizardNumberField(
-                  this._config.acceptable_price_entity,
-                  "Maximum acceptable price",
-                  `Current price: ${priceValue}.`,
-                )}
-                <div class="wizard-rule">
-                  <ha-icon icon="mdi:information-outline"></ha-icon>
-                  <span>If the schedule is active but the price is too high, charging waits until the price becomes acceptable.</span>
-                </div>
-              `
-              : ""
-          }
+          <div class="wizard-expandable ${this._schedulePriceGate ? "expanded" : ""}">
+            <button
+              class="wizard-toggle ${this._schedulePriceGate ? "selected" : ""}"
+              data-action="toggle-schedule-price"
+              type="button"
+              role="switch"
+              aria-checked="${this._schedulePriceGate ? "true" : "false"}"
+              ${busy ? "disabled" : ""}
+            >
+              <span class="wizard-toggle-copy">
+                <strong>Also require an acceptable price</strong>
+                <span>Charging starts only when both the schedule and price conditions are satisfied.</span>
+              </span>
+              <span class="wizard-toggle-track"><span class="wizard-toggle-thumb"></span></span>
+            </button>
+            ${
+              this._schedulePriceGate
+                ? `
+                  <div class="wizard-expansion">
+                    ${this._forceWizardNumberField(
+                      this._config.acceptable_price_entity,
+                      "Maximum acceptable price",
+                      `Current price: ${priceValue}.`,
+                    )}
+                    <div class="wizard-rule">
+                      <ha-icon icon="mdi:information-outline"></ha-icon>
+                      <span>If the schedule is active but the price is too high, charging waits until the price becomes acceptable.</span>
+                    </div>
+                  </div>
+                `
+                : ""
+            }
+          </div>
         `
       : `
           <div class="wizard-confirmation">
@@ -1297,54 +1301,58 @@ class SmartEVSEFlowCard extends LitElement {
               }</span>
             </div>
           </div>
-          <button
-            class="wizard-toggle ${this._forceNowTimer ? "selected" : ""}"
-            data-action="toggle-force-now-timer"
-            type="button"
-            role="switch"
-            aria-checked="${this._forceNowTimer ? "true" : "false"}"
-            ${!timerAvailable || busy ? "disabled" : ""}
-          >
-            <span class="wizard-toggle-copy">
-              <strong>Stop after a set time</strong>
-              <span>${timerAvailable ? `Current duration: ${this._formatMinutes(forceDuration)}.` : "Timer entities are unavailable."}</span>
-            </span>
-            <span class="wizard-toggle-track"><span class="wizard-toggle-thumb"></span></span>
-          </button>
-          ${
-            this._forceNowTimer
-              ? this._forceWizardNumberField(
-                  this._config.force_charge_duration_entity,
-                  "Charging duration",
-                  "The timer starts when this plan is enabled.",
-                )
-              : ""
-          }
-          <button
-            class="wizard-toggle ${this._forceNowPrice ? "selected" : ""}"
-            data-action="toggle-force-now-price"
-            type="button"
-            role="switch"
-            aria-checked="${this._forceNowPrice ? "true" : "false"}"
-            ${!priceAvailable || busy ? "disabled" : ""}
-          >
-            <span class="wizard-toggle-copy">
-              <strong>Require an acceptable price</strong>
-              <span>${priceAvailable ? `Current price: ${priceValue}.` : "Price entities are unavailable."}</span>
-            </span>
-            <span class="wizard-toggle-track"><span class="wizard-toggle-thumb"></span></span>
-          </button>
-          ${
-            this._forceNowPrice
-              ? this._forceWizardNumberField(
-                  this._config.acceptable_price_entity,
-                  "Maximum acceptable price",
-                  this._forceNowTimer
-                    ? "Charging stops when the timer expires and only runs while the price is acceptable."
-                    : "Charging begins whenever the price becomes acceptable.",
-                )
-              : ""
-          }
+          <div class="wizard-expandable ${this._forceNowTimer ? "expanded" : ""}">
+            <button
+              class="wizard-toggle ${this._forceNowTimer ? "selected" : ""}"
+              data-action="toggle-force-now-timer"
+              type="button"
+              role="switch"
+              aria-checked="${this._forceNowTimer ? "true" : "false"}"
+              ${!timerAvailable || busy ? "disabled" : ""}
+            >
+              <span class="wizard-toggle-copy">
+                <strong>Stop after a set time</strong>
+                <span>${timerAvailable ? `Current duration: ${this._formatMinutes(forceDuration)}.` : "Timer entities are unavailable."}</span>
+              </span>
+              <span class="wizard-toggle-track"><span class="wizard-toggle-thumb"></span></span>
+            </button>
+            ${
+              this._forceNowTimer
+                ? `<div class="wizard-expansion">${this._forceWizardNumberField(
+                    this._config.force_charge_duration_entity,
+                    "Charging duration",
+                    "The timer starts when this plan is enabled.",
+                  )}</div>`
+                : ""
+            }
+          </div>
+          <div class="wizard-expandable ${this._forceNowPrice ? "expanded" : ""}">
+            <button
+              class="wizard-toggle ${this._forceNowPrice ? "selected" : ""}"
+              data-action="toggle-force-now-price"
+              type="button"
+              role="switch"
+              aria-checked="${this._forceNowPrice ? "true" : "false"}"
+              ${!priceAvailable || busy ? "disabled" : ""}
+            >
+              <span class="wizard-toggle-copy">
+                <strong>Require an acceptable price</strong>
+                <span>${priceAvailable ? `Current price: ${priceValue}.` : "Price entities are unavailable."}</span>
+              </span>
+              <span class="wizard-toggle-track"><span class="wizard-toggle-thumb"></span></span>
+            </button>
+            ${
+              this._forceNowPrice
+                ? `<div class="wizard-expansion">${this._forceWizardNumberField(
+                    this._config.acceptable_price_entity,
+                    "Maximum acceptable price",
+                    this._forceNowTimer
+                      ? "Charging stops when the timer expires and only runs while the price is acceptable."
+                      : "Charging begins whenever the price becomes acceptable.",
+                  )}</div>`
+                : ""
+            }
+          </div>
         `;
 
     return `
@@ -2466,6 +2474,20 @@ class SmartEVSEFlowCard extends LitElement {
           overflow-wrap: anywhere;
         }
 
+        .wizard-expandable {
+          border-radius: var(--tile-border-radius);
+          background: var(--sdc-surface-control);
+          box-shadow: var(--tile-shadow-default);
+          overflow: hidden;
+          transition: box-shadow 0.16s ease, filter 0.16s ease;
+        }
+
+        .wizard-expandable.expanded {
+          --pulse-weak: rgba(var(--sdc-led-idle-rgb), 0.16);
+          --pulse-strong: rgba(var(--sdc-led-idle-rgb), 0.30);
+          box-shadow: var(--tile-shadow-active);
+        }
+
         .wizard-toggle {
           appearance: none;
           display: grid;
@@ -2483,10 +2505,36 @@ class SmartEVSEFlowCard extends LitElement {
           text-align: left;
         }
 
+        .wizard-expandable .wizard-toggle {
+          border-radius: inherit;
+          background: transparent;
+        }
+
+        .wizard-expandable.expanded .wizard-toggle {
+          border-radius: var(--tile-border-radius) var(--tile-border-radius) 0 0;
+        }
+
         .wizard-toggle.selected {
           --pulse-weak: rgba(var(--sdc-led-idle-rgb), 0.16);
           --pulse-strong: rgba(var(--sdc-led-idle-rgb), 0.30);
-          box-shadow: var(--tile-shadow-active);
+          box-shadow: none;
+        }
+
+        .wizard-expansion {
+          border-top: 1px solid var(--sdc-border-hover);
+          animation: wizardExpansionIn 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+          transform-origin: top;
+        }
+
+        .wizard-expandable .wizard-field {
+          border-radius: 0;
+          background: transparent;
+        }
+
+        .wizard-expandable .wizard-rule {
+          padding-top: 0;
+          border-radius: 0;
+          background: transparent;
         }
 
         .wizard-toggle-track {
@@ -2546,6 +2594,17 @@ class SmartEVSEFlowCard extends LitElement {
           color: var(--sdc-text-muted);
           font-size: var(--sdc-font-body);
           font-weight: var(--sdc-weight-medium);
+        }
+
+        @keyframes wizardExpansionIn {
+          from {
+            opacity: 0;
+            transform: translateY(-4px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
         }
 
         .wizard-error {
