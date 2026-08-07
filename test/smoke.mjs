@@ -169,8 +169,11 @@ await new Promise((r) => setTimeout(r, 30));
 const schedulePriceInput = root.querySelector('.force-input[data-entity="number.price"]');
 const schedulePriceExpandsInline =
   !!schedulePriceInput?.closest('.wizard-expandable')?.querySelector('[data-action="toggle-schedule-price"]');
+const schedulePriceShowsCheck =
+  root.querySelector('[data-action="toggle-schedule-price"] .wizard-toggle-state')?.getAttribute('icon') === 'mdi:check-circle';
 console.log(`${schedulePriceExpandsInline ? 'PASS' : 'FAIL'}: schedule price field expands inside its option tile`);
-if (!schedulePriceExpandsInline) ok = false;
+console.log(`${schedulePriceShowsCheck ? 'PASS' : 'FAIL'}: selected schedule price toggle uses the plan check indicator`);
+if (!schedulePriceExpandsInline || !schedulePriceShowsCheck) ok = false;
 if (schedulePriceInput) {
   schedulePriceInput.value = '0.15';
   schedulePriceInput.dispatchEvent(new win.Event('input', { bubbles: true, composed: true }));
@@ -256,8 +259,12 @@ const timerExpandsInline =
   !!durationInput?.closest('.wizard-expandable')?.querySelector('[data-action="toggle-force-now-timer"]');
 const priceExpandsInline =
   !!timerPriceInput?.closest('.wizard-expandable')?.querySelector('[data-action="toggle-force-now-price"]');
+const forceNowTogglesShowChecks =
+  root.querySelector('[data-action="toggle-force-now-timer"] .wizard-toggle-state')?.getAttribute('icon') === 'mdi:check-circle' &&
+  root.querySelector('[data-action="toggle-force-now-price"] .wizard-toggle-state')?.getAttribute('icon') === 'mdi:check-circle';
 console.log(`${timerExpandsInline && priceExpandsInline ? 'PASS' : 'FAIL'}: charge-now fields expand inside their option tiles`);
-if (!timerExpandsInline || !priceExpandsInline) ok = false;
+console.log(`${forceNowTogglesShowChecks ? 'PASS' : 'FAIL'}: selected charge-now toggles use the plan check indicator`);
+if (!timerExpandsInline || !priceExpandsInline || !forceNowTogglesShowChecks) ok = false;
 if (durationInput) {
   durationInput.value = '45';
   durationInput.dispatchEvent(new win.Event('input', { bubbles: true, composed: true }));

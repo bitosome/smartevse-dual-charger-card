@@ -3,7 +3,7 @@ import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { DESIGN_TOKENS_CSS } from "./shared/design-tokens";
 import { buildGlow, type PulseColors } from "./shared/glow";
 
-const CARD_VERSION = "0.0.21";
+const CARD_VERSION = "0.0.22";
 
 const ACTIVE_GLOW: PulseColors = {
   weak: "rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha))",
@@ -1304,7 +1304,10 @@ class SmartEVSEFlowCard extends LitElement {
                 <strong>Also require an acceptable price</strong>
                 <span>Charging starts only when both the schedule and price conditions are satisfied.</span>
               </span>
-              <span class="wizard-toggle-track"><span class="wizard-toggle-thumb"></span></span>
+              <ha-icon
+                class="wizard-toggle-state ${this._schedulePriceGate ? "selected" : ""}"
+                icon="${this._schedulePriceGate ? "mdi:check-circle" : "mdi:circle-outline"}"
+              ></ha-icon>
             </button>
             ${
               this._schedulePriceGate
@@ -1339,7 +1342,10 @@ class SmartEVSEFlowCard extends LitElement {
                 <strong>Stop after a set time</strong>
                 <span>${timerAvailable ? `Current duration: ${this._formatMinutes(forceDuration)}.` : "Timer entities are unavailable."}</span>
               </span>
-              <span class="wizard-toggle-track"><span class="wizard-toggle-thumb"></span></span>
+              <ha-icon
+                class="wizard-toggle-state ${this._forceNowTimer ? "selected" : ""}"
+                icon="${this._forceNowTimer ? "mdi:check-circle" : "mdi:circle-outline"}"
+              ></ha-icon>
             </button>
             ${
               this._forceNowTimer
@@ -1364,7 +1370,10 @@ class SmartEVSEFlowCard extends LitElement {
                 <strong>Require an acceptable price</strong>
                 <span>${priceAvailable ? `Current price: ${priceValue}.` : "Price entities are unavailable."}</span>
               </span>
-              <span class="wizard-toggle-track"><span class="wizard-toggle-thumb"></span></span>
+              <ha-icon
+                class="wizard-toggle-state ${this._forceNowPrice ? "selected" : ""}"
+                icon="${this._forceNowPrice ? "mdi:check-circle" : "mdi:circle-outline"}"
+              ></ha-icon>
             </button>
             ${
               this._forceNowPrice
@@ -2614,29 +2623,17 @@ class SmartEVSEFlowCard extends LitElement {
           background: transparent;
         }
 
-        .wizard-toggle-track {
-          position: relative;
-          width: 34px;
+        .wizard-toggle-state {
+          --mdc-icon-size: 20px;
+          width: 20px;
           height: 20px;
-          border-radius: var(--chip-border-radius);
-          background: var(--chip-background-color);
-          box-shadow: inset 0 0 0 1px var(--sdc-border-hover);
+          color: var(--sdc-text-muted);
+          transition: color 0.15s ease, transform 0.15s ease;
         }
 
-        .wizard-toggle-thumb {
-          position: absolute;
-          top: 3px;
-          left: 3px;
-          width: 14px;
-          height: 14px;
-          border-radius: var(--chip-border-radius);
-          background: var(--sdc-text-muted);
-          transition: transform 0.15s ease, background 0.15s ease;
-        }
-
-        .wizard-toggle.selected .wizard-toggle-thumb {
-          background: var(--sdc-led-idle);
-          transform: translateX(14px);
+        .wizard-toggle-state.selected {
+          color: var(--sdc-led-idle);
+          transform: scale(1.05);
         }
 
         .wizard-rule {
