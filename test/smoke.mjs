@@ -46,7 +46,12 @@ const states = {
     attributes: {
       charge_allowed: false,
       active_smartevse_raw: '',
-      wled_visuals: {},
+      wled_visuals: {
+        off: { color: [12, 34, 56], fx: 0, sx: 0, ix: 0 },
+        idle: { color: [23, 67, 101], fx: 2, sx: 45, ix: 128 },
+        error: { color: [211, 22, 33], fx: 2, sx: 60, ix: 200 },
+        charging: { color: [44, 199, 88], fx: 41, sx: 80, ix: 100 },
+      },
       smartevse_1_state: 'Ready to Charge',
       smartevse_1_plug_state: 'Connected',
       smartevse_1_error: 'None',
@@ -108,6 +113,11 @@ const checks = {
   'hero glow uses the canonical shared pulse':
     root.querySelector('.status-glow')?.getAttribute('style')?.includes('animation: glowPulse 2.4s ease-in-out infinite') &&
     root.querySelector('.status-glow')?.getAttribute('style')?.includes('box-shadow: 0 18px 40px'),
+  'live SmartEVSE WLED values control every glow variable':
+    root.querySelector('ha-card')?.getAttribute('style')?.includes('--sdc-led-idle-rgb: 23, 67, 101;') &&
+    root.querySelector('ha-card')?.getAttribute('style')?.includes('--sdc-led-charging-rgb: 44, 199, 88;') &&
+    root.querySelector('.status-glow')?.getAttribute('style')?.includes('var(--sdc-led-idle-glow-duration)') &&
+    root.querySelector('.ev-node-wrap')?.getAttribute('style')?.includes('--node-rgb: 23, 67, 101;'),
 };
 let ok = true;
 for (const [name, pass] of Object.entries(checks)) {

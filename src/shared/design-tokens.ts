@@ -1,13 +1,22 @@
 // AUTO-SYNCED from space-hub-card/src/shared/design-tokens.ts — DO NOT EDIT.
 // Run space-hub-card/scripts/sync-design-tokens.sh to update.
-//
-// (This vendored copy is consumed by the TypeScript build. The canonical source
-// of truth lives in space-hub-card/src/shared/design-tokens.ts.)
+import { css, CSSResultGroup, unsafeCSS } from 'lit';
 
 /**
  * Canonical design tokens for the bitosome Home Assistant card family.
- * Framework-agnostic CSS string injected into the card's <style> block so this
- * card shares one look & feel with the rest of the family.
+ *
+ * This module is the SINGLE SOURCE OF TRUTH for the shared look & feel
+ * (colors, spacing, radii, shadows, chip/tile styling) used by:
+ *   - space-hub-card            (reference)
+ *   - real-electricity-price-card
+ *   - smartevse-dual-charger-card
+ *
+ * It is intentionally framework-agnostic: `DESIGN_TOKENS_CSS` is a plain CSS
+ * string (usable by vanilla `customElements` cards that build a <style> tag),
+ * and `designTokens` wraps it for LitElement `static styles` composition.
+ *
+ * Do NOT hardcode colors/spacing in component code — reference these variables
+ * so every card stays visually consistent.
  */
 export const DESIGN_TOKENS_CSS = `
   :host {
@@ -88,3 +97,6 @@ export const DESIGN_TOKENS_CSS = `
     --tile-shadow-active: 0 18px 40px var(--pulse-strong, rgba(0,0,0,0.18)), 0 6px 18px var(--pulse-weak, rgba(0,0,0,0.10));
   }
 `;
+
+/** LitElement-ready design tokens for `static styles` composition. */
+export const designTokens: CSSResultGroup = css`${unsafeCSS(DESIGN_TOKENS_CSS)}`;

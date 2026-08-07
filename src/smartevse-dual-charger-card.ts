@@ -3,42 +3,11 @@ import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { DESIGN_TOKENS_CSS } from "./shared/design-tokens";
 import { buildGlow, type PulseColors } from "./shared/glow";
 
-const CARD_VERSION = "0.0.20";
+const CARD_VERSION = "0.0.21";
 
 const ACTIVE_GLOW: PulseColors = {
-  weak: "rgba(var(--sdc-led-idle-rgb), 0.16)",
-  strong: "rgba(var(--sdc-led-idle-rgb), 0.30)",
-};
-
-const FALLBACK_WLED_NODE_VISUALS = {
-  off: {
-    color: [148, 163, 184],
-    fx: 0,
-    sx: 0,
-    ix: 0,
-  },
-  idle: {
-    color: [0, 100, 255],
-    fx: 2,
-    sx: 45,
-    ix: 128,
-  },
-  error: {
-    color: [255, 0, 0],
-    fx: 2,
-    sx: 60,
-    ix: 200,
-  },
-  charging: {
-    color: [0, 255, 0],
-    fx: 41,
-    sx: 80,
-    ix: 100,
-    pal: 2,
-    c1: 128,
-    c2: 128,
-    c3: 16,
-  },
+  weak: "rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha))",
+  strong: "rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-strong-alpha))",
 };
 
 interface HassEntity {
@@ -434,23 +403,84 @@ class SmartEVSEFlowCard extends LitElement {
     if (visuals && typeof visuals === "object") {
       return visuals;
     }
-    return FALLBACK_WLED_NODE_VISUALS;
+    // Deliberately do not invent visual defaults here. The integration owns the
+    // WLED palette and effect configuration; missing attributes disable glows.
+    return {};
   }
 
   _wledRgb(visuals, key) {
-    const fallback = FALLBACK_WLED_NODE_VISUALS[key]?.color || FALLBACK_WLED_NODE_VISUALS.off.color;
-    const source = Array.isArray(visuals?.[key]?.color) ? visuals[key].color : fallback;
+    const source = Array.isArray(visuals?.[key]?.color) ? visuals[key].color : null;
+    if (!source) {
+      return null;
+    }
     const values = source.slice(0, 3).map((value) => Number.parseInt(value, 10));
     if (values.length !== 3 || values.some((value) => !Number.isFinite(value))) {
-      return fallback.join(", ");
+      return null;
     }
     return values.map((value) => Math.min(255, Math.max(0, value))).join(", ");
   }
 
+  _wledNumber(visuals, key, property, fallback = 0) {
+    const value = Number(visuals?.[key]?.[property]);
+    return Number.isFinite(value) ? Math.min(255, Math.max(0, value)) : fallback;
+  }
+
+  _wledGlowDuration(visuals, key) {
+    const speed = this._wledNumber(visuals, key, "sx");
+    return Math.max(0.8, 3.2 - (speed / 255) * 2.4).toFixed(2);
+  }
+
+  _wledGlowAlpha(visuals, key, base, range) {
+    const intensity = this._wledNumber(visuals, key, "ix");
+    return Math.min(0.5, base + (intensity / 255) * range).toFixed(3);
+  }
+
   _wledCssVars(visuals) {
     return ["off", "idle", "error", "charging"]
-      .map((key) => `--sdc-led-${key}-rgb: ${this._wledRgb(visuals, key)};`)
+      .map((key) => {
+        const rgb = this._wledRgb(visuals, key);
+        if (!rgb) {
+          return "";
+        }
+        const weak = this._wledGlowAlpha(visuals, key, 0.08, 0.16);
+        const strong = this._wledGlowAlpha(visuals, key, 0.16, 0.24);
+        const duration = this._wledGlowDuration(visuals, key);
+        const effect = this._wledNumber(visuals, key, "fx");
+        return [
+          `--sdc-led-${key}-rgb: ${rgb};`,
+          `--sdc-led-${key}-weak-alpha: ${weak};`,
+          `--sdc-led-${key}-strong-alpha: ${strong};`,
+          `--sdc-led-${key}-glow-duration: ${duration}s;`,
+          `--sdc-led-${key}-glow-animation: ${effect === 0 ? "none" : "glowPulse"};`,
+          `--sdc-led-${key}-fx: ${effect};`,
+        ].join(" ");
+      })
+      .filter(Boolean)
       .join(" ");
+  }
+
+  _wledNodeStyle(visuals, key) {
+    const visual = visuals?.[key] || visuals?.off;
+    const rgb = this._wledRgb({ [key]: visual }, key);
+    if (!rgb) {
+      return "";
+    }
+    const speed = this._wledNumber({ [key]: visual }, key, "sx");
+    const intensity = this._wledNumber({ [key]: visual }, key, "ix");
+    const effect = this._wledNumber({ [key]: visual }, key, "fx");
+    const weak = this._wledGlowAlpha({ [key]: visual }, key, 0.08, 0.16);
+    const strong = this._wledGlowAlpha({ [key]: visual }, key, 0.16, 0.24);
+    const duration = this._wledGlowDuration({ [key]: visual }, key);
+    return [
+      `--node-rgb: ${rgb};`,
+      `--node-sx: ${speed};`,
+      `--node-ix: ${intensity};`,
+      `--node-fx: ${effect};`,
+      `--node-weak-alpha: ${weak};`,
+      `--node-strong-alpha: ${strong};`,
+      `--node-glow-duration: ${duration}s;`,
+      `--node-glow-animation: ${effect === 0 ? "none" : "glowPulse"};`,
+    ].join(" ");
   }
 
   _evData(attrs, key, fallbackName) {
@@ -1570,12 +1600,12 @@ class SmartEVSEFlowCard extends LitElement {
       `
       : "";
     const visuals = this._wledVisuals(this._entity(this._config.controller_entity)?.attributes || {});
-    const visual = visuals[ev.visual] || visuals.off || FALLBACK_WLED_NODE_VISUALS.off;
+    const nodeStyle = this._wledNodeStyle(visuals, ev.visual);
     return `
       <div class="smartevse-stack">
         <div
           class="ev-node-wrap ${this._safe(ev.key)} tone-${this._safe(ev.tone)} visual-${this._safe(ev.visual)}"
-          style="--node-rgb: ${visual.color.join(", ")}; --node-sx: ${visual.sx}; --node-ix: ${visual.ix}; --node-fx: ${visual.fx};"
+          style="${this._safe(nodeStyle)}"
         >
           <div class="glow-under ev-glow" aria-hidden="true">
             <div class="glow-overlay"></div>
@@ -1757,18 +1787,21 @@ class SmartEVSEFlowCard extends LitElement {
     const heroGlowColors: PulseColors | undefined =
       heroVisual === "charging"
         ? {
-            weak: "rgba(var(--sdc-led-charging-rgb), 0.16)",
-            strong: "rgba(var(--sdc-led-charging-rgb), 0.30)",
+            weak: "rgba(var(--sdc-led-charging-rgb), var(--sdc-led-charging-weak-alpha))",
+            strong: "rgba(var(--sdc-led-charging-rgb), var(--sdc-led-charging-strong-alpha))",
           }
         : heroVisual === "error"
           ? {
-              weak: "rgba(var(--sdc-led-error-rgb), 0.16)",
-              strong: "rgba(var(--sdc-led-error-rgb), 0.30)",
+              weak: "rgba(var(--sdc-led-error-rgb), var(--sdc-led-error-weak-alpha))",
+              strong: "rgba(var(--sdc-led-error-rgb), var(--sdc-led-error-strong-alpha))",
             }
           : heroVisual === "idle"
             ? ACTIVE_GLOW
             : undefined;
-    const heroGlowStyle = buildGlow(heroGlowColors, "pulse", heroVisual !== "off").style;
+    const heroGlow = buildGlow(heroGlowColors, "pulse", heroVisual !== "off").style;
+    const heroGlowStyle = heroGlow
+      ? `${heroGlow} animation-name: var(--sdc-led-${heroVisual}-glow-animation); animation-duration: var(--sdc-led-${heroVisual}-glow-duration);`
+      : "";
     const leftConnectorPath = this._homeConnectorPath("left");
     const rightConnectorPath = this._homeConnectorPath("right");
 
@@ -1776,6 +1809,8 @@ class SmartEVSEFlowCard extends LitElement {
       <style>
         ${DESIGN_TOKENS_CSS}
         :host {
+          container-name: smartevse-card;
+          container-type: inline-size;
           --connector-stroke: 4px;
           --sdc-settings-panel-width: min(390px, calc(100vw - 32px));
           --panel-shadow-color: rgba(0,0,0,0.50);
@@ -1785,37 +1820,23 @@ class SmartEVSEFlowCard extends LitElement {
           --sdc-surface-panel: var(--sdc-card-base);
           --sdc-surface-tile: var(
             --space-hub-tile-background,
-            color-mix(in srgb, var(--sdc-card-base) 94%, var(--primary-text-color) 6%)
+            color-mix(in srgb, var(--sdc-card-base) 96%, var(--primary-text-color) 4%)
           );
           --sdc-surface-chip: rgba(0,0,0,0.06);
           --chip-background-color: var(--sdc-surface-chip);
           --chip-border-radius: var(--ha-badge-border-radius, 999px);
-          --sdc-font-tiny: 7px;
-          --sdc-font-label: 8px;
-          --sdc-font-detail: 9px;
-          --sdc-font-body: 10px;
-          --sdc-font-button: 11px;
+          --sdc-font-tiny: 8px;
+          --sdc-font-label: 9px;
+          --sdc-font-detail: 10px;
+          --sdc-font-body: 11px;
+          --sdc-font-button: 12px;
           --sdc-font-value: 12px;
-          --sdc-font-title: 13px;
-          --sdc-font-icon: 15px;
-          --sdc-weight-medium: 700;
-          --sdc-weight-strong: 800;
-          --sdc-letter-label: 0.08em;
-          --sdc-letter-title: -0.02em;
-          --sdc-radius-xs: 8px;
-          --sdc-radius-sm: 10px;
-          --sdc-radius-md: 12px;
-          --sdc-radius-lg: 14px;
-          --sdc-radius-xl: 16px;
-          --sdc-radius-2xl: 18px;
-          --sdc-radius-3xl: 22px;
-          --sdc-radius-stage: 24px;
-          --sdc-radius-card: 28px;
-          --sdc-radius-round: 999px;
-          --sdc-led-off-rgb: 148, 163, 184;
-          --sdc-led-idle-rgb: 0, 100, 255;
-          --sdc-led-error-rgb: 255, 0, 0;
-          --sdc-led-charging-rgb: 0, 255, 0;
+          --sdc-font-title: 14px;
+          --sdc-font-icon: 16px;
+          --sdc-weight-medium: 600;
+          --sdc-weight-strong: 700;
+          --sdc-letter-label: 0.06em;
+          --sdc-letter-title: 0;
           --sdc-led-off: rgb(var(--sdc-led-off-rgb));
           --sdc-led-idle: rgb(var(--sdc-led-idle-rgb));
           --sdc-led-error: rgb(var(--sdc-led-error-rgb));
@@ -1972,7 +1993,7 @@ class SmartEVSEFlowCard extends LitElement {
           align-self: center;
           width: 32px;
           height: 32px;
-          border-radius: var(--sdc-radius-md);
+          border-radius: var(--chip-border-radius);
         }
 
         .primary-controls .control-copy {
@@ -2136,7 +2157,7 @@ class SmartEVSEFlowCard extends LitElement {
 
         .setting-input:focus,
         .setting-select:focus {
-          box-shadow: 0 0 0 2px rgba(var(--sdc-led-idle-rgb), 0.28);
+          box-shadow: 0 0 0 2px var(--primary-color, var(--status-active-color));
         }
 
         .setting-editor-actions {
@@ -2160,6 +2181,77 @@ class SmartEVSEFlowCard extends LitElement {
         .setting-editor-button.tone-primary {
           border-color: var(--sdc-border-hover);
           background: var(--chip-background-color);
+        }
+
+        :where(
+          .control-tile,
+          .setting-tile,
+          .setting-editor-button,
+          .modal-close,
+          .modal-back,
+          .modal-option,
+          .wizard-option,
+          .wizard-schedule-entity,
+          .wizard-toggle,
+          .wizard-primary,
+          .wizard-stop-plan,
+          .status-hero
+        ) {
+          transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
+        }
+
+        :where(
+          .control-tile,
+          .setting-tile,
+          .setting-editor-button,
+          .modal-close,
+          .modal-back,
+          .modal-option,
+          .wizard-option,
+          .wizard-schedule-entity,
+          .wizard-toggle,
+          .wizard-primary,
+          .wizard-stop-plan,
+          .status-hero
+        ):focus-visible {
+          outline: 2px solid var(--primary-color, var(--status-active-color));
+          outline-offset: 2px;
+        }
+
+        @media (hover: hover) and (pointer: fine) {
+          :where(
+            .control-tile,
+            .setting-tile,
+            .setting-editor-button,
+            .modal-close,
+            .modal-back,
+            .modal-option,
+            .wizard-option,
+            .wizard-schedule-entity,
+            .wizard-toggle,
+            .wizard-primary,
+            .wizard-stop-plan,
+            .status-hero
+          ):not(:disabled):hover {
+            filter: brightness(1.05);
+          }
+        }
+
+        :where(
+          .control-tile,
+          .setting-tile,
+          .setting-editor-button,
+          .modal-close,
+          .modal-back,
+          .modal-option,
+          .wizard-option,
+          .wizard-schedule-entity,
+          .wizard-toggle,
+          .wizard-primary,
+          .wizard-stop-plan,
+          .status-hero
+        ):not(:disabled):active {
+          transform: scale(0.99);
         }
 
         .settings-backdrop {
@@ -2313,8 +2405,8 @@ class SmartEVSEFlowCard extends LitElement {
         }
 
         .modal-option.selected {
-          --pulse-weak: rgba(var(--sdc-led-idle-rgb), 0.16);
-          --pulse-strong: rgba(var(--sdc-led-idle-rgb), 0.30);
+          --pulse-weak: rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha));
+          --pulse-strong: rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-strong-alpha));
           color: var(--sdc-led-idle);
           box-shadow: var(--tile-shadow-active);
         }
@@ -2362,8 +2454,8 @@ class SmartEVSEFlowCard extends LitElement {
         }
 
         .wizard-option.selected {
-          --pulse-weak: rgba(var(--sdc-led-idle-rgb), 0.16);
-          --pulse-strong: rgba(var(--sdc-led-idle-rgb), 0.30);
+          --pulse-weak: rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha));
+          --pulse-strong: rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-strong-alpha));
           box-shadow: var(--tile-shadow-active);
         }
 
@@ -2468,8 +2560,8 @@ class SmartEVSEFlowCard extends LitElement {
         }
 
         .wizard-expandable.expanded {
-          --pulse-weak: rgba(var(--sdc-led-idle-rgb), 0.16);
-          --pulse-strong: rgba(var(--sdc-led-idle-rgb), 0.30);
+          --pulse-weak: rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha));
+          --pulse-strong: rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-strong-alpha));
           box-shadow: var(--tile-shadow-active);
         }
 
@@ -2500,8 +2592,8 @@ class SmartEVSEFlowCard extends LitElement {
         }
 
         .wizard-toggle.selected {
-          --pulse-weak: rgba(var(--sdc-led-idle-rgb), 0.16);
-          --pulse-strong: rgba(var(--sdc-led-idle-rgb), 0.30);
+          --pulse-weak: rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha));
+          --pulse-strong: rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-strong-alpha));
           box-shadow: none;
         }
 
@@ -2596,7 +2688,7 @@ class SmartEVSEFlowCard extends LitElement {
           margin-top: var(--medium-gap);
           padding: 8px 10px;
           border-radius: var(--tile-border-radius);
-          background: rgba(var(--sdc-led-error-rgb), 0.12);
+          background: rgba(var(--sdc-led-error-rgb), var(--sdc-led-error-weak-alpha));
           color: var(--sdc-led-error);
           font-size: var(--sdc-font-body);
           font-weight: var(--sdc-weight-medium);
@@ -2643,40 +2735,40 @@ class SmartEVSEFlowCard extends LitElement {
         }
 
         .control-tile.tone-ok {
-          --pulse-weak: rgba(var(--sdc-led-charging-rgb), 0.16);
-          --pulse-strong: rgba(var(--sdc-led-charging-rgb), 0.30);
+          --pulse-weak: rgba(var(--sdc-led-charging-rgb), var(--sdc-led-charging-weak-alpha));
+          --pulse-strong: rgba(var(--sdc-led-charging-rgb), var(--sdc-led-charging-strong-alpha));
           box-shadow: var(--tile-shadow-active);
         }
 
         .control-tile-wrap.tone-ok .glow-under {
-          --pulse-weak: rgba(var(--sdc-led-charging-rgb), 0.16);
-          --pulse-strong: rgba(var(--sdc-led-charging-rgb), 0.30);
+          --pulse-weak: rgba(var(--sdc-led-charging-rgb), var(--sdc-led-charging-weak-alpha));
+          --pulse-strong: rgba(var(--sdc-led-charging-rgb), var(--sdc-led-charging-strong-alpha));
           opacity: 1;
           box-shadow: 0 18px 40px var(--pulse-strong), 0 6px 18px var(--pulse-weak);
         }
 
         .control-tile.tone-active {
-          --pulse-weak: rgba(var(--sdc-led-idle-rgb), 0.16);
-          --pulse-strong: rgba(var(--sdc-led-idle-rgb), 0.30);
+          --pulse-weak: rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha));
+          --pulse-strong: rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-strong-alpha));
           box-shadow: var(--tile-shadow-active);
         }
 
         .control-tile-wrap.tone-active .glow-under {
-          --pulse-weak: rgba(var(--sdc-led-idle-rgb), 0.16);
-          --pulse-strong: rgba(var(--sdc-led-idle-rgb), 0.30);
+          --pulse-weak: rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha));
+          --pulse-strong: rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-strong-alpha));
           opacity: 1;
           box-shadow: 0 18px 40px var(--pulse-strong), 0 6px 18px var(--pulse-weak);
         }
 
         .control-tile.tone-warn {
-          --pulse-weak: rgba(var(--sdc-led-error-rgb), 0.16);
-          --pulse-strong: rgba(var(--sdc-led-error-rgb), 0.30);
+          --pulse-weak: rgba(var(--sdc-led-error-rgb), var(--sdc-led-error-weak-alpha));
+          --pulse-strong: rgba(var(--sdc-led-error-rgb), var(--sdc-led-error-strong-alpha));
           box-shadow: var(--tile-shadow-active);
         }
 
         .control-tile-wrap.tone-warn .glow-under {
-          --pulse-weak: rgba(var(--sdc-led-error-rgb), 0.16);
-          --pulse-strong: rgba(var(--sdc-led-error-rgb), 0.30);
+          --pulse-weak: rgba(var(--sdc-led-error-rgb), var(--sdc-led-error-weak-alpha));
+          --pulse-strong: rgba(var(--sdc-led-error-rgb), var(--sdc-led-error-strong-alpha));
           opacity: 1;
           box-shadow: 0 18px 40px var(--pulse-strong), 0 6px 18px var(--pulse-weak);
         }
@@ -2715,22 +2807,22 @@ class SmartEVSEFlowCard extends LitElement {
           vector-effect: non-scaling-stroke;
           stroke-dasharray: 22 18;
           animation: dash 1.8s linear infinite;
-          filter: drop-shadow(0 0 8px rgba(var(--sdc-led-charging-rgb), 0.3));
+          filter: drop-shadow(0 0 8px rgba(var(--sdc-led-charging-rgb), var(--sdc-led-charging-strong-alpha)));
         }
 
         .pipe-active.tone-charging {
           stroke: var(--sdc-led-charging);
-          filter: drop-shadow(0 0 12px rgba(var(--sdc-led-charging-rgb), 0.45));
+          filter: drop-shadow(0 0 12px rgba(var(--sdc-led-charging-rgb), var(--sdc-led-charging-strong-alpha)));
         }
 
         .pipe-active.tone-active {
           stroke: var(--sdc-led-idle);
-          filter: drop-shadow(0 0 12px rgba(var(--sdc-led-idle-rgb), 0.4));
+          filter: drop-shadow(0 0 12px rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-strong-alpha)));
         }
 
         .pipe-active.tone-error {
           stroke: var(--sdc-led-error);
-          filter: drop-shadow(0 0 12px rgba(var(--sdc-led-error-rgb), 0.45));
+          filter: drop-shadow(0 0 12px rgba(var(--sdc-led-error-rgb), var(--sdc-led-error-strong-alpha)));
         }
 
         .pipe-active.tone-complete,
@@ -2788,13 +2880,13 @@ class SmartEVSEFlowCard extends LitElement {
         }
 
         .status-hero:focus-visible {
-          outline: 2px solid rgba(var(--sdc-led-idle-rgb), 0.42);
+          outline: 2px solid var(--primary-color, var(--status-active-color));
           outline-offset: 2px;
         }
 
         .status-hero.visual-charging {
-          --pulse-weak: rgba(var(--sdc-led-charging-rgb), 0.16);
-          --pulse-strong: rgba(var(--sdc-led-charging-rgb), 0.30);
+          --pulse-weak: rgba(var(--sdc-led-charging-rgb), var(--sdc-led-charging-weak-alpha));
+          --pulse-strong: rgba(var(--sdc-led-charging-rgb), var(--sdc-led-charging-strong-alpha));
           box-shadow: var(--tile-shadow-active);
         }
 
@@ -2803,8 +2895,8 @@ class SmartEVSEFlowCard extends LitElement {
         }
 
         .status-hero.visual-idle {
-          --pulse-weak: rgba(var(--sdc-led-idle-rgb), 0.16);
-          --pulse-strong: rgba(var(--sdc-led-idle-rgb), 0.30);
+          --pulse-weak: rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha));
+          --pulse-strong: rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-strong-alpha));
           box-shadow: var(--tile-shadow-active);
         }
 
@@ -2813,8 +2905,8 @@ class SmartEVSEFlowCard extends LitElement {
         }
 
         .status-hero.visual-error {
-          --pulse-weak: rgba(var(--sdc-led-error-rgb), 0.16);
-          --pulse-strong: rgba(var(--sdc-led-error-rgb), 0.30);
+          --pulse-weak: rgba(var(--sdc-led-error-rgb), var(--sdc-led-error-weak-alpha));
+          --pulse-strong: rgba(var(--sdc-led-error-rgb), var(--sdc-led-error-strong-alpha));
           box-shadow: var(--tile-shadow-active);
         }
 
@@ -2942,20 +3034,20 @@ class SmartEVSEFlowCard extends LitElement {
         }
 
         .flow-line-badge.tone-charging {
-          --pulse-weak: rgba(var(--sdc-led-charging-rgb), 0.16);
-          --pulse-strong: rgba(var(--sdc-led-charging-rgb), 0.30);
+          --pulse-weak: rgba(var(--sdc-led-charging-rgb), var(--sdc-led-charging-weak-alpha));
+          --pulse-strong: rgba(var(--sdc-led-charging-rgb), var(--sdc-led-charging-strong-alpha));
           box-shadow: var(--tile-shadow-active);
         }
 
         .flow-line-badge.tone-active {
-          --pulse-weak: rgba(var(--sdc-led-idle-rgb), 0.16);
-          --pulse-strong: rgba(var(--sdc-led-idle-rgb), 0.30);
+          --pulse-weak: rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha));
+          --pulse-strong: rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-strong-alpha));
           box-shadow: var(--tile-shadow-active);
         }
 
         .flow-line-badge.tone-error {
-          --pulse-weak: rgba(var(--sdc-led-error-rgb), 0.16);
-          --pulse-strong: rgba(var(--sdc-led-error-rgb), 0.30);
+          --pulse-weak: rgba(var(--sdc-led-error-rgb), var(--sdc-led-error-weak-alpha));
+          --pulse-strong: rgba(var(--sdc-led-error-rgb), var(--sdc-led-error-strong-alpha));
           box-shadow: var(--tile-shadow-active);
         }
 
@@ -3058,7 +3150,7 @@ class SmartEVSEFlowCard extends LitElement {
         }
 
         .ev-pill-accent {
-          background: rgba(var(--sdc-led-idle-rgb), 0.1);
+          background: rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha));
         }
 
         .ev-pill-label {
@@ -3232,14 +3324,14 @@ class SmartEVSEFlowCard extends LitElement {
         }
 
         .vehicle-node.tone-complete {
-          --pulse-weak: rgba(var(--sdc-led-idle-rgb), 0.12);
-          --pulse-strong: rgba(var(--sdc-led-idle-rgb), 0.22);
+          --pulse-weak: rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha));
+          --pulse-strong: rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-strong-alpha));
           box-shadow: var(--tile-shadow-active);
         }
 
         .vehicle-node-wrap.tone-complete .glow-under {
-          --pulse-weak: rgba(var(--sdc-led-idle-rgb), 0.12);
-          --pulse-strong: rgba(var(--sdc-led-idle-rgb), 0.22);
+          --pulse-weak: rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha));
+          --pulse-strong: rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-strong-alpha));
           opacity: 1;
           box-shadow: 0 18px 40px var(--pulse-strong), 0 6px 18px var(--pulse-weak);
         }
@@ -3269,14 +3361,14 @@ class SmartEVSEFlowCard extends LitElement {
         }
 
         .ev-node.tone-charging {
-          --pulse-weak: rgba(var(--sdc-led-charging-rgb), 0.16);
-          --pulse-strong: rgba(var(--sdc-led-charging-rgb), 0.30);
+          --pulse-weak: rgba(var(--sdc-led-charging-rgb), var(--sdc-led-charging-weak-alpha));
+          --pulse-strong: rgba(var(--sdc-led-charging-rgb), var(--sdc-led-charging-strong-alpha));
           box-shadow: var(--tile-shadow-active);
         }
 
         .ev-node.tone-active {
-          --pulse-weak: rgba(var(--sdc-led-idle-rgb), 0.16);
-          --pulse-strong: rgba(var(--sdc-led-idle-rgb), 0.30);
+          --pulse-weak: rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha));
+          --pulse-strong: rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-strong-alpha));
           box-shadow: var(--tile-shadow-active);
         }
 
@@ -3286,20 +3378,20 @@ class SmartEVSEFlowCard extends LitElement {
         }
 
         .ev-node.visual-idle {
-          --pulse-weak: rgba(var(--node-rgb, var(--sdc-led-idle-rgb)), 0.16);
-          --pulse-strong: rgba(var(--node-rgb, var(--sdc-led-idle-rgb)), 0.30);
+          --pulse-weak: rgba(var(--node-rgb), var(--node-weak-alpha));
+          --pulse-strong: rgba(var(--node-rgb), var(--node-strong-alpha));
           box-shadow: var(--tile-shadow-active);
         }
 
         .ev-node.visual-charging {
-          --pulse-weak: rgba(var(--node-rgb, var(--sdc-led-charging-rgb)), 0.16);
-          --pulse-strong: rgba(var(--node-rgb, var(--sdc-led-charging-rgb)), 0.30);
+          --pulse-weak: rgba(var(--node-rgb), var(--node-weak-alpha));
+          --pulse-strong: rgba(var(--node-rgb), var(--node-strong-alpha));
           box-shadow: var(--tile-shadow-active);
         }
 
         .ev-node.visual-error {
-          --pulse-weak: rgba(var(--node-rgb, var(--sdc-led-error-rgb)), 0.16);
-          --pulse-strong: rgba(var(--node-rgb, var(--sdc-led-error-rgb)), 0.30);
+          --pulse-weak: rgba(var(--node-rgb), var(--node-weak-alpha));
+          --pulse-strong: rgba(var(--node-rgb), var(--node-strong-alpha));
           box-shadow: var(--tile-shadow-active);
         }
 
@@ -3308,27 +3400,27 @@ class SmartEVSEFlowCard extends LitElement {
         }
 
         .ev-node-wrap.visual-idle .glow-under {
-          --pulse-weak: rgba(var(--node-rgb, var(--sdc-led-idle-rgb)), 0.16);
-          --pulse-strong: rgba(var(--node-rgb, var(--sdc-led-idle-rgb)), 0.30);
+          --pulse-weak: rgba(var(--node-rgb), var(--node-weak-alpha));
+          --pulse-strong: rgba(var(--node-rgb), var(--node-strong-alpha));
           opacity: 1;
           box-shadow: 0 18px 40px var(--pulse-strong), 0 6px 18px var(--pulse-weak);
-          animation: glowPulse 2.4s ease-in-out infinite;
+          animation: var(--node-glow-animation) var(--node-glow-duration) ease-in-out infinite;
         }
 
         .ev-node-wrap.visual-charging .glow-under {
-          --pulse-weak: rgba(var(--node-rgb, var(--sdc-led-charging-rgb)), 0.16);
-          --pulse-strong: rgba(var(--node-rgb, var(--sdc-led-charging-rgb)), 0.30);
+          --pulse-weak: rgba(var(--node-rgb), var(--node-weak-alpha));
+          --pulse-strong: rgba(var(--node-rgb), var(--node-strong-alpha));
           opacity: 1;
           box-shadow: 0 18px 40px var(--pulse-strong), 0 6px 18px var(--pulse-weak);
-          animation: glowPulse 1.8s ease-in-out infinite;
+          animation: var(--node-glow-animation) var(--node-glow-duration) ease-in-out infinite;
         }
 
         .ev-node-wrap.visual-error .glow-under {
-          --pulse-weak: rgba(var(--node-rgb, var(--sdc-led-error-rgb)), 0.16);
-          --pulse-strong: rgba(var(--node-rgb, var(--sdc-led-error-rgb)), 0.30);
+          --pulse-weak: rgba(var(--node-rgb), var(--node-weak-alpha));
+          --pulse-strong: rgba(var(--node-rgb), var(--node-strong-alpha));
           opacity: 1;
           box-shadow: 0 18px 40px var(--pulse-strong), 0 6px 18px var(--pulse-weak);
-          animation: glowPulse 1.2s ease-in-out infinite;
+          animation: var(--node-glow-animation) var(--node-glow-duration) ease-in-out infinite;
         }
 
         @keyframes glowPulse {
@@ -3337,7 +3429,7 @@ class SmartEVSEFlowCard extends LitElement {
           100% { box-shadow: 0 10px 20px var(--pulse-weak); }
         }
 
-        @media (max-width: 840px) {
+        @container smartevse-card (max-width: 840px) {
           .flow-svg {
             height: 64px;
           }

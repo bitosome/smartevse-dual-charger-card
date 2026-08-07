@@ -2,7 +2,7 @@
 
 Standalone Lovelace card for the SmartEVSE Dual Charger Home Assistant integration.
 
-Version: `0.0.20`
+Version: `0.0.21`
 
 This repository contains only the frontend card and local preview assets.
 
@@ -135,6 +135,11 @@ Rules when implementing or changing UI (these mirror `space-hub-card`, so every 
 2. **Reuse Home Assistant primitives** (`ha-card`, `ha-icon`) rather than reimplementing them.
 3. **Glow layers render below tile surfaces**: each tile's glow (`.glow-under`) uses `z-index: 0` and the tile surface uses `z-index: 1`, with the tile group container (e.g. `.controls`, `.ev-row`) as a **single stacking context** so a glow never paints over a neighbouring tile. Individual tile wrappers must not create their own stacking context.
 4. **Use the semantic status palette** (`--status-*`) for state colors.
+
+The animated SmartEVSE flow is the deliberate exception: its glow colors,
+effect state, speed, and intensity come from the controller entity's live
+`wled_visuals` attributes so the card stays aligned with the integration-managed
+WLED installation.
 
 Development:
 

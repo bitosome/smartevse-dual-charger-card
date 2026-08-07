@@ -320,6 +320,12 @@
     <script src="../dist/smartevse-dual-charger-card.js"></script>
     <script>
       const controllerEntity = "sensor.smartevse_dual_charger_controller_state";
+      const controllerWledVisuals = {
+        off: { color: [148, 163, 184], fx: 0, sx: 0, ix: 0 },
+        idle: { color: [0, 100, 255], fx: 2, sx: 45, ix: 128 },
+        error: { color: [255, 0, 0], fx: 2, sx: 60, ix: 200 },
+        charging: { color: [0, 255, 0], fx: 41, sx: 80, ix: 100 },
+      };
 
       const scenarios = {
         schedule_waiting: {
@@ -739,6 +745,7 @@
           return snapshot;
         }
         const attrs = controller.attributes || {};
+        attrs.wled_visuals = deepClone(controllerWledVisuals);
         for (const key of ["smartevse_1", "smartevse_2"]) {
           const nameKey = `${key}_name`;
           const connectedKey = `${key}_connected_ev`;
