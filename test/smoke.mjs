@@ -229,8 +229,16 @@ const chargeNowIsConcise =
   !root.querySelector('.wizard-confirmation') &&
   !root.textContent.includes('Ready to charge') &&
   !root.textContent.includes('Charging begins when you confirm this plan');
+const chargeNowAction = root.querySelector('.wizard-step-panel .wizard-actions .wizard-primary');
+const cardStyles = root.querySelector('style')?.textContent || '';
+const chargeNowActionUsesStableTheme =
+  chargeNowAction?.textContent.trim() === 'Start charging' &&
+  cardStyles.includes('--sdc-action-color: var(--primary-color, var(--status-active-color))') &&
+  cardStyles.includes('grid-template-rows: auto minmax(0, 1fr) auto') &&
+  cardStyles.includes('background: var(--sdc-action-color)');
 console.log(`${chargeNowIsConcise ? 'PASS' : 'FAIL'}: charge-now page omits redundant readiness copy`);
-if (!chargeNowIsConcise) ok = false;
+console.log(`${chargeNowActionUsesStableTheme ? 'PASS' : 'FAIL'}: charge-now action stays visible and uses the global action color`);
+if (!chargeNowIsConcise || !chargeNowActionUsesStableTheme) ok = false;
 click('[data-action="toggle-force-now-price"]');
 await new Promise((r) => setTimeout(r, 30));
 const priceInput = root.querySelector('.force-input[data-entity="number.price"]');

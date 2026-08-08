@@ -3,7 +3,7 @@ import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { DESIGN_TOKENS_CSS } from "./shared/design-tokens";
 import { buildGlow, type PulseColors } from "./shared/glow";
 
-const CARD_VERSION = "0.0.22";
+const CARD_VERSION = "0.0.23";
 
 const ACTIVE_GLOW: PulseColors = {
   weak: "rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha))",
@@ -1391,7 +1391,7 @@ class SmartEVSEFlowCard extends LitElement {
 
     return `
       <div class="force-backdrop settings-backdrop">
-        <div class="dialog-panel force-wizard-panel" role="dialog" aria-modal="true" aria-label="${this._safe(title)}">
+        <div class="dialog-panel force-wizard-panel wizard-step-panel" role="dialog" aria-modal="true" aria-label="${this._safe(title)}">
           <div class="modal-head modal-head-navigation">
             <button class="modal-back" data-action="back-force-wizard" type="button" aria-label="Back" ${busy ? "disabled" : ""}>
               <ha-icon icon="mdi:chevron-left"></ha-icon>
@@ -1864,6 +1864,8 @@ class SmartEVSEFlowCard extends LitElement {
           --sdc-surface-badge: var(--chip-background-color);
           --sdc-surface-glass: rgba(0,0,0,0.06);
           --sdc-surface-icon: var(--chip-background-color);
+          --sdc-action-color: var(--primary-color, var(--status-active-color));
+          --sdc-action-foreground: var(--text-primary-color, #fff);
           --sdc-text-muted: var(--secondary-text-color);
           --sdc-shadow-soft: var(--tile-shadow-default);
           --sdc-shadow-badge: var(--tile-shadow-default);
@@ -2435,6 +2437,19 @@ class SmartEVSEFlowCard extends LitElement {
           width: min(430px, calc(100vw - 32px));
         }
 
+        .wizard-step-panel {
+          display: grid;
+          grid-template-rows: auto minmax(0, 1fr) auto;
+          max-height: min(calc(100dvh - 32px), 640px);
+          overflow: hidden;
+        }
+
+        .wizard-step-panel .wizard-step-body {
+          min-height: 0;
+          overflow-y: auto;
+          padding: 2px 4px 6px;
+        }
+
         .wizard-options,
         .wizard-step-body {
           display: grid;
@@ -2490,7 +2505,7 @@ class SmartEVSEFlowCard extends LitElement {
           height: 36px;
           border-radius: var(--chip-border-radius);
           background: var(--chip-background-color);
-          color: var(--sdc-led-idle);
+          color: var(--sdc-action-color);
         }
 
         .wizard-option-icon ha-icon,
@@ -2526,7 +2541,7 @@ class SmartEVSEFlowCard extends LitElement {
         }
 
         .wizard-option.selected .wizard-option-next {
-          color: var(--sdc-led-idle);
+          color: var(--sdc-action-color);
         }
 
         .wizard-schedule-entity,
@@ -2632,7 +2647,7 @@ class SmartEVSEFlowCard extends LitElement {
         }
 
         .wizard-toggle-state.selected {
-          color: var(--sdc-led-idle);
+          color: var(--sdc-action-color);
           transform: scale(1.05);
         }
 
@@ -2646,7 +2661,7 @@ class SmartEVSEFlowCard extends LitElement {
 
         .wizard-rule ha-icon {
           --mdc-icon-size: 16px;
-          color: var(--sdc-led-idle);
+          color: var(--sdc-action-color);
         }
 
         .wizard-field {
@@ -2697,6 +2712,9 @@ class SmartEVSEFlowCard extends LitElement {
           grid-template-columns: minmax(0, 1fr);
           gap: var(--medium-gap);
           margin-top: var(--medium-gap);
+          padding-top: var(--medium-gap);
+          border-top: var(--sdc-border-faint);
+          background: var(--sdc-surface-panel);
         }
 
         .wizard-primary {
@@ -2707,12 +2725,13 @@ class SmartEVSEFlowCard extends LitElement {
           font: inherit;
           font-size: var(--sdc-font-button);
           font-weight: var(--sdc-weight-strong);
-          padding: 8px 12px;
-        }
-
-        .wizard-primary {
-          background: var(--sdc-led-idle);
-          color: var(--sdc-surface-panel);
+          min-height: 42px;
+          padding: 10px 14px;
+          background: var(--sdc-action-color);
+          box-shadow: var(--tile-shadow-default);
+          color: var(--sdc-action-foreground);
+          line-height: 1.2;
+          text-align: center;
         }
 
         .wizard-stop-plan {

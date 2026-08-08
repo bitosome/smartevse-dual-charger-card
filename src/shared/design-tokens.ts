@@ -10,6 +10,7 @@ import { css, CSSResultGroup, unsafeCSS } from 'lit';
  *   - space-hub-card            (reference)
  *   - real-electricity-price-card
  *   - smartevse-dual-charger-card
+ *   - current-monitor-card
  *
  * It is intentionally framework-agnostic: `DESIGN_TOKENS_CSS` is a plain CSS
  * string (usable by vanilla `customElements` cards that build a <style> tag),
