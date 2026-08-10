@@ -228,11 +228,13 @@ await new Promise((r) => setTimeout(r, 30));
 const schedulePriceInput = root.querySelector('.force-input[data-entity="number.price"]');
 const schedulePriceExpandsInline =
   !!schedulePriceInput?.closest('.wizard-expandable')?.querySelector('[data-action="toggle-schedule-price"]');
-const schedulePriceShowsCheck =
-  root.querySelector('[data-action="toggle-schedule-price"] .wizard-toggle-state')?.getAttribute('icon') === 'mdi:check-circle';
+const schedulePriceUsesSwitch =
+  root.querySelector('[data-action="toggle-schedule-price"]')?.getAttribute('aria-checked') === 'true' &&
+  !!root.querySelector('[data-action="toggle-schedule-price"] .wizard-toggle-state.selected .wizard-toggle-state-thumb') &&
+  !root.querySelector('[data-action="toggle-schedule-price"] ha-icon.wizard-toggle-state');
 console.log(`${schedulePriceExpandsInline ? 'PASS' : 'FAIL'}: schedule price field expands inside its option tile`);
-console.log(`${schedulePriceShowsCheck ? 'PASS' : 'FAIL'}: selected schedule price toggle uses the plan check indicator`);
-if (!schedulePriceExpandsInline || !schedulePriceShowsCheck) ok = false;
+console.log(`${schedulePriceUsesSwitch ? 'PASS' : 'FAIL'}: schedule submenu uses a switch instead of a tick indicator`);
+if (!schedulePriceExpandsInline || !schedulePriceUsesSwitch) ok = false;
 const scheduleConfigCallStart = calls.length;
 if (schedulePriceInput) {
   schedulePriceInput.value = '0.15';
@@ -365,12 +367,14 @@ const timerExpandsInline =
   !!durationInput?.closest('.wizard-expandable')?.querySelector('[data-action="toggle-force-now-timer"]');
 const priceExpandsInline =
   !!timerPriceInput?.closest('.wizard-expandable')?.querySelector('[data-action="toggle-force-now-price"]');
-const forceNowTogglesShowChecks =
-  root.querySelector('[data-action="toggle-force-now-timer"] .wizard-toggle-state')?.getAttribute('icon') === 'mdi:check-circle' &&
-  root.querySelector('[data-action="toggle-force-now-price"] .wizard-toggle-state')?.getAttribute('icon') === 'mdi:check-circle';
+const forceNowUsesSwitches =
+  root.querySelector('[data-action="toggle-force-now-timer"]')?.getAttribute('aria-checked') === 'true' &&
+  root.querySelector('[data-action="toggle-force-now-price"]')?.getAttribute('aria-checked') === 'true' &&
+  root.querySelectorAll('.wizard-step-panel .wizard-toggle-state.selected .wizard-toggle-state-thumb').length === 2 &&
+  !root.querySelector('.wizard-step-panel ha-icon.wizard-toggle-state');
 console.log(`${timerExpandsInline && priceExpandsInline ? 'PASS' : 'FAIL'}: force-charge fields expand inside their option tiles`);
-console.log(`${forceNowTogglesShowChecks ? 'PASS' : 'FAIL'}: selected force-charge toggles use the plan check indicator`);
-if (!timerExpandsInline || !priceExpandsInline || !forceNowTogglesShowChecks) ok = false;
+console.log(`${forceNowUsesSwitches ? 'PASS' : 'FAIL'}: Force charge submenu uses switches instead of tick indicators`);
+if (!timerExpandsInline || !priceExpandsInline || !forceNowUsesSwitches) ok = false;
 if (durationInput) {
   durationInput.value = '45';
   durationInput.dispatchEvent(new win.Event('input', { bubbles: true, composed: true }));

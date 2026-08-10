@@ -3,7 +3,7 @@ import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { DESIGN_TOKENS_CSS } from "./shared/design-tokens";
 import { buildGlow, type PulseColors } from "./shared/glow";
 
-const CARD_VERSION = "0.0.27";
+const CARD_VERSION = "0.0.28";
 
 const ACTIVE_GLOW: PulseColors = {
   weak: "rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha))",
@@ -1464,10 +1464,9 @@ class SmartEVSEFlowCard extends LitElement {
                 <strong>Also require an acceptable price</strong>
                 <span>Charging starts only when both the schedule and price conditions are satisfied.</span>
               </span>
-              <ha-icon
-                class="wizard-toggle-state ${this._schedulePriceGate ? "selected" : ""}"
-                icon="${this._schedulePriceGate ? "mdi:check-circle" : "mdi:circle-outline"}"
-              ></ha-icon>
+              <span class="wizard-toggle-state ${this._schedulePriceGate ? "selected" : ""}" aria-hidden="true">
+                <span class="wizard-toggle-state-thumb"></span>
+              </span>
             </button>
             ${
               this._schedulePriceGate
@@ -1502,10 +1501,9 @@ class SmartEVSEFlowCard extends LitElement {
                 <strong>Stop after a set time</strong>
                 <span>${timerAvailable ? `Current duration: ${this._formatMinutes(forceDuration)}.` : "Timer entities are unavailable."}</span>
               </span>
-              <ha-icon
-                class="wizard-toggle-state ${this._forceNowTimer ? "selected" : ""}"
-                icon="${this._forceNowTimer ? "mdi:check-circle" : "mdi:circle-outline"}"
-              ></ha-icon>
+              <span class="wizard-toggle-state ${this._forceNowTimer ? "selected" : ""}" aria-hidden="true">
+                <span class="wizard-toggle-state-thumb"></span>
+              </span>
             </button>
             ${
               this._forceNowTimer
@@ -1530,10 +1528,9 @@ class SmartEVSEFlowCard extends LitElement {
                 <strong>Require an acceptable price</strong>
                 <span>${priceAvailable ? `Current price: ${priceValue}.` : "Price entities are unavailable."}</span>
               </span>
-              <ha-icon
-                class="wizard-toggle-state ${this._forceNowPrice ? "selected" : ""}"
-                icon="${this._forceNowPrice ? "mdi:check-circle" : "mdi:circle-outline"}"
-              ></ha-icon>
+              <span class="wizard-toggle-state ${this._forceNowPrice ? "selected" : ""}" aria-hidden="true">
+                <span class="wizard-toggle-state-thumb"></span>
+              </span>
             </button>
             ${
               this._forceNowPrice
@@ -2824,16 +2821,33 @@ class SmartEVSEFlowCard extends LitElement {
         }
 
         .wizard-toggle-state {
-          --mdc-icon-size: 20px;
-          width: 20px;
-          height: 20px;
-          color: var(--sdc-text-muted);
-          transition: color 0.15s ease, transform 0.15s ease;
+          position: relative;
+          width: 38px;
+          height: 22px;
+          flex: 0 0 auto;
+          border-radius: var(--chip-border-radius);
+          background: color-mix(in srgb, var(--secondary-text-color) 34%, transparent);
+          transition: background 0.15s ease;
+        }
+
+        .wizard-toggle-state-thumb {
+          position: absolute;
+          top: 3px;
+          left: 3px;
+          width: 16px;
+          height: 16px;
+          border-radius: 50%;
+          background: var(--sdc-action-foreground);
+          box-shadow: 0 1px 4px rgba(0, 0, 0, 0.28);
+          transition: transform 0.15s ease;
         }
 
         .wizard-toggle-state.selected {
-          color: var(--sdc-action-color);
-          transform: scale(1.05);
+          background: var(--sdc-action-color);
+        }
+
+        .wizard-toggle-state.selected .wizard-toggle-state-thumb {
+          transform: translateX(16px);
         }
 
         .wizard-rule {
