@@ -286,7 +286,7 @@ const scheduleRemainsEnabled = states['switch.schedule'].state === 'on';
 console.log(`${disabledScheduledPrice && scheduleRemainsEnabled ? 'PASS' : 'FAIL'}: plain schedule removes only the price condition`);
 if (!disabledScheduledPrice || !scheduleRemainsEnabled) ok = false;
 
-// Force charge with only a price limit disables schedule gating.
+// Price-limited force charge temporarily overrides, but never disables, the standing schedule.
 openForceWizard();
 await new Promise((r) => setTimeout(r, 30));
 click('[data-action="choose-force-mode"][data-mode="now"]');
@@ -312,13 +312,24 @@ if (priceInput) {
   priceInput.value = '0.15';
   priceInput.dispatchEvent(new win.Event('input', { bubbles: true, composed: true }));
 }
+const forcePriceCallStart = calls.length;
 root.querySelector('[data-action="apply-force-mode"][data-mode="price"]')
   ?.dispatchEvent(new win.MouseEvent('click', { bubbles: true, composed: true }));
 await new Promise((r) => setTimeout(r, 50));
-const disabledSchedule = calls.some((c) => c[1] === 'turn_off' && c[2].entity_id === 'switch.schedule');
+const forcePriceCalls = calls.slice(forcePriceCallStart);
+const scheduleWasNotDisabled = !forcePriceCalls.some(
+  (c) => c[1] === 'turn_off' && c[2].entity_id === 'switch.schedule',
+);
+const scheduleRemainsOn = states['switch.schedule'].state === 'on';
 const priceRemainsEnabled = states['switch.force_price'].state === 'on';
-console.log(`${disabledSchedule && priceRemainsEnabled ? 'PASS' : 'FAIL'}: standalone price plan explicitly disables schedule gating`);
-if (!disabledSchedule || !priceRemainsEnabled) ok = false;
+openForceWizard();
+await new Promise((r) => setTimeout(r, 30));
+const scheduleAndForceStayEnabled =
+  root.querySelector('[data-action="toggle-charging-plan"][data-mode="schedule"]')?.getAttribute('aria-checked') === 'true' &&
+  root.querySelector('[data-action="toggle-charging-plan"][data-mode="now"]')?.getAttribute('aria-checked') === 'true';
+console.log(`${scheduleWasNotDisabled && scheduleRemainsOn && priceRemainsEnabled && scheduleAndForceStayEnabled ? 'PASS' : 'FAIL'}: price-limited force charge keeps the standing schedule enabled`);
+if (!scheduleWasNotDisabled || !scheduleRemainsOn || !priceRemainsEnabled || !scheduleAndForceStayEnabled) ok = false;
+click('[data-action="close-force-wizard"]');
 
 // Force charge with both timer and acceptable price enables both force entities.
 openForceWizard();
@@ -362,6 +373,7 @@ const configuredForceSummary =
 click('[data-action="toggle-charging-plan"][data-mode="now"]');
 await new Promise((r) => setTimeout(r, 40));
 const forceDisabledButRemembered =
+  states['switch.schedule'].state === 'on' &&
   states['switch.force_timer'].state === 'off' &&
   states['switch.force_price'].state === 'off' &&
   (root.querySelector('[data-action="choose-force-mode"][data-mode="now"]')?.textContent || '')
