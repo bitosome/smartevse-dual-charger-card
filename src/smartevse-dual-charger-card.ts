@@ -3,7 +3,7 @@ import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { DESIGN_TOKENS_CSS } from "./shared/design-tokens";
 import { buildGlow, type PulseColors } from "./shared/glow";
 
-const CARD_VERSION = "0.0.28";
+const CARD_VERSION = "0.0.29";
 
 const ACTIVE_GLOW: PulseColors = {
   weak: "rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha))",
@@ -1888,6 +1888,18 @@ class SmartEVSEFlowCard extends LitElement {
       : `Duration ${this._formatMinutes(forceDuration)}`;
     const hasControllerError = controllerError && !["NONE", "None", "unknown", "unavailable"].includes(controllerError);
     const acceptablePriceValue = acceptablePrice !== null ? `${acceptablePrice.toFixed(3)} ${this._currency}` : "n/a";
+    const forcePlanActive = this._isForcePlanActive();
+    const forcePlanDetail = !forcePlanActive
+      ? ""
+      : forceChargeOn
+        ? "Force charge · Unrestricted"
+        : forceTimerOn && forcePriceOn
+          ? "Force charge · Timer + acceptable price"
+          : forceTimerOn
+            ? "Force charge · Timer"
+            : forcePriceOn
+              ? "Force charge · Acceptable price"
+              : "Force charge";
     const activeTitle = hasControllerError
       ? "Controller error"
       : activeEv
@@ -1899,20 +1911,24 @@ class SmartEVSEFlowCard extends LitElement {
           : "Charging paused";
     const currentDetail = hasControllerError
       ? this._pretty(controllerError)
-      : scheduleWithPrice
+      : forcePlanDetail
+        ? forcePlanDetail
+        : scheduleWithPrice
         ? "Schedule + acceptable price"
         : activeEv
           ? `${activeEv.state} / ${this._formatCurrent(activeEv.chargeCurrent)} offered`
           : this._pretty(chargeReason);
     const modeDetail = (() => {
+      if (forceChargeOn) {
+        return scheduleSwitchOn ? "Schedule resumes when Force charge is off" : `Force: ${forceNowDetail}`;
+      }
       if (forceTimerOn) {
-        return `Timer: ${forceTimerDetail}`;
+        return scheduleSwitchOn
+          ? `Timer: ${forceTimerDetail} · Schedule resumes afterward`
+          : `Timer: ${forceTimerDetail}`;
       }
       if (activeRaw && dutyLabel !== "n/a") {
         return `Duty left: ${dutyLabel}`;
-      }
-      if (forceChargeOn) {
-        return `Force: ${forceNowDetail}`;
       }
       if (forcePriceOn) {
         if (scheduleSwitchOn && scheduleState !== "on") {

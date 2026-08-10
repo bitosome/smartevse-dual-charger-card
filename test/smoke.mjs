@@ -385,11 +385,15 @@ const timerPriceCalls = calls.slice(timerPriceCallStart);
 const savedDuration = timerPriceCalls.some((c) => c[0] === 'number' && c[1] === 'set_value' && c[2].entity_id === 'number.duration' && c[2].value === 45);
 const savedTimerPrice = timerPriceCalls.some((c) => c[0] === 'number' && c[1] === 'set_value' && c[2].entity_id === 'number.price');
 const timerAndPriceOn = states['switch.force_timer'].state === 'on' && states['switch.force_price'].state === 'on';
+const forceHeroDetails = [...root.querySelectorAll('.status-detail')].map((node) => node.textContent.trim());
 const forceTimerStaysInHero =
-  [...root.querySelectorAll('.status-detail')].some((node) => node.textContent.includes('Timer:')) &&
+  forceHeroDetails[0] === 'Force charge · Timer + acceptable price' &&
+  forceHeroDetails[1]?.includes('Timer:') &&
+  forceHeroDetails[1]?.includes('Schedule resumes afterward') &&
+  !forceHeroDetails.some((detail) => detail.includes('Schedule + acceptable price')) &&
   !root.querySelector('.flow-line-badge');
 console.log(`${savedDuration && savedTimerPrice && timerAndPriceOn ? 'PASS' : 'FAIL'}: force charge supports timer plus acceptable price`);
-console.log(`${forceTimerStaysInHero ? 'PASS' : 'FAIL'}: active Force timer countdown remains visible only in the hero`);
+console.log(`${forceTimerStaysInHero ? 'PASS' : 'FAIL'}: active Force plan takes hero priority while the schedule remains enabled`);
 if (!savedDuration || !savedTimerPrice || !timerAndPriceOn || !forceTimerStaysInHero) ok = false;
 
 openForceWizard();
