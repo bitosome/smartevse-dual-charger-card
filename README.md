@@ -2,7 +2,7 @@
 
 Standalone Lovelace card for the SmartEVSE Dual Charger Home Assistant integration.
 
-Version: `0.0.25`
+Version: `0.0.26`
 
 This repository contains only the frontend card and local preview assets.
 
@@ -98,6 +98,7 @@ The card also expects the related control entities configured in `card_flow.yaml
 - Force charge supports unrestricted charging, timer only, acceptable price only, or timer plus acceptable price.
 - Force charge temporarily overrides scheduled charging without disabling its switch, so the saved schedule resumes when Force charge ends.
 - Schedule and Force charge have independent main-menu toggles, while their saved timer and acceptable-price options remain visible and persist when disabled.
+- Schedule and Force charge submenus only customize their saved options; numeric changes save automatically and activation stays on the main menu.
 - Timer duration and acceptable price are configured directly on the Force charge page.
 - Use the toggle on each main-menu tile to enable or disable that plan.
 

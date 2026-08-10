@@ -225,20 +225,31 @@ const schedulePriceShowsCheck =
 console.log(`${schedulePriceExpandsInline ? 'PASS' : 'FAIL'}: schedule price field expands inside its option tile`);
 console.log(`${schedulePriceShowsCheck ? 'PASS' : 'FAIL'}: selected schedule price toggle uses the plan check indicator`);
 if (!schedulePriceExpandsInline || !schedulePriceShowsCheck) ok = false;
+const scheduleConfigCallStart = calls.length;
 if (schedulePriceInput) {
   schedulePriceInput.value = '0.15';
   schedulePriceInput.dispatchEvent(new win.Event('input', { bubbles: true, composed: true }));
+  schedulePriceInput.dispatchEvent(new win.Event('change', { bubbles: true, composed: true }));
 }
+await new Promise((r) => setTimeout(r, 50));
+const scheduleConfigCalls = calls.slice(scheduleConfigCallStart);
+const savedSchedulePrice = scheduleConfigCalls.some((c) => c[0] === 'number' && c[1] === 'set_value' && c[2].entity_id === 'number.price' && c[2].value === 0.15);
+const submenuDoesNotActivateSchedule =
+  states['switch.schedule'].state === 'off' &&
+  !scheduleConfigCalls.some((c) => c[1] === 'turn_on' && c[2].entity_id === 'switch.schedule') &&
+  !root.querySelector('[data-action="apply-force-mode"]') &&
+  !root.querySelector('.wizard-actions');
+click('[data-action="back-force-wizard"]');
+await new Promise((r) => setTimeout(r, 30));
 const scheduleCallStart = calls.length;
-root.querySelector('[data-action="apply-force-mode"][data-mode="schedule"]')
-  ?.dispatchEvent(new win.MouseEvent('click', { bubbles: true, composed: true }));
+click('[data-action="toggle-charging-plan"][data-mode="schedule"]');
 await new Promise((r) => setTimeout(r, 60));
 const scheduleCalls = calls.slice(scheduleCallStart);
-const savedSchedulePrice = scheduleCalls.some((c) => c[0] === 'number' && c[1] === 'set_value' && c[2].entity_id === 'number.price' && c[2].value === 0.15);
 const enabledSchedule = scheduleCalls.some((c) => c[1] === 'turn_on' && c[2].entity_id === 'switch.schedule');
 const enabledScheduledPrice = scheduleCalls.some((c) => c[1] === 'turn_on' && c[2].entity_id === 'switch.force_price');
-console.log(`${savedSchedulePrice && enabledSchedule && enabledScheduledPrice ? 'PASS' : 'FAIL'}: schedule can require an acceptable price`);
-if (!savedSchedulePrice || !enabledSchedule || !enabledScheduledPrice) ok = false;
+console.log(`${savedSchedulePrice && submenuDoesNotActivateSchedule ? 'PASS' : 'FAIL'}: schedule submenu saves options without activating the plan`);
+console.log(`${enabledSchedule && enabledScheduledPrice ? 'PASS' : 'FAIL'}: only the main-menu toggle enables the configured schedule`);
+if (!savedSchedulePrice || !submenuDoesNotActivateSchedule || !enabledSchedule || !enabledScheduledPrice) ok = false;
 
 const heroPlanDetails = [...root.querySelectorAll('.status-detail')].map((node) => node.textContent.trim());
 const heroShowsCombinedPlan =
@@ -274,11 +285,8 @@ if (!selectedScheduleGlows || !scheduleSummaryVisible || !scheduleDisabledButRem
 
 click('[data-action="choose-force-mode"][data-mode="schedule"]');
 await new Promise((r) => setTimeout(r, 30));
-click('[data-action="toggle-schedule-price"]');
-await new Promise((r) => setTimeout(r, 30));
 const scheduleOnlyCallStart = calls.length;
-root.querySelector('[data-action="apply-force-mode"][data-mode="schedule"]')
-  ?.dispatchEvent(new win.MouseEvent('click', { bubbles: true, composed: true }));
+click('[data-action="toggle-schedule-price"]');
 await new Promise((r) => setTimeout(r, 50));
 const scheduleOnlyCalls = calls.slice(scheduleOnlyCallStart);
 const disabledScheduledPrice = scheduleOnlyCalls.some((c) => c[1] === 'turn_off' && c[2].entity_id === 'switch.force_price');
@@ -294,27 +302,30 @@ await new Promise((r) => setTimeout(r, 30));
 const forceChargeIsConcise =
   !root.querySelector('.wizard-confirmation') &&
   !root.textContent.includes('Ready to charge') &&
-  !root.textContent.includes('Charging begins when you confirm this plan');
-const forceChargeAction = root.querySelector('.wizard-step-panel .wizard-actions .wizard-primary');
-const cardStyles = root.querySelector('style')?.textContent || '';
-const forceChargeActionUsesStableTheme =
-  forceChargeAction?.textContent.trim() === 'Enable force charge' &&
-  cardStyles.includes('--sdc-action-color: var(--primary-color, var(--status-active-color))') &&
-  cardStyles.includes('grid-template-rows: auto minmax(0, 1fr) auto') &&
-  cardStyles.includes('background: var(--sdc-action-color)');
-console.log(`${forceChargeIsConcise ? 'PASS' : 'FAIL'}: force-charge page omits redundant readiness copy`);
-console.log(`${forceChargeActionUsesStableTheme ? 'PASS' : 'FAIL'}: force-charge action stays visible and uses the global action color`);
-if (!forceChargeIsConcise || !forceChargeActionUsesStableTheme) ok = false;
+  !root.textContent.includes('Charging begins when you confirm this plan') &&
+  !root.querySelector('[data-action="apply-force-mode"]') &&
+  !root.querySelector('.wizard-actions');
+console.log(`${forceChargeIsConcise ? 'PASS' : 'FAIL'}: force-charge submenu contains customization controls only`);
+if (!forceChargeIsConcise) ok = false;
 click('[data-action="toggle-force-now-price"]');
 await new Promise((r) => setTimeout(r, 30));
 const priceInput = root.querySelector('.force-input[data-entity="number.price"]');
+const forceConfigCallStart = calls.length;
 if (priceInput) {
   priceInput.value = '0.15';
   priceInput.dispatchEvent(new win.Event('input', { bubbles: true, composed: true }));
+  priceInput.dispatchEvent(new win.Event('change', { bubbles: true, composed: true }));
 }
+await new Promise((r) => setTimeout(r, 50));
+const forceConfigCalls = calls.slice(forceConfigCallStart);
+const forceConfigSavedWithoutActivation =
+  forceConfigCalls.some((c) => c[0] === 'number' && c[1] === 'set_value' && c[2].entity_id === 'number.price') &&
+  states['switch.schedule'].state === 'on' &&
+  states['switch.force_price'].state === 'off';
+click('[data-action="back-force-wizard"]');
+await new Promise((r) => setTimeout(r, 30));
 const forcePriceCallStart = calls.length;
-root.querySelector('[data-action="apply-force-mode"][data-mode="price"]')
-  ?.dispatchEvent(new win.MouseEvent('click', { bubbles: true, composed: true }));
+click('[data-action="toggle-charging-plan"][data-mode="now"]');
 await new Promise((r) => setTimeout(r, 50));
 const forcePriceCalls = calls.slice(forcePriceCallStart);
 const scheduleWasNotDisabled = !forcePriceCalls.some(
@@ -327,8 +338,9 @@ await new Promise((r) => setTimeout(r, 30));
 const scheduleAndForceStayEnabled =
   root.querySelector('[data-action="toggle-charging-plan"][data-mode="schedule"]')?.getAttribute('aria-checked') === 'true' &&
   root.querySelector('[data-action="toggle-charging-plan"][data-mode="now"]')?.getAttribute('aria-checked') === 'true';
-console.log(`${scheduleWasNotDisabled && scheduleRemainsOn && priceRemainsEnabled && scheduleAndForceStayEnabled ? 'PASS' : 'FAIL'}: price-limited force charge keeps the standing schedule enabled`);
-if (!scheduleWasNotDisabled || !scheduleRemainsOn || !priceRemainsEnabled || !scheduleAndForceStayEnabled) ok = false;
+console.log(`${forceConfigSavedWithoutActivation ? 'PASS' : 'FAIL'}: force-charge submenu saves limits without activating the plan`);
+console.log(`${scheduleWasNotDisabled && scheduleRemainsOn && priceRemainsEnabled && scheduleAndForceStayEnabled ? 'PASS' : 'FAIL'}: only the main toggle enables Force charge and keeps the standing schedule on`);
+if (!forceConfigSavedWithoutActivation || !scheduleWasNotDisabled || !scheduleRemainsOn || !priceRemainsEnabled || !scheduleAndForceStayEnabled) ok = false;
 click('[data-action="close-force-wizard"]');
 
 // Force charge with both timer and acceptable price enables both force entities.
@@ -336,8 +348,9 @@ openForceWizard();
 await new Promise((r) => setTimeout(r, 30));
 click('[data-action="choose-force-mode"][data-mode="now"]');
 await new Promise((r) => setTimeout(r, 30));
+const timerPriceCallStart = calls.length;
 click('[data-action="toggle-force-now-timer"]');
-await new Promise((r) => setTimeout(r, 30));
+await new Promise((r) => setTimeout(r, 50));
 const durationInput = root.querySelector('.force-input[data-entity="number.duration"]');
 const timerPriceInput = root.querySelector('.force-input[data-entity="number.price"]');
 const timerExpandsInline =
@@ -353,10 +366,8 @@ if (!timerExpandsInline || !priceExpandsInline || !forceNowTogglesShowChecks) ok
 if (durationInput) {
   durationInput.value = '45';
   durationInput.dispatchEvent(new win.Event('input', { bubbles: true, composed: true }));
+  durationInput.dispatchEvent(new win.Event('change', { bubbles: true, composed: true }));
 }
-const timerPriceCallStart = calls.length;
-root.querySelector('[data-action="apply-force-mode"][data-mode="timer_price"]')
-  ?.dispatchEvent(new win.MouseEvent('click', { bubbles: true, composed: true }));
 await new Promise((r) => setTimeout(r, 50));
 const timerPriceCalls = calls.slice(timerPriceCallStart);
 const savedDuration = timerPriceCalls.some((c) => c[0] === 'number' && c[1] === 'set_value' && c[2].entity_id === 'number.duration' && c[2].value === 45);
@@ -398,8 +409,6 @@ await new Promise((r) => setTimeout(r, 30));
 click('[data-action="choose-force-mode"][data-mode="now"]');
 await new Promise((r) => setTimeout(r, 30));
 click('[data-action="toggle-force-now-price"]');
-await new Promise((r) => setTimeout(r, 30));
-click('[data-action="apply-force-mode"][data-mode="timer"]');
 await new Promise((r) => setTimeout(r, 50));
 const timerOnly = states['switch.force_timer'].state === 'on' && states['switch.force_price'].state === 'off';
 console.log(`${timerOnly ? 'PASS' : 'FAIL'}: force charge supports timer without price`);
@@ -411,8 +420,6 @@ await new Promise((r) => setTimeout(r, 30));
 click('[data-action="choose-force-mode"][data-mode="now"]');
 await new Promise((r) => setTimeout(r, 30));
 click('[data-action="toggle-force-now-timer"]');
-await new Promise((r) => setTimeout(r, 30));
-click('[data-action="apply-force-mode"][data-mode="simple"]');
 await new Promise((r) => setTimeout(r, 50));
 const plainForce =
   states['switch.force'].state === 'on' &&
