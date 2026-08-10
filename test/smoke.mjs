@@ -23,7 +23,7 @@ const tag = 'smartevse-flow-card';
 if (!customElements.get(tag)) throw new Error('element not registered');
 
 const el = document.createElement(tag);
-el.setConfig({
+const config = {
   type: 'custom:smartevse-flow-card',
   controller_entity: 'sensor.ctl',
   price_entity: 'sensor.current_price',
@@ -37,7 +37,8 @@ el.setConfig({
   force_charge_duration_entity: 'number.duration',
   duty_cycle_entity: 'number.duty',
   timer_remaining_entity: 'sensor.timer_remaining',
-});
+};
+el.setConfig(config);
 
 const calls = [];
 const states = {
@@ -75,7 +76,7 @@ const states = {
   'number.duty': { state: '30', attributes: { min: 5, max: 240, step: 5, unit_of_measurement: 'min' } },
   'sensor.timer_remaining': { state: '0', attributes: {} },
 };
-el.hass = {
+const hass = {
   states,
   callService: (...a) => {
     calls.push(a);
@@ -89,6 +90,7 @@ el.hass = {
     return Promise.resolve();
   },
 };
+el.hass = hass;
 
 document.body.appendChild(el);
 await new Promise((r) => setTimeout(r, 60));
@@ -125,6 +127,32 @@ for (const [name, pass] of Object.entries(checks)) {
   if (!pass) ok = false;
 }
 
+// Physical current flow animates even if the controller's logical gate has already changed.
+const controllerAttrs = states['sensor.ctl'].attributes;
+const originalFlowState = {
+  chargeAllowed: controllerAttrs.charge_allowed,
+  activeRaw: controllerAttrs.active_smartevse_raw,
+  state: controllerAttrs.smartevse_1_state,
+  current: controllerAttrs.smartevse_1_charge_current,
+};
+controllerAttrs.charge_allowed = false;
+controllerAttrs.active_smartevse_raw = 'smartevse_1';
+controllerAttrs.smartevse_1_state = 'Charging';
+controllerAttrs.smartevse_1_charge_current = 10.4;
+el.hass = hass;
+await new Promise((r) => setTimeout(r, 30));
+const physicalFlowAnimates =
+  !!root.querySelector('.flow-svg .pipe-active.tone-charging') &&
+  (root.querySelector('style')?.textContent || '').includes('animation: dash 1.8s linear infinite');
+console.log(`${physicalFlowAnimates ? 'PASS' : 'FAIL'}: physical charging current animates its connector independently of charge_allowed`);
+if (!physicalFlowAnimates) ok = false;
+controllerAttrs.charge_allowed = originalFlowState.chargeAllowed;
+controllerAttrs.active_smartevse_raw = originalFlowState.activeRaw;
+controllerAttrs.smartevse_1_state = originalFlowState.state;
+controllerAttrs.smartevse_1_charge_current = originalFlowState.current;
+el.hass = hass;
+await new Promise((r) => setTimeout(r, 30));
+
 // All charging behavior is configured through one two-path wizard.
 const openForceWizard = () => {
   const trigger = root.querySelector('[data-action="open-force-wizard"]');
@@ -147,8 +175,31 @@ const hasTwoPlanFamilies =
   forceChoices.length === 2 &&
   !!root.querySelector('[data-action="choose-force-mode"][data-mode="schedule"]') &&
   !!root.querySelector('[data-action="choose-force-mode"][data-mode="now"]');
-console.log(`${hasTwoPlanFamilies ? 'PASS' : 'FAIL'}: wizard groups charging into schedule and charge-now plans`);
-if (!forceWizardOpened || !hasTwoPlanFamilies) ok = false;
+const mainPlanToggles = root.querySelectorAll('[data-action="toggle-charging-plan"]');
+const forceTileText = root.querySelector('[data-action="choose-force-mode"][data-mode="now"]')?.textContent || '';
+const mainMenuUsesIndependentToggles =
+  mainPlanToggles.length === 2 &&
+  !root.querySelector('[data-action="stop-force-charge"]') &&
+  forceTileText.includes('Force charge') &&
+  forceTileText.includes('Unrestricted · Off') &&
+  !root.textContent.includes('Charge now');
+console.log(`${hasTwoPlanFamilies ? 'PASS' : 'FAIL'}: wizard groups charging into schedule and force-charge plans`);
+console.log(`${mainMenuUsesIndependentToggles ? 'PASS' : 'FAIL'}: main plan tiles expose independent toggles and saved-option summaries`);
+if (!forceWizardOpened || !hasTwoPlanFamilies || !mainMenuUsesIndependentToggles) ok = false;
+
+// The main-menu force toggle enables and disables the saved unrestricted mode.
+click('[data-action="toggle-charging-plan"][data-mode="now"]');
+await new Promise((r) => setTimeout(r, 40));
+const forceEnabledFromMain =
+  states['switch.force'].state === 'on' &&
+  root.querySelector('[data-action="toggle-charging-plan"][data-mode="now"]')?.getAttribute('aria-checked') === 'true';
+click('[data-action="toggle-charging-plan"][data-mode="now"]');
+await new Promise((r) => setTimeout(r, 40));
+const forceDisabledFromMain =
+  states['switch.force'].state === 'off' &&
+  (root.querySelector('[data-action="choose-force-mode"][data-mode="now"]')?.textContent || '').includes('Unrestricted · Off');
+console.log(`${forceEnabledFromMain && forceDisabledFromMain ? 'PASS' : 'FAIL'}: force-charge main toggle controls the plan without losing its mode`);
+if (!forceEnabledFromMain || !forceDisabledFromMain) ok = false;
 
 // Schedule is exposed as a real Home Assistant entity and only the top back arrow remains.
 click('[data-action="choose-force-mode"][data-mode="schedule"]');
@@ -203,8 +254,23 @@ const selectedScheduleGlows =
   !!root.querySelector('.wizard-option-wrap.selected [data-mode="schedule"]') &&
   !!root.querySelector('.wizard-option-wrap.selected .glow-under') &&
   !root.textContent.includes('Current plan');
+const scheduleSummaryVisible =
+  (root.querySelector('[data-action="choose-force-mode"][data-mode="schedule"]')?.textContent || '')
+    .includes('Schedule + acceptable price ≤ 0.150 EUR/kWh');
+click('[data-action="toggle-charging-plan"][data-mode="schedule"]');
+await new Promise((r) => setTimeout(r, 40));
+const scheduleDisabledButRemembered =
+  states['switch.schedule'].state === 'off' &&
+  states['switch.force_price'].state === 'off' &&
+  (root.querySelector('[data-action="choose-force-mode"][data-mode="schedule"]')?.textContent || '')
+    .includes('Schedule + acceptable price ≤ 0.150 EUR/kWh · Off');
+click('[data-action="toggle-charging-plan"][data-mode="schedule"]');
+await new Promise((r) => setTimeout(r, 40));
+const scheduleReenabledWithSavedPrice =
+  states['switch.schedule'].state === 'on' && states['switch.force_price'].state === 'on';
 console.log(`${selectedScheduleGlows ? 'PASS' : 'FAIL'}: active schedule glows without a current-plan panel`);
-if (!selectedScheduleGlows) ok = false;
+console.log(`${scheduleSummaryVisible && scheduleDisabledButRemembered && scheduleReenabledWithSavedPrice ? 'PASS' : 'FAIL'}: schedule toggle preserves and restores its acceptable-price option`);
+if (!selectedScheduleGlows || !scheduleSummaryVisible || !scheduleDisabledButRemembered || !scheduleReenabledWithSavedPrice) ok = false;
 
 click('[data-action="choose-force-mode"][data-mode="schedule"]');
 await new Promise((r) => setTimeout(r, 30));
@@ -220,25 +286,25 @@ const scheduleRemainsEnabled = states['switch.schedule'].state === 'on';
 console.log(`${disabledScheduledPrice && scheduleRemainsEnabled ? 'PASS' : 'FAIL'}: plain schedule removes only the price condition`);
 if (!disabledScheduledPrice || !scheduleRemainsEnabled) ok = false;
 
-// Charge now with only a price limit disables schedule gating.
+// Force charge with only a price limit disables schedule gating.
 openForceWizard();
 await new Promise((r) => setTimeout(r, 30));
 click('[data-action="choose-force-mode"][data-mode="now"]');
 await new Promise((r) => setTimeout(r, 30));
-const chargeNowIsConcise =
+const forceChargeIsConcise =
   !root.querySelector('.wizard-confirmation') &&
   !root.textContent.includes('Ready to charge') &&
   !root.textContent.includes('Charging begins when you confirm this plan');
-const chargeNowAction = root.querySelector('.wizard-step-panel .wizard-actions .wizard-primary');
+const forceChargeAction = root.querySelector('.wizard-step-panel .wizard-actions .wizard-primary');
 const cardStyles = root.querySelector('style')?.textContent || '';
-const chargeNowActionUsesStableTheme =
-  chargeNowAction?.textContent.trim() === 'Start charging' &&
+const forceChargeActionUsesStableTheme =
+  forceChargeAction?.textContent.trim() === 'Enable force charge' &&
   cardStyles.includes('--sdc-action-color: var(--primary-color, var(--status-active-color))') &&
   cardStyles.includes('grid-template-rows: auto minmax(0, 1fr) auto') &&
   cardStyles.includes('background: var(--sdc-action-color)');
-console.log(`${chargeNowIsConcise ? 'PASS' : 'FAIL'}: charge-now page omits redundant readiness copy`);
-console.log(`${chargeNowActionUsesStableTheme ? 'PASS' : 'FAIL'}: charge-now action stays visible and uses the global action color`);
-if (!chargeNowIsConcise || !chargeNowActionUsesStableTheme) ok = false;
+console.log(`${forceChargeIsConcise ? 'PASS' : 'FAIL'}: force-charge page omits redundant readiness copy`);
+console.log(`${forceChargeActionUsesStableTheme ? 'PASS' : 'FAIL'}: force-charge action stays visible and uses the global action color`);
+if (!forceChargeIsConcise || !forceChargeActionUsesStableTheme) ok = false;
 click('[data-action="toggle-force-now-price"]');
 await new Promise((r) => setTimeout(r, 30));
 const priceInput = root.querySelector('.force-input[data-entity="number.price"]');
@@ -254,7 +320,7 @@ const priceRemainsEnabled = states['switch.force_price'].state === 'on';
 console.log(`${disabledSchedule && priceRemainsEnabled ? 'PASS' : 'FAIL'}: standalone price plan explicitly disables schedule gating`);
 if (!disabledSchedule || !priceRemainsEnabled) ok = false;
 
-// Charge now with both timer and acceptable price enables both force entities.
+// Force charge with both timer and acceptable price enables both force entities.
 openForceWizard();
 await new Promise((r) => setTimeout(r, 30));
 click('[data-action="choose-force-mode"][data-mode="now"]');
@@ -270,8 +336,8 @@ const priceExpandsInline =
 const forceNowTogglesShowChecks =
   root.querySelector('[data-action="toggle-force-now-timer"] .wizard-toggle-state')?.getAttribute('icon') === 'mdi:check-circle' &&
   root.querySelector('[data-action="toggle-force-now-price"] .wizard-toggle-state')?.getAttribute('icon') === 'mdi:check-circle';
-console.log(`${timerExpandsInline && priceExpandsInline ? 'PASS' : 'FAIL'}: charge-now fields expand inside their option tiles`);
-console.log(`${forceNowTogglesShowChecks ? 'PASS' : 'FAIL'}: selected charge-now toggles use the plan check indicator`);
+console.log(`${timerExpandsInline && priceExpandsInline ? 'PASS' : 'FAIL'}: force-charge fields expand inside their option tiles`);
+console.log(`${forceNowTogglesShowChecks ? 'PASS' : 'FAIL'}: selected force-charge toggles use the plan check indicator`);
 if (!timerExpandsInline || !priceExpandsInline || !forceNowTogglesShowChecks) ok = false;
 if (durationInput) {
   durationInput.value = '45';
@@ -285,8 +351,34 @@ const timerPriceCalls = calls.slice(timerPriceCallStart);
 const savedDuration = timerPriceCalls.some((c) => c[0] === 'number' && c[1] === 'set_value' && c[2].entity_id === 'number.duration' && c[2].value === 45);
 const savedTimerPrice = timerPriceCalls.some((c) => c[0] === 'number' && c[1] === 'set_value' && c[2].entity_id === 'number.price');
 const timerAndPriceOn = states['switch.force_timer'].state === 'on' && states['switch.force_price'].state === 'on';
-console.log(`${savedDuration && savedTimerPrice && timerAndPriceOn ? 'PASS' : 'FAIL'}: charge now supports timer plus acceptable price`);
+console.log(`${savedDuration && savedTimerPrice && timerAndPriceOn ? 'PASS' : 'FAIL'}: force charge supports timer plus acceptable price`);
 if (!savedDuration || !savedTimerPrice || !timerAndPriceOn) ok = false;
+
+openForceWizard();
+await new Promise((r) => setTimeout(r, 30));
+const configuredForceSummary =
+  (root.querySelector('[data-action="choose-force-mode"][data-mode="now"]')?.textContent || '')
+    .includes('Timer 0:45 + Acceptable price ≤ 0.150 EUR/kWh');
+click('[data-action="toggle-charging-plan"][data-mode="now"]');
+await new Promise((r) => setTimeout(r, 40));
+const forceDisabledButRemembered =
+  states['switch.force_timer'].state === 'off' &&
+  states['switch.force_price'].state === 'off' &&
+  (root.querySelector('[data-action="choose-force-mode"][data-mode="now"]')?.textContent || '')
+    .includes('Timer 0:45 + Acceptable price ≤ 0.150 EUR/kWh · Off');
+click('[data-action="close-force-wizard"]');
+el.setConfig(config);
+openForceWizard();
+await new Promise((r) => setTimeout(r, 30));
+const forceSummarySurvivesReload =
+  (root.querySelector('[data-action="choose-force-mode"][data-mode="now"]')?.textContent || '')
+    .includes('Timer 0:45 + Acceptable price ≤ 0.150 EUR/kWh · Off');
+click('[data-action="toggle-charging-plan"][data-mode="now"]');
+await new Promise((r) => setTimeout(r, 40));
+const forceReenabledWithSavedOptions =
+  states['switch.force_timer'].state === 'on' && states['switch.force_price'].state === 'on';
+console.log(`${configuredForceSummary && forceDisabledButRemembered && forceSummarySurvivesReload && forceReenabledWithSavedOptions ? 'PASS' : 'FAIL'}: force-charge toggle persists and restores timer plus acceptable-price options`);
+if (!configuredForceSummary || !forceDisabledButRemembered || !forceSummarySurvivesReload || !forceReenabledWithSavedOptions) ok = false;
 
 // Turning off the price option leaves a timer-only plan.
 openForceWizard();
@@ -298,7 +390,7 @@ await new Promise((r) => setTimeout(r, 30));
 click('[data-action="apply-force-mode"][data-mode="timer"]');
 await new Promise((r) => setTimeout(r, 50));
 const timerOnly = states['switch.force_timer'].state === 'on' && states['switch.force_price'].state === 'off';
-console.log(`${timerOnly ? 'PASS' : 'FAIL'}: charge now supports timer without price`);
+console.log(`${timerOnly ? 'PASS' : 'FAIL'}: force charge supports timer without price`);
 if (!timerOnly) ok = false;
 
 // Turning off both options yields a plain force-charge plan.
@@ -314,17 +406,19 @@ const plainForce =
   states['switch.force'].state === 'on' &&
   states['switch.force_timer'].state === 'off' &&
   states['switch.force_price'].state === 'off';
-console.log(`${plainForce ? 'PASS' : 'FAIL'}: charge now supports unrestricted force charging`);
+console.log(`${plainForce ? 'PASS' : 'FAIL'}: force charge supports unrestricted charging`);
 if (!plainForce) ok = false;
 
 openForceWizard();
 await new Promise((r) => setTimeout(r, 30));
-const selectedChargeNowGlows = !!root.querySelector('.wizard-option-wrap.selected [data-mode="now"]');
-click('[data-action="stop-force-charge"]');
+const selectedForceChargeGlows = !!root.querySelector('.wizard-option-wrap.selected [data-mode="now"]');
+click('[data-action="toggle-charging-plan"][data-mode="now"]');
 await new Promise((r) => setTimeout(r, 40));
-const stoppedForce = states['switch.force'].state === 'off';
-console.log(`${selectedChargeNowGlows && stoppedForce ? 'PASS' : 'FAIL'}: selected charge-now plan glows and can be stopped`);
-if (!selectedChargeNowGlows || !stoppedForce) ok = false;
+const stoppedForce =
+  states['switch.force'].state === 'off' &&
+  (root.querySelector('[data-action="choose-force-mode"][data-mode="now"]')?.textContent || '').includes('Unrestricted · Off');
+console.log(`${selectedForceChargeGlows && stoppedForce ? 'PASS' : 'FAIL'}: selected force-charge plan glows and is controlled by its tile toggle`);
+if (!selectedForceChargeGlows || !stoppedForce) ok = false;
 
 console.log(ok ? '\nSMOKE TEST OK' : '\nSMOKE TEST FAILED');
 process.exit(ok ? 0 : 1);
