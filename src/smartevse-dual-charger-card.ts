@@ -3,7 +3,7 @@ import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { DESIGN_TOKENS_CSS } from "./shared/design-tokens";
 import { buildGlow, type PulseColors } from "./shared/glow";
 
-const CARD_VERSION = "0.0.26";
+const CARD_VERSION = "0.0.27";
 
 const ACTIVE_GLOW: PulseColors = {
   weak: "rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha))",
@@ -1908,11 +1908,11 @@ class SmartEVSEFlowCard extends LitElement {
           ? `${activeEv.state} / ${this._formatCurrent(activeEv.chargeCurrent)} offered`
           : this._pretty(chargeReason);
     const modeDetail = (() => {
-      if (activeRaw && dutyLabel !== "n/a") {
-        return `Duty left: ${dutyLabel}`;
-      }
       if (forceTimerOn) {
         return `Timer: ${forceTimerDetail}`;
+      }
+      if (activeRaw && dutyLabel !== "n/a") {
+        return `Duty left: ${dutyLabel}`;
       }
       if (forceChargeOn) {
         return `Force: ${forceNowDetail}`;
@@ -3161,66 +3161,6 @@ class SmartEVSEFlowCard extends LitElement {
           pointer-events: none;
         }
 
-        .flow-line-badges {
-          position: absolute;
-          top: 10px;
-          transform: translateX(-50%);
-          display: grid;
-          gap: 2px;
-          z-index: 2;
-          pointer-events: none;
-        }
-
-        .flow-line-badges.left {
-          left: 24.2%;
-        }
-
-        .flow-line-badges.right {
-          left: 75.8%;
-        }
-
-        .flow-line-badge {
-          display: inline-flex;
-          align-items: center;
-          gap: 4px;
-          padding: 2px 5px;
-          border-radius: var(--chip-border-radius);
-          border: 0;
-          background: var(--chip-background-color);
-          box-shadow: var(--tile-shadow-default);
-          white-space: nowrap;
-        }
-
-        .flow-line-badge.tone-charging {
-          --pulse-weak: rgba(var(--sdc-led-charging-rgb), var(--sdc-led-charging-weak-alpha));
-          --pulse-strong: rgba(var(--sdc-led-charging-rgb), var(--sdc-led-charging-strong-alpha));
-          box-shadow: var(--tile-shadow-active);
-        }
-
-        .flow-line-badge.tone-active {
-          --pulse-weak: rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha));
-          --pulse-strong: rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-strong-alpha));
-          box-shadow: var(--tile-shadow-active);
-        }
-
-        .flow-line-badge.tone-error {
-          --pulse-weak: rgba(var(--sdc-led-error-rgb), var(--sdc-led-error-weak-alpha));
-          --pulse-strong: rgba(var(--sdc-led-error-rgb), var(--sdc-led-error-strong-alpha));
-          box-shadow: var(--tile-shadow-active);
-        }
-
-        .flow-line-icon {
-          min-width: 8px;
-          text-align: center;
-        }
-
-        .flow-line-value {
-          font-size: var(--sdc-font-detail);
-          font-weight: var(--sdc-weight-medium);
-          line-height: 1;
-          color: var(--primary-text-color);
-        }
-
         .ev-row {
           position: relative;
           z-index: 3;
@@ -3628,34 +3568,6 @@ class SmartEVSEFlowCard extends LitElement {
             </section>
 
             <div class="flow-map">
-              ${
-                activeEv && (dutyLabel !== "n/a" || timerLabel !== "n/a")
-                  ? `
-                    <div class="flow-line-badges ${this._safe(activeEv.key === "smartevse_1" ? "left" : "right")}">
-                      ${
-                        dutyLabel !== "n/a"
-                          ? `
-                            <div class="flow-line-badge tone-${this._safe(flowTone)}">
-                              <span class="flow-line-icon">D</span>
-                              <span class="flow-line-value">${this._safe(dutyLabel)}</span>
-                            </div>
-                          `
-                          : ""
-                      }
-                      ${
-                        timerLabel !== "n/a"
-                          ? `
-                            <div class="flow-line-badge tone-${this._safe(flowTone)}">
-                              <span class="flow-line-icon">T</span>
-                              <span class="flow-line-value">${this._safe(timerLabel)}</span>
-                            </div>
-                          `
-                          : ""
-                      }
-                    </div>
-                  `
-                  : ""
-              }
               <svg class="flow-svg" viewBox="0 0 640 112" preserveAspectRatio="none">
                 <path class="pipe-base" d="${leftConnectorPath}"></path>
                 <path class="pipe-base" d="${rightConnectorPath}"></path>

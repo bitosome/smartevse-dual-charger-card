@@ -36,6 +36,7 @@ const config = {
   acceptable_price_entity: 'number.price',
   force_charge_duration_entity: 'number.duration',
   duty_cycle_entity: 'number.duty',
+  duty_remaining_entity: 'sensor.duty_remaining',
   timer_remaining_entity: 'sensor.timer_remaining',
 };
 el.setConfig(config);
@@ -74,7 +75,8 @@ const states = {
   'number.price': { state: '0.12', attributes: { min: 0, max: 1, step: 0.01, unit_of_measurement: 'EUR/kWh' } },
   'number.duration': { state: '60', attributes: { min: 5, max: 720, step: 5, unit_of_measurement: 'min' } },
   'number.duty': { state: '30', attributes: { min: 5, max: 240, step: 5, unit_of_measurement: 'min' } },
-  'sensor.timer_remaining': { state: '0', attributes: {} },
+  'sensor.duty_remaining': { state: '600', attributes: {} },
+  'sensor.timer_remaining': { state: '300', attributes: {} },
 };
 const hass = {
   states,
@@ -144,8 +146,14 @@ await new Promise((r) => setTimeout(r, 30));
 const physicalFlowAnimates =
   !!root.querySelector('.flow-svg .pipe-active.tone-charging') &&
   (root.querySelector('style')?.textContent || '').includes('animation: dash 1.8s linear infinite');
+const timingLivesOnlyInHero =
+  [...root.querySelectorAll('.status-detail')].some((node) => node.textContent.includes('Duty left:')) &&
+  !root.querySelector('.flow-line-badges') &&
+  !root.querySelector('.flow-line-badge') &&
+  !(root.querySelector('style')?.textContent || '').includes('.flow-line-badge');
 console.log(`${physicalFlowAnimates ? 'PASS' : 'FAIL'}: physical charging current animates its connector independently of charge_allowed`);
-if (!physicalFlowAnimates) ok = false;
+console.log(`${timingLivesOnlyInHero ? 'PASS' : 'FAIL'}: duty and timer status stay in the hero without connector-line badges`);
+if (!physicalFlowAnimates || !timingLivesOnlyInHero) ok = false;
 controllerAttrs.charge_allowed = originalFlowState.chargeAllowed;
 controllerAttrs.active_smartevse_raw = originalFlowState.activeRaw;
 controllerAttrs.smartevse_1_state = originalFlowState.state;
@@ -373,8 +381,12 @@ const timerPriceCalls = calls.slice(timerPriceCallStart);
 const savedDuration = timerPriceCalls.some((c) => c[0] === 'number' && c[1] === 'set_value' && c[2].entity_id === 'number.duration' && c[2].value === 45);
 const savedTimerPrice = timerPriceCalls.some((c) => c[0] === 'number' && c[1] === 'set_value' && c[2].entity_id === 'number.price');
 const timerAndPriceOn = states['switch.force_timer'].state === 'on' && states['switch.force_price'].state === 'on';
+const forceTimerStaysInHero =
+  [...root.querySelectorAll('.status-detail')].some((node) => node.textContent.includes('Timer:')) &&
+  !root.querySelector('.flow-line-badge');
 console.log(`${savedDuration && savedTimerPrice && timerAndPriceOn ? 'PASS' : 'FAIL'}: force charge supports timer plus acceptable price`);
-if (!savedDuration || !savedTimerPrice || !timerAndPriceOn) ok = false;
+console.log(`${forceTimerStaysInHero ? 'PASS' : 'FAIL'}: active Force timer countdown remains visible only in the hero`);
+if (!savedDuration || !savedTimerPrice || !timerAndPriceOn || !forceTimerStaysInHero) ok = false;
 
 openForceWizard();
 await new Promise((r) => setTimeout(r, 30));
