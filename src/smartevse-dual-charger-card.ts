@@ -3,7 +3,7 @@ import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { DESIGN_TOKENS_CSS } from "./shared/design-tokens";
 import { buildGlow, type PulseColors } from "./shared/glow";
 
-const CARD_VERSION = "0.0.31";
+const CARD_VERSION = "0.0.32";
 
 const ACTIVE_GLOW: PulseColors = {
   weak: "rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha))",
@@ -1930,54 +1930,60 @@ class SmartEVSEFlowCard extends LitElement {
         case "acceptable_price":
         case "force_timer_acceptable_price":
         case "schedule_acceptable_price":
-          return { label: `Price ${priceValue}`, tone: "success" };
+          return { label: `Price accepted · ${priceValue}`, tone: "success" };
         default:
           return null;
       }
     })();
-    const heroPills: Array<{ label: string; tone: string }> = [];
-    const addHeroPill = (label, tone = "neutral") => {
+    const heroPills: Array<{ label: string; tone: string; priority: number }> = [];
+    const addHeroPill = (label, tone = "neutral", priority = 100) => {
       if (label && !heroPills.some((pill) => pill.label === label)) {
-        heroPills.push({ label, tone });
+        heroPills.push({ label, tone, priority });
       }
     };
     if (hasControllerError) {
-      addHeroPill(this._pretty(controllerError), "error");
+      addHeroPill(this._pretty(controllerError), "error", 0);
     } else if (forcePlanActive) {
-      addHeroPill("Force charge", "active");
+      // Priority: active plan, live result, active limits, then the standing plan
+      // and its limits. Explicit plan prefixes keep simultaneous price gates clear.
+      addHeroPill("Force charge", "active", 10);
+      if (controllerReasonPill) {
+        addHeroPill(controllerReasonPill.label, controllerReasonPill.tone, 20);
+      } else if (forcePriceOn) {
+        addHeroPill(priceAccepted ? `Price ${priceValue}` : "Waiting for price", priceAccepted ? "success" : "warn", 20);
+      }
       if (forceTimerOn) {
         const timerValue = timerLabel !== "n/a" ? timerLabel : this._formatMinutes(forceDuration);
-        addHeroPill(`Timer ${timerValue}`, "active");
+        addHeroPill(`Force timer · ${timerValue} left`, "active", 30);
       }
       if (forcePriceOn) {
-        addHeroPill(`Acceptable ≤ ${acceptablePriceValue}`, "active");
+        addHeroPill(`Force price · ≤ ${acceptablePriceValue}`, "active", 40);
       }
       if (!forceTimerOn && !forcePriceOn) {
-        addHeroPill(anyConnected ? "Unrestricted" : "Waiting for plug-in", anyConnected ? "success" : "warn");
-      }
-      if (controllerReasonPill) {
-        addHeroPill(controllerReasonPill.label, controllerReasonPill.tone);
-      } else if (forcePriceOn) {
-        addHeroPill(priceAccepted ? `Price ${priceValue}` : "Waiting for price", priceAccepted ? "success" : "warn");
+        addHeroPill(anyConnected ? "Unrestricted" : "Waiting for plug-in", anyConnected ? "success" : "warn", 30);
       }
       if (scheduleSwitchOn) {
-        addHeroPill("Schedule on", "neutral");
+        addHeroPill("Schedule on", "neutral", 60);
+        if (schedulePriceOn) {
+          addHeroPill(`Schedule price · ≤ ${acceptablePriceValue}`, "neutral", 70);
+        }
       }
     } else if (scheduleSwitchOn) {
-      addHeroPill("Schedule", "active");
-      if (schedulePriceOn) {
-        addHeroPill(`Acceptable ≤ ${acceptablePriceValue}`, "active");
-      }
+      addHeroPill("Schedule", "active", 10);
       if (controllerReasonPill) {
-        addHeroPill(controllerReasonPill.label, controllerReasonPill.tone);
+        addHeroPill(controllerReasonPill.label, controllerReasonPill.tone, 20);
       } else {
         addHeroPill(
           scheduleState === "on" ? "Window open" : `Starts ${this._formatDateTime(scheduleNextEvent)}`,
           scheduleState === "on" ? "success" : "neutral",
+          20,
         );
       }
+      if (schedulePriceOn) {
+        addHeroPill(`Schedule price · ≤ ${acceptablePriceValue}`, "active", 30);
+      }
       if (activeRaw && dutyLabel !== "n/a") {
-        addHeroPill(`Duty ${dutyLabel}`, "neutral");
+        addHeroPill(`Duty ${dutyLabel}`, "neutral", 40);
       }
     } else {
       if (activeEv) {
@@ -1993,6 +1999,7 @@ class SmartEVSEFlowCard extends LitElement {
       }
     }
     const heroPillsMarkup = heroPills
+      .sort((left, right) => left.priority - right.priority)
       .map((pill) => `<span class="status-pill tone-${this._safe(pill.tone)}">${this._safe(pill.label)}</span>`)
       .join("");
     const heroGlowColors: PulseColors | undefined =

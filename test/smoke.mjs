@@ -293,7 +293,7 @@ if (!savedSchedulePrice || !submenuDoesNotActivateSchedule || !enabledSchedule |
 const heroPlanDetails = [...root.querySelectorAll('.status-pill')].map((node) => node.textContent.trim());
 const heroShowsCombinedPlan =
   heroPlanDetails.includes('Schedule') &&
-  heroPlanDetails.includes('Acceptable ≤ 0.150 EUR/kWh') &&
+  heroPlanDetails.includes('Schedule price · ≤ 0.150 EUR/kWh') &&
   heroPlanDetails.includes('Waiting for schedule') &&
   root.querySelector('.status-pill.tone-warn')?.textContent.trim() === 'Waiting for schedule';
 console.log(`${heroShowsCombinedPlan ? 'PASS' : 'FAIL'}: hero separates schedule settings and state into semantic pills`);
@@ -377,7 +377,7 @@ const forceActivationEnabled = states['switch.force'].state === 'on';
 const forcePriceHeroDetails = [...root.querySelectorAll('.status-pill')].map((node) => node.textContent.trim());
 const forcePriceHeroIsUnambiguous =
   forcePriceHeroDetails.includes('Force charge') &&
-  forcePriceHeroDetails.includes('Acceptable ≤ 0.150 EUR/kWh') &&
+  forcePriceHeroDetails.includes('Force price · ≤ 0.150 EUR/kWh') &&
   forcePriceHeroDetails.includes('Waiting for price') &&
   forcePriceHeroDetails.includes('Schedule on') &&
   !forcePriceHeroDetails.some((detail) => detail.includes('Waiting for schedule')) &&
@@ -394,6 +394,9 @@ if (!forceConfigSavedWithoutActivation || !scheduleWasNotDisabled || !scheduleRe
 click('[data-action="close-force-wizard"]');
 
 // Force charge with both timer and acceptable price enables both force entities.
+states['switch.schedule_price'].state = 'on';
+el.hass = hass;
+await new Promise((r) => setTimeout(r, 30));
 openForceWizard();
 await new Promise((r) => setTimeout(r, 30));
 click('[data-action="choose-force-mode"][data-mode="now"]');
@@ -427,14 +430,16 @@ const savedTimerPrice = timerPriceCalls.some((c) => c[0] === 'number' && c[1] ==
 const timerAndPriceOn = states['switch.force'].state === 'on' && states['switch.force_timer'].state === 'on' && states['switch.force_price'].state === 'on';
 const forceHeroDetails = [...root.querySelectorAll('.status-pill')].map((node) => node.textContent.trim());
 const forceTimerStaysInHero =
-  forceHeroDetails.includes('Force charge') &&
-  forceHeroDetails.some((detail) => detail.startsWith('Timer ')) &&
-  forceHeroDetails.includes('Acceptable ≤ 0.150 EUR/kWh') &&
-  forceHeroDetails.includes('Schedule on') &&
-  forceHeroDetails.length >= 4 &&
+  forceHeroDetails[0] === 'Force charge' &&
+  forceHeroDetails[1] === 'Waiting for price' &&
+  forceHeroDetails.some((detail) => detail.startsWith('Force timer · ') && detail.endsWith(' left')) &&
+  forceHeroDetails.includes('Force price · ≤ 0.150 EUR/kWh') &&
+  forceHeroDetails.at(-2) === 'Schedule on' &&
+  forceHeroDetails.at(-1) === 'Schedule price · ≤ 0.150 EUR/kWh' &&
+  forceHeroDetails.length === 6 &&
   !root.querySelector('.flow-line-badge');
 console.log(`${savedDuration && savedTimerPrice && timerAndPriceOn ? 'PASS' : 'FAIL'}: force charge supports timer plus acceptable price`);
-console.log(`${forceTimerStaysInHero ? 'PASS' : 'FAIL'}: active Force plan takes hero priority while the schedule remains enabled`);
+console.log(`${forceTimerStaysInHero ? 'PASS' : 'FAIL'}: maximum combination shows complete pills in active-state, limit, and fallback priority order`);
 if (!savedDuration || !savedTimerPrice || !timerAndPriceOn || !forceTimerStaysInHero) ok = false;
 
 openForceWizard();
