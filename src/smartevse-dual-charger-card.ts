@@ -3,7 +3,7 @@ import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { DESIGN_TOKENS_CSS } from "./shared/design-tokens";
 import { buildGlow, type PulseColors } from "./shared/glow";
 
-const CARD_VERSION = "0.0.29";
+const CARD_VERSION = "0.0.30";
 
 const ACTIVE_GLOW: PulseColors = {
   weak: "rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha))",
@@ -33,6 +33,7 @@ interface SmartEvseCardConfig {
   price_entity?: string;
   schedule_entity?: string;
   schedule_switch_entity?: string;
+  schedule_price_entity?: string;
   force_charge_entity?: string;
   force_price_entity?: string;
   force_timer_entity?: string;
@@ -70,6 +71,7 @@ class SmartEVSEFlowCard extends LitElement {
       price_entity: "sensor.real_electricity_price_current_price",
       schedule_entity: "schedule.charge_schedule",
       schedule_switch_entity: "switch.smartevse_dual_charger_charge_with_schedule",
+      schedule_price_entity: "switch.smartevse_dual_charger_schedule_acceptable_price",
       force_charge_entity: "switch.smartevse_dual_charger_force_charge",
       force_price_entity: "switch.smartevse_dual_charger_force_charge_by_price",
       force_timer_entity: "switch.smartevse_dual_charger_force_charge_timer",
@@ -86,7 +88,10 @@ class SmartEVSEFlowCard extends LitElement {
     if (!config.controller_entity) {
       throw new Error("controller_entity is required");
     }
-    this._config = config;
+    this._config = {
+      schedule_price_entity: "switch.smartevse_dual_charger_schedule_acceptable_price",
+      ...config,
+    };
     this._currency = config.currency || "EUR/kWh";
     this._loadPlanPreferences();
     this.requestUpdate();
@@ -120,7 +125,35 @@ class SmartEVSEFlowCard extends LitElement {
     return this._entity(entityId)?.state ?? "";
   }
 
+  _schedulePriceEntity() {
+    const dedicatedEntity = this._config?.schedule_price_entity;
+    if (dedicatedEntity && this._entity(dedicatedEntity)) {
+      return dedicatedEntity;
+    }
+    // Keep older controller releases usable until the dedicated schedule-price
+    // option introduced in integration 0.0.8.6 is installed.
+    return this._config?.force_price_entity;
+  }
+
+  _supportsIndependentPlans() {
+    return Boolean(this._config?.schedule_price_entity && this._entity(this._config.schedule_price_entity));
+  }
+
   _planPreferenceStorageKey() {
+    const identity = [
+      this._config?.controller_entity,
+      this._config?.schedule_switch_entity,
+      this._config?.schedule_price_entity,
+      this._config?.force_charge_entity,
+      this._config?.force_price_entity,
+      this._config?.force_timer_entity,
+    ]
+      .filter(Boolean)
+      .join("|");
+    return `smartevse-flow-card:plan-preferences:${identity}`;
+  }
+
+  _legacyPlanPreferenceStorageKey() {
     const identity = [
       this._config?.controller_entity,
       this._config?.schedule_switch_entity,
@@ -139,7 +172,10 @@ class SmartEVSEFlowCard extends LitElement {
     this._forceNowTimer = false;
     this._forceNowPrice = false;
     try {
-      const raw = window.localStorage?.getItem(this._planPreferenceStorageKey());
+      const currentKey = this._planPreferenceStorageKey();
+      const raw =
+        window.localStorage?.getItem(currentKey) ||
+        window.localStorage?.getItem(this._legacyPlanPreferenceStorageKey());
       if (!raw) {
         return;
       }
@@ -148,6 +184,7 @@ class SmartEVSEFlowCard extends LitElement {
       this._forcePlanEnabled = saved?.forceEnabled === true;
       this._forceNowTimer = saved?.forceTimer === true;
       this._forceNowPrice = saved?.forcePrice === true;
+      window.localStorage?.setItem(currentKey, raw);
     } catch {
       // Storage can be unavailable in restricted dashboards; entity state still works.
     }
@@ -177,10 +214,11 @@ class SmartEVSEFlowCard extends LitElement {
     const simpleOn = this._state(this._config.force_charge_entity) === "on";
     const timerOn = this._state(this._config.force_timer_entity) === "on";
     const priceOn = this._state(this._config.force_price_entity) === "on";
+    const schedulePriceOn = this._state(this._schedulePriceEntity()) === "on";
     let changed = false;
 
-    if (scheduleOn && !this._forcePlanEnabled && this._schedulePriceGate !== priceOn) {
-      this._schedulePriceGate = priceOn;
+    if (scheduleOn && !this._forcePlanEnabled && this._schedulePriceGate !== schedulePriceOn) {
+      this._schedulePriceGate = schedulePriceOn;
       changed = true;
     }
 
@@ -195,7 +233,7 @@ class SmartEVSEFlowCard extends LitElement {
 
     const forceOn = definiteForceOn || (this._forcePlanEnabled && priceOn);
     if (forceOn) {
-      const forceUsesPrice = priceOn && !simpleOn;
+      const forceUsesPrice = priceOn;
       if (this._forceNowTimer !== timerOn) {
         this._forceNowTimer = timerOn;
         changed = true;
@@ -329,6 +367,7 @@ class SmartEVSEFlowCard extends LitElement {
       price: this._entitySnapshot(this._config.price_entity),
       schedule: this._entitySnapshot(this._config.schedule_entity, ["next_event"]),
       scheduleSwitch: this._entitySnapshot(this._config.schedule_switch_entity),
+      schedulePrice: this._entitySnapshot(this._schedulePriceEntity()),
       forceCharge: this._entitySnapshot(this._config.force_charge_entity),
       forcePrice: this._entitySnapshot(this._config.force_price_entity),
       forceTimer: this._entitySnapshot(this._config.force_timer_entity),
@@ -836,9 +875,7 @@ class SmartEVSEFlowCard extends LitElement {
   }
 
   _activeForceMode() {
-    if (this._state(this._config.force_charge_entity) === "on") {
-      return "simple";
-    }
+    const forceOn = this._state(this._config.force_charge_entity) === "on";
     const timerOn = this._state(this._config.force_timer_entity) === "on";
     const priceOn = this._state(this._config.force_price_entity) === "on";
     if (timerOn && priceOn) {
@@ -848,9 +885,12 @@ class SmartEVSEFlowCard extends LitElement {
       return "timer";
     }
     if (priceOn) {
-      return this._state(this._config.schedule_switch_entity) === "on" && !this._forcePlanEnabled
+      return this._state(this._config.schedule_switch_entity) === "on" && !forceOn && !this._forcePlanEnabled
         ? "schedule_price"
         : "price";
+    }
+    if (forceOn) {
+      return "simple";
     }
     if (this._state(this._config.schedule_switch_entity) === "on") {
       return "schedule";
@@ -974,25 +1014,23 @@ class SmartEVSEFlowCard extends LitElement {
     this._render();
     try {
       const scheduleOn = this._isSchedulePlanActive();
-      const priceOn = this._state(this._config.force_price_entity) === "on";
       if (mode === "schedule") {
         if (scheduleOn) {
           await this._setSwitchState(this._config.schedule_switch_entity, false);
         }
-        if (priceOn && !(this._forcePlanEnabled && this._forceNowPrice)) {
-          await this._setSwitchState(this._config.force_price_entity, false);
+        const schedulePriceEntity = this._schedulePriceEntity();
+        if (schedulePriceEntity && this._state(schedulePriceEntity) === "on") {
+          await this._setSwitchState(schedulePriceEntity, false);
         }
       } else {
-        for (const entityId of [this._config.force_charge_entity, this._config.force_timer_entity]) {
+        for (const entityId of [
+          this._config.force_charge_entity,
+          this._config.force_timer_entity,
+          this._config.force_price_entity,
+        ]) {
           if (entityId && this._state(entityId) === "on") {
             await this._setSwitchState(entityId, false);
           }
-        }
-        if (this._config.force_price_entity && this._entity(this._config.force_price_entity)) {
-          await this._setSwitchState(
-            this._config.force_price_entity,
-            scheduleOn && this._schedulePriceGate,
-          );
         }
         this._forcePlanEnabled = false;
         this._savePlanPreferences();
@@ -1011,7 +1049,7 @@ class SmartEVSEFlowCard extends LitElement {
     }
     if (
       !this._schedulePriceGate &&
-      (!this._entity(this._config.force_price_entity) ||
+      (!this._entity(this._schedulePriceEntity()) ||
         !this._entity(this._config.acceptable_price_entity) ||
         !this._entity(this._config.price_entity))
     ) {
@@ -1136,13 +1174,14 @@ class SmartEVSEFlowCard extends LitElement {
     try {
       if (mode === "schedule") {
         const scheduleEntity = this._config.schedule_switch_entity;
+        const schedulePriceEntity = this._schedulePriceEntity();
         if (!scheduleEntity || !this._entity(scheduleEntity)) {
           throw new Error("The scheduled-charging switch is unavailable.");
         }
         if (this._schedulePriceGate) {
           if (
-            !this._config.force_price_entity ||
-            !this._entity(this._config.force_price_entity) ||
+            !schedulePriceEntity ||
+            !this._entity(schedulePriceEntity) ||
             !this._entity(this._config.price_entity)
           ) {
             throw new Error("A required price-controlled charging entity is unavailable.");
@@ -1151,10 +1190,8 @@ class SmartEVSEFlowCard extends LitElement {
         }
 
         await this._setSwitchState(scheduleEntity, true);
-        const forceEnabled = this._isForcePlanActive();
-        const priceEnabled = forceEnabled ? this._forceNowPrice : this._schedulePriceGate;
-        if (this._config.force_price_entity && this._entity(this._config.force_price_entity)) {
-          await this._setSwitchState(this._config.force_price_entity, priceEnabled);
+        if (schedulePriceEntity && this._entity(schedulePriceEntity)) {
+          await this._setSwitchState(schedulePriceEntity, this._schedulePriceGate);
         }
         this._savePlanPreferences();
         return;
@@ -1179,10 +1216,15 @@ class SmartEVSEFlowCard extends LitElement {
         this._config.force_price_entity,
         this._config.force_timer_entity,
       ].filter(Boolean);
+      const activateForceEntity = this._supportsIndependentPlans() ? [this._config.force_charge_entity] : [];
       const targets =
         mode === "timer_price"
-          ? [this._config.force_price_entity, this._config.force_timer_entity].filter(Boolean)
-          : [target];
+          ? [this._config.force_price_entity, this._config.force_timer_entity, ...activateForceEntity].filter(Boolean)
+          : mode === "price"
+            ? [this._config.force_price_entity, ...activateForceEntity].filter(Boolean)
+            : mode === "timer"
+              ? [this._config.force_timer_entity, ...activateForceEntity].filter(Boolean)
+              : [this._config.force_charge_entity].filter(Boolean);
       for (const entityId of forceEntities) {
         if (!targets.includes(entityId) && this._state(entityId) === "on") {
           await this._setSwitchState(entityId, false);
@@ -1422,7 +1464,7 @@ class SmartEVSEFlowCard extends LitElement {
         this._entity(this._config.force_charge_duration_entity),
     );
     const priceAvailable = Boolean(
-      this._entity(this._config.force_price_entity) &&
+      this._entity(isSchedule ? this._schedulePriceEntity() : this._config.force_price_entity) &&
         this._entity(this._config.acceptable_price_entity) &&
         this._entity(this._config.price_entity),
     );
@@ -1832,6 +1874,7 @@ class SmartEVSEFlowCard extends LitElement {
     const forceChargeOn = this._state(this._config.force_charge_entity) === "on";
     const forcePriceOn = this._state(this._config.force_price_entity) === "on";
     const forceTimerOn = this._state(this._config.force_timer_entity) === "on";
+    const schedulePriceOn = this._state(this._schedulePriceEntity()) === "on";
     const forceDuration = this._numberState(this._config.force_charge_duration_entity);
     const mainsPeak = Number(attrs.mains_peak);
     const ev1 = rawEv1;
@@ -1870,9 +1913,8 @@ class SmartEVSEFlowCard extends LitElement {
 
     const forceNowDetail = forceChargeOn ? (anyConnected ? "Charging requested now" : "Waiting for plug-in") : "Tap to start";
 
-    const priceAccepted =
-      forcePriceOn && price !== null && acceptablePrice !== null ? price <= acceptablePrice : false;
-    const scheduleWithPrice = scheduleSwitchOn && forcePriceOn;
+    const priceAccepted = price !== null && acceptablePrice !== null ? price <= acceptablePrice : false;
+    const scheduleWithPrice = scheduleSwitchOn && schedulePriceOn;
     const forcePriceDetail = forcePriceOn
       ? priceAccepted
         ? `Current ${priceValue}`
@@ -1891,15 +1933,15 @@ class SmartEVSEFlowCard extends LitElement {
     const forcePlanActive = this._isForcePlanActive();
     const forcePlanDetail = !forcePlanActive
       ? ""
-      : forceChargeOn
-        ? "Force charge · Unrestricted"
-        : forceTimerOn && forcePriceOn
+      : forceTimerOn && forcePriceOn
           ? "Force charge · Timer + acceptable price"
           : forceTimerOn
             ? "Force charge · Timer"
             : forcePriceOn
               ? "Force charge · Acceptable price"
-              : "Force charge";
+              : forceChargeOn
+                ? "Force charge · Unrestricted"
+                : "Force charge";
     const activeTitle = hasControllerError
       ? "Controller error"
       : activeEv
@@ -1918,28 +1960,43 @@ class SmartEVSEFlowCard extends LitElement {
         : activeEv
           ? `${activeEv.state} / ${this._formatCurrent(activeEv.chargeCurrent)} offered`
           : this._pretty(chargeReason);
-    const modeDetail = (() => {
-      if (forceChargeOn) {
-        return scheduleSwitchOn ? "Schedule resumes when Force charge is off" : `Force: ${forceNowDetail}`;
+    const controllerReasonDetail = (() => {
+      switch (chargeReason.toLowerCase()) {
+        case "waiting_for_schedule_window":
+          return "Waiting for schedule window";
+        case "waiting_for_acceptable_price":
+          return `Waiting for price ≤ ${acceptablePriceValue}`;
+        case "price_sensor_unavailable":
+          return "Price sensor unavailable";
+        case "schedule_entity_unavailable":
+          return "Schedule entity unavailable";
+        case "acceptable_price":
+        case "force_timer_acceptable_price":
+        case "schedule_acceptable_price":
+          return `Price accepted: ${priceValue}`;
+        default:
+          return "";
       }
-      if (forceTimerOn) {
-        return scheduleSwitchOn
-          ? `Timer: ${forceTimerDetail} · Schedule resumes afterward`
-          : `Timer: ${forceTimerDetail}`;
+    })();
+    const modeDetail = (() => {
+      if (forcePlanActive) {
+        if (forceTimerOn) {
+          const timerStatus = `Timer: ${forceTimerDetail}`;
+          const forceStatus = controllerReasonDetail ? `${controllerReasonDetail} · ${timerStatus}` : timerStatus;
+          return scheduleSwitchOn ? `${forceStatus} · Schedule resumes afterward` : forceStatus;
+        }
+        if (forcePriceOn) {
+          const priceStatus = controllerReasonDetail ||
+            (priceAccepted ? `Price accepted: ${priceValue}` : `Waiting for price ≤ ${acceptablePriceValue}`);
+          return scheduleSwitchOn ? `${priceStatus} · Schedule remains on` : priceStatus;
+        }
+        return scheduleSwitchOn ? "Schedule resumes when Force charge is off" : `Force: ${forceNowDetail}`;
       }
       if (activeRaw && dutyLabel !== "n/a") {
         return `Duty left: ${dutyLabel}`;
       }
-      if (forcePriceOn) {
-        if (scheduleSwitchOn && scheduleState !== "on") {
-          return "Waiting for schedule window";
-        }
-        return priceAccepted
-          ? `Price accepted: ${priceValue}`
-          : `Waiting for price <= ${acceptablePriceValue}`;
-      }
       if (scheduleSwitchOn) {
-        return `Schedule: ${scheduleDetail}`;
+        return controllerReasonDetail || `Schedule: ${scheduleDetail}`;
       }
       if (ev1.connected && ev2.connected) {
         return `Policy: ${policy}`;

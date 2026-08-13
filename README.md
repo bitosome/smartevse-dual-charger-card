@@ -2,7 +2,7 @@
 
 Standalone Lovelace card for the SmartEVSE Dual Charger Home Assistant integration.
 
-Version: `0.0.29`
+Version: `0.0.30`
 
 This repository contains only the frontend card and local preview assets.
 
@@ -57,6 +57,7 @@ controller_entity: sensor.smartevse_dual_charger_controller_state
 price_entity: sensor.real_electricity_price_current_price
 schedule_entity: schedule.charge_schedule
 schedule_switch_entity: switch.smartevse_dual_charger_charge_with_schedule
+schedule_price_entity: switch.smartevse_dual_charger_schedule_acceptable_price
 force_charge_entity: switch.smartevse_dual_charger_force_charge
 force_price_entity: switch.smartevse_dual_charger_force_charge_by_price
 force_timer_entity: switch.smartevse_dual_charger_force_charge_timer
@@ -97,13 +98,14 @@ The card also expects the related control entities configured in `card_flow.yaml
 - Scheduled charging can run with or without a price limit. With the price requirement enabled, both the schedule window and acceptable-price condition must be satisfied.
 - Force charge supports unrestricted charging, timer only, acceptable price only, or timer plus acceptable price.
 - Force charge temporarily overrides scheduled charging without disabling its switch, so the saved schedule resumes when Force charge ends.
+- SmartEVSE Dual Charger integration `0.0.8.6` or newer is required for independent Force and Schedule acceptable-price options.
 - Schedule and Force charge have independent main-menu toggles, while their saved timer and acceptable-price options remain visible and persist when disabled.
 - Schedule and Force charge submenus only customize their saved options; numeric changes save automatically and activation stays on the main menu.
 - Submenu options use the same switch language as the main menu instead of tick indicators.
 - Timer duration and acceptable price are configured directly on the Force charge page.
 - Use the toggle on each main-menu tile to enable or disable that plan.
 - Duty-cycle and Force timer countdowns appear in the hero tile without duplicate badges on the connector lines.
-- When Schedule and Force charge are both enabled, the hero identifies the active Force plan first and notes that Schedule resumes afterward.
+- When Schedule and Force charge are both enabled, the hero identifies the active Force plan first and reports the controller's actual gating reason; Schedule remains enabled underneath.
 
 ## Naming Rules
 

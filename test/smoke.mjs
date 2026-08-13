@@ -29,6 +29,7 @@ const config = {
   price_entity: 'sensor.current_price',
   schedule_entity: 'schedule.charging',
   schedule_switch_entity: 'switch.schedule',
+  schedule_price_entity: 'switch.schedule_price',
   force_charge_entity: 'switch.force',
   force_price_entity: 'switch.force_price',
   force_timer_entity: 'switch.force_timer',
@@ -68,6 +69,7 @@ const states = {
     attributes: { friendly_name: 'EV overnight schedule', next_event: '2026-08-06T22:00:00+03:00' },
   },
   'switch.schedule': { state: 'off', attributes: {} },
+  'switch.schedule_price': { state: 'off', attributes: {} },
   'switch.force': { state: 'off', attributes: {} },
   'switch.force_price': { state: 'off', attributes: {} },
   'switch.force_timer': { state: 'off', attributes: {} },
@@ -88,6 +90,33 @@ const hass = {
     }
     if ((domain === 'number' || domain === 'input_number') && service === 'set_value' && states[data.entity_id]) {
       states[data.entity_id].state = String(data.value);
+    }
+    const attrs = states['sensor.ctl'].attributes;
+    const forceOn = states['switch.force'].state === 'on';
+    const forcePriceOn = states['switch.force_price'].state === 'on';
+    const forceTimerOn = states['switch.force_timer'].state === 'on';
+    const scheduleOn = states['switch.schedule'].state === 'on';
+    const schedulePriceOn = states['switch.schedule_price'].state === 'on';
+    const scheduleWindowOn = states['schedule.charging'].state === 'on';
+    const currentPrice = Number(states['sensor.current_price'].state);
+    const acceptablePrice = Number(states['number.price'].state);
+    if (forceOn) {
+      attrs.charge_allowed = !forcePriceOn || currentPrice <= acceptablePrice;
+      attrs.charge_reason = forcePriceOn
+        ? (attrs.charge_allowed ? (forceTimerOn ? 'force_timer_acceptable_price' : 'acceptable_price') : 'waiting_for_acceptable_price')
+        : (forceTimerOn ? 'force_timer' : 'force_charge');
+    } else if (scheduleOn) {
+      attrs.charge_allowed = scheduleWindowOn && (!schedulePriceOn || currentPrice <= acceptablePrice);
+      attrs.charge_reason = !scheduleWindowOn
+        ? 'waiting_for_schedule_window'
+        : schedulePriceOn && !attrs.charge_allowed
+          ? 'waiting_for_acceptable_price'
+          : schedulePriceOn
+            ? 'schedule_acceptable_price'
+            : 'schedule';
+    } else {
+      attrs.charge_allowed = false;
+      attrs.charge_reason = 'idle';
     }
     return Promise.resolve();
   },
@@ -256,7 +285,7 @@ click('[data-action="toggle-charging-plan"][data-mode="schedule"]');
 await new Promise((r) => setTimeout(r, 60));
 const scheduleCalls = calls.slice(scheduleCallStart);
 const enabledSchedule = scheduleCalls.some((c) => c[1] === 'turn_on' && c[2].entity_id === 'switch.schedule');
-const enabledScheduledPrice = scheduleCalls.some((c) => c[1] === 'turn_on' && c[2].entity_id === 'switch.force_price');
+const enabledScheduledPrice = scheduleCalls.some((c) => c[1] === 'turn_on' && c[2].entity_id === 'switch.schedule_price');
 console.log(`${savedSchedulePrice && submenuDoesNotActivateSchedule ? 'PASS' : 'FAIL'}: schedule submenu saves options without activating the plan`);
 console.log(`${enabledSchedule && enabledScheduledPrice ? 'PASS' : 'FAIL'}: only the main-menu toggle enables the configured schedule`);
 if (!savedSchedulePrice || !submenuDoesNotActivateSchedule || !enabledSchedule || !enabledScheduledPrice) ok = false;
@@ -282,13 +311,13 @@ click('[data-action="toggle-charging-plan"][data-mode="schedule"]');
 await new Promise((r) => setTimeout(r, 40));
 const scheduleDisabledButRemembered =
   states['switch.schedule'].state === 'off' &&
-  states['switch.force_price'].state === 'off' &&
+  states['switch.schedule_price'].state === 'off' &&
   (root.querySelector('[data-action="choose-force-mode"][data-mode="schedule"]')?.textContent || '')
     .includes('Schedule + acceptable price ≤ 0.150 EUR/kWh · Off');
 click('[data-action="toggle-charging-plan"][data-mode="schedule"]');
 await new Promise((r) => setTimeout(r, 40));
 const scheduleReenabledWithSavedPrice =
-  states['switch.schedule'].state === 'on' && states['switch.force_price'].state === 'on';
+  states['switch.schedule'].state === 'on' && states['switch.schedule_price'].state === 'on';
 console.log(`${selectedScheduleGlows ? 'PASS' : 'FAIL'}: active schedule glows without a current-plan panel`);
 console.log(`${scheduleSummaryVisible && scheduleDisabledButRemembered && scheduleReenabledWithSavedPrice ? 'PASS' : 'FAIL'}: schedule toggle preserves and restores its acceptable-price option`);
 if (!selectedScheduleGlows || !scheduleSummaryVisible || !scheduleDisabledButRemembered || !scheduleReenabledWithSavedPrice) ok = false;
@@ -299,7 +328,7 @@ const scheduleOnlyCallStart = calls.length;
 click('[data-action="toggle-schedule-price"]');
 await new Promise((r) => setTimeout(r, 50));
 const scheduleOnlyCalls = calls.slice(scheduleOnlyCallStart);
-const disabledScheduledPrice = scheduleOnlyCalls.some((c) => c[1] === 'turn_off' && c[2].entity_id === 'switch.force_price');
+const disabledScheduledPrice = scheduleOnlyCalls.some((c) => c[1] === 'turn_off' && c[2].entity_id === 'switch.schedule_price');
 const scheduleRemainsEnabled = states['switch.schedule'].state === 'on';
 console.log(`${disabledScheduledPrice && scheduleRemainsEnabled ? 'PASS' : 'FAIL'}: plain schedule removes only the price condition`);
 if (!disabledScheduledPrice || !scheduleRemainsEnabled) ok = false;
@@ -343,14 +372,22 @@ const scheduleWasNotDisabled = !forcePriceCalls.some(
 );
 const scheduleRemainsOn = states['switch.schedule'].state === 'on';
 const priceRemainsEnabled = states['switch.force_price'].state === 'on';
+const forceActivationEnabled = states['switch.force'].state === 'on';
+const forcePriceHeroDetails = [...root.querySelectorAll('.status-detail')].map((node) => node.textContent.trim());
+const forcePriceHeroIsUnambiguous =
+  forcePriceHeroDetails[0] === 'Force charge · Acceptable price' &&
+  forcePriceHeroDetails[1]?.includes('Waiting for price ≤') &&
+  forcePriceHeroDetails[1]?.includes('Schedule remains on') &&
+  !forcePriceHeroDetails.some((detail) => detail.includes('Waiting for schedule'));
 openForceWizard();
 await new Promise((r) => setTimeout(r, 30));
 const scheduleAndForceStayEnabled =
   root.querySelector('[data-action="toggle-charging-plan"][data-mode="schedule"]')?.getAttribute('aria-checked') === 'true' &&
   root.querySelector('[data-action="toggle-charging-plan"][data-mode="now"]')?.getAttribute('aria-checked') === 'true';
 console.log(`${forceConfigSavedWithoutActivation ? 'PASS' : 'FAIL'}: force-charge submenu saves limits without activating the plan`);
-console.log(`${scheduleWasNotDisabled && scheduleRemainsOn && priceRemainsEnabled && scheduleAndForceStayEnabled ? 'PASS' : 'FAIL'}: only the main toggle enables Force charge and keeps the standing schedule on`);
-if (!forceConfigSavedWithoutActivation || !scheduleWasNotDisabled || !scheduleRemainsOn || !priceRemainsEnabled || !scheduleAndForceStayEnabled) ok = false;
+console.log(`${scheduleWasNotDisabled && scheduleRemainsOn && priceRemainsEnabled && forceActivationEnabled && scheduleAndForceStayEnabled ? 'PASS' : 'FAIL'}: only the main toggle enables Force charge and keeps the standing schedule on`);
+console.log(`${forcePriceHeroIsUnambiguous ? 'PASS' : 'FAIL'}: Force charge by acceptable price overrides Schedule and reports the controller price state`);
+if (!forceConfigSavedWithoutActivation || !scheduleWasNotDisabled || !scheduleRemainsOn || !priceRemainsEnabled || !forceActivationEnabled || !scheduleAndForceStayEnabled || !forcePriceHeroIsUnambiguous) ok = false;
 click('[data-action="close-force-wizard"]');
 
 // Force charge with both timer and acceptable price enables both force entities.
@@ -384,7 +421,7 @@ await new Promise((r) => setTimeout(r, 50));
 const timerPriceCalls = calls.slice(timerPriceCallStart);
 const savedDuration = timerPriceCalls.some((c) => c[0] === 'number' && c[1] === 'set_value' && c[2].entity_id === 'number.duration' && c[2].value === 45);
 const savedTimerPrice = timerPriceCalls.some((c) => c[0] === 'number' && c[1] === 'set_value' && c[2].entity_id === 'number.price');
-const timerAndPriceOn = states['switch.force_timer'].state === 'on' && states['switch.force_price'].state === 'on';
+const timerAndPriceOn = states['switch.force'].state === 'on' && states['switch.force_timer'].state === 'on' && states['switch.force_price'].state === 'on';
 const forceHeroDetails = [...root.querySelectorAll('.status-detail')].map((node) => node.textContent.trim());
 const forceTimerStaysInHero =
   forceHeroDetails[0] === 'Force charge · Timer + acceptable price' &&
@@ -419,7 +456,7 @@ const forceSummarySurvivesReload =
 click('[data-action="toggle-charging-plan"][data-mode="now"]');
 await new Promise((r) => setTimeout(r, 40));
 const forceReenabledWithSavedOptions =
-  states['switch.force_timer'].state === 'on' && states['switch.force_price'].state === 'on';
+  states['switch.force'].state === 'on' && states['switch.force_timer'].state === 'on' && states['switch.force_price'].state === 'on';
 console.log(`${configuredForceSummary && forceDisabledButRemembered && forceSummarySurvivesReload && forceReenabledWithSavedOptions ? 'PASS' : 'FAIL'}: force-charge toggle persists and restores timer plus acceptable-price options`);
 if (!configuredForceSummary || !forceDisabledButRemembered || !forceSummarySurvivesReload || !forceReenabledWithSavedOptions) ok = false;
 
@@ -430,7 +467,7 @@ click('[data-action="choose-force-mode"][data-mode="now"]');
 await new Promise((r) => setTimeout(r, 30));
 click('[data-action="toggle-force-now-price"]');
 await new Promise((r) => setTimeout(r, 50));
-const timerOnly = states['switch.force_timer'].state === 'on' && states['switch.force_price'].state === 'off';
+const timerOnly = states['switch.force'].state === 'on' && states['switch.force_timer'].state === 'on' && states['switch.force_price'].state === 'off';
 console.log(`${timerOnly ? 'PASS' : 'FAIL'}: force charge supports timer without price`);
 if (!timerOnly) ok = false;
 
