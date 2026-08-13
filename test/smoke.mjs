@@ -184,9 +184,14 @@ const settingsSummaryLivesOnlyInHero =
   !root.querySelector('.flow-line-badges') &&
   !root.querySelector('.flow-line-badge') &&
   !(root.querySelector('style')?.textContent || '').includes('.flow-line-badge');
+const groupsHaveNoVisualContainer =
+  !(root.querySelector('style')?.textContent || '').includes(
+    'background: color-mix(in srgb, var(--sdc-text-muted) 7%, transparent)',
+  );
 console.log(`${physicalFlowAnimates ? 'PASS' : 'FAIL'}: physical charging current animates its connector independently of charge_allowed`);
 console.log(`${settingsSummaryLivesOnlyInHero ? 'PASS' : 'FAIL'}: available Schedule and Force groups always show OFF without connector-line badges`);
-if (!physicalFlowAnimates || !settingsSummaryLivesOnlyInHero) ok = false;
+console.log(`${groupsHaveNoVisualContainer ? 'PASS' : 'FAIL'}: pill groups use spacing without a background container`);
+if (!physicalFlowAnimates || !settingsSummaryLivesOnlyInHero || !groupsHaveNoVisualContainer) ok = false;
 controllerAttrs.charge_allowed = originalFlowState.chargeAllowed;
 controllerAttrs.active_smartevse_raw = originalFlowState.activeRaw;
 controllerAttrs.smartevse_1_state = originalFlowState.state;

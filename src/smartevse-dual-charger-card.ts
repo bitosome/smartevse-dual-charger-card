@@ -3,7 +3,7 @@ import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { DESIGN_TOKENS_CSS } from "./shared/design-tokens";
 import { buildGlow, type PulseColors } from "./shared/glow";
 
-const CARD_VERSION = "0.0.35";
+const CARD_VERSION = "0.0.36";
 
 const ACTIVE_GLOW: PulseColors = {
   weak: "rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha))",
@@ -3271,9 +3271,6 @@ class SmartEVSEFlowCard extends LitElement {
           align-items: center;
           gap: 4px;
           min-width: 0;
-          padding: 3px;
-          border-radius: var(--chip-border-radius);
-          background: color-mix(in srgb, var(--sdc-text-muted) 7%, transparent);
         }
 
         .status-pill-group-items {
