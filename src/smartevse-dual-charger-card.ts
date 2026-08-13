@@ -3,7 +3,7 @@ import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { DESIGN_TOKENS_CSS } from "./shared/design-tokens";
 import { buildGlow, type PulseColors } from "./shared/glow";
 
-const CARD_VERSION = "0.0.32";
+const CARD_VERSION = "0.0.33";
 
 const ACTIVE_GLOW: PulseColors = {
   weak: "rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha))",
@@ -215,14 +215,19 @@ class SmartEVSEFlowCard extends LitElement {
     const timerOn = this._state(this._config.force_timer_entity) === "on";
     const priceOn = this._state(this._config.force_price_entity) === "on";
     const schedulePriceOn = this._state(this._schedulePriceEntity()) === "on";
+    const definiteForceOn = simpleOn || timerOn || (priceOn && !scheduleOn);
     let changed = false;
 
-    if (scheduleOn && !this._forcePlanEnabled && this._schedulePriceGate !== schedulePriceOn) {
+    if (
+      scheduleOn &&
+      !definiteForceOn &&
+      !this._forcePlanEnabled &&
+      this._schedulePriceGate !== schedulePriceOn
+    ) {
       this._schedulePriceGate = schedulePriceOn;
       changed = true;
     }
 
-    const definiteForceOn = simpleOn || timerOn || (priceOn && !scheduleOn);
     if (definiteForceOn && !this._forcePlanEnabled) {
       this._forcePlanEnabled = true;
       changed = true;
@@ -1873,7 +1878,6 @@ class SmartEVSEFlowCard extends LitElement {
     const scheduleNextEvent = this._attr(this._config.schedule_entity, "next_event");
     const forcePriceOn = this._state(this._config.force_price_entity) === "on";
     const forceTimerOn = this._state(this._config.force_timer_entity) === "on";
-    const schedulePriceOn = this._state(this._schedulePriceEntity()) === "on";
     const forceDuration = this._numberState(this._config.force_charge_duration_entity);
     const mainsPeak = Number(attrs.mains_peak);
     const ev1 = rawEv1;
@@ -1935,72 +1939,143 @@ class SmartEVSEFlowCard extends LitElement {
           return null;
       }
     })();
-    const heroPills: Array<{ label: string; tone: string; priority: number }> = [];
-    const addHeroPill = (label, tone = "neutral", priority = 100) => {
-      if (label && !heroPills.some((pill) => pill.label === label)) {
-        heroPills.push({ label, tone, priority });
+    const heroPillGroups: Array<{
+      label: string;
+      tone: string;
+      priority: number;
+      pills: Array<{ label: string; tone: string; priority: number }>;
+    }> = [];
+    const addHeroPill = (
+      groupLabel,
+      groupTone,
+      groupPriority,
+      label,
+      tone = "neutral",
+      priority = 100,
+    ) => {
+      if (!label) {
+        return;
+      }
+      let group = heroPillGroups.find((candidate) => candidate.label === groupLabel);
+      if (!group) {
+        group = { label: groupLabel, tone: groupTone, priority: groupPriority, pills: [] };
+        heroPillGroups.push(group);
+      }
+      if (!group.pills.some((pill) => pill.label === label)) {
+        group.pills.push({ label, tone, priority });
       }
     };
+    const scheduleTimingPill = (() => {
+      const nextEvent = this._formatDateTime(scheduleNextEvent);
+      if (scheduleState === "on") {
+        return nextEvent === "n/a" ? "Window open" : `Window open · ends ${nextEvent}`;
+      }
+      return nextEvent === "n/a" ? "Next start unavailable" : `Next start · ${nextEvent}`;
+    })();
     if (hasControllerError) {
-      addHeroPill(this._pretty(controllerError), "error", 0);
+      addHeroPill("Controller", "error", 0, this._pretty(controllerError), "error", 0);
     } else if (forcePlanActive) {
-      // Priority: active plan, live result, active limits, then the standing plan
-      // and its limits. Explicit plan prefixes keep simultaneous price gates clear.
-      addHeroPill("Force charge", "active", 10);
+      // Force is the active override, so its live state and limits form the first
+      // group. The standing schedule remains visible as a separate second group.
       if (controllerReasonPill) {
-        addHeroPill(controllerReasonPill.label, controllerReasonPill.tone, 20);
+        addHeroPill("Force charge", "active", 10, controllerReasonPill.label, controllerReasonPill.tone, 10);
       } else if (forcePriceOn) {
-        addHeroPill(priceAccepted ? `Price ${priceValue}` : "Waiting for price", priceAccepted ? "success" : "warn", 20);
+        addHeroPill(
+          "Force charge",
+          "active",
+          10,
+          priceAccepted ? `Price accepted · ${priceValue}` : "Waiting for price",
+          priceAccepted ? "success" : "warn",
+          10,
+        );
       }
       if (forceTimerOn) {
         const timerValue = timerLabel !== "n/a" ? timerLabel : this._formatMinutes(forceDuration);
-        addHeroPill(`Force timer · ${timerValue} left`, "active", 30);
+        addHeroPill("Force charge", "active", 10, `Timer · ${timerValue} left`, "active", 20);
       }
       if (forcePriceOn) {
-        addHeroPill(`Force price · ≤ ${acceptablePriceValue}`, "active", 40);
+        addHeroPill("Force charge", "active", 10, `Price ≤ ${acceptablePriceValue}`, "active", 30);
       }
       if (!forceTimerOn && !forcePriceOn) {
-        addHeroPill(anyConnected ? "Unrestricted" : "Waiting for plug-in", anyConnected ? "success" : "warn", 30);
+        addHeroPill(
+          "Force charge",
+          "active",
+          10,
+          anyConnected ? "Unrestricted" : "Waiting for plug-in",
+          anyConnected ? "success" : "warn",
+          10,
+        );
       }
       if (scheduleSwitchOn) {
-        addHeroPill("Schedule on", "neutral", 60);
-        if (schedulePriceOn) {
-          addHeroPill(`Schedule price · ≤ ${acceptablePriceValue}`, "neutral", 70);
+        addHeroPill(
+          "Schedule",
+          "neutral",
+          20,
+          scheduleTimingPill,
+          scheduleState === "on" ? "success" : "neutral",
+          10,
+        );
+        // The submenu's saved option is authoritative while Force charge is
+        // overriding the schedule; the raw entity may temporarily remain stale.
+        if (this._schedulePriceGate) {
+          addHeroPill("Schedule", "neutral", 20, `Price ≤ ${acceptablePriceValue}`, "neutral", 20);
         }
       }
     } else if (scheduleSwitchOn) {
-      addHeroPill("Schedule", "active", 10);
       if (controllerReasonPill) {
-        addHeroPill(controllerReasonPill.label, controllerReasonPill.tone, 20);
-      } else {
-        addHeroPill(
-          scheduleState === "on" ? "Window open" : `Starts ${this._formatDateTime(scheduleNextEvent)}`,
-          scheduleState === "on" ? "success" : "neutral",
-          20,
-        );
+        addHeroPill("Schedule", "active", 10, controllerReasonPill.label, controllerReasonPill.tone, 10);
       }
-      if (schedulePriceOn) {
-        addHeroPill(`Schedule price · ≤ ${acceptablePriceValue}`, "active", 30);
+      addHeroPill(
+        "Schedule",
+        "active",
+        10,
+        scheduleTimingPill,
+        scheduleState === "on" ? "success" : "neutral",
+        20,
+      );
+      if (this._schedulePriceGate) {
+        addHeroPill("Schedule", "active", 10, `Price ≤ ${acceptablePriceValue}`, "active", 30);
       }
       if (activeRaw && dutyLabel !== "n/a") {
-        addHeroPill(`Duty ${dutyLabel}`, "neutral", 40);
+        addHeroPill("Schedule", "active", 10, `Duty ${dutyLabel}`, "neutral", 40);
       }
     } else {
       if (activeEv) {
-        addHeroPill(`${activeEv.state} · ${this._formatCurrent(activeEv.chargeCurrent)}`, activeEv.isCharging ? "success" : "neutral");
+        addHeroPill(
+          "Current state",
+          "neutral",
+          10,
+          `${activeEv.state} · ${this._formatCurrent(activeEv.chargeCurrent)}`,
+          activeEv.isCharging ? "success" : "neutral",
+        );
       } else if (chargeReason && chargeReason.toLowerCase() !== "idle") {
-        addHeroPill(this._pretty(chargeReason), "neutral");
+        addHeroPill("Current state", "neutral", 10, this._pretty(chargeReason), "neutral");
       }
       if (activeRaw && dutyLabel !== "n/a") {
-        addHeroPill(`Duty ${dutyLabel}`, "neutral");
+        addHeroPill("Current state", "neutral", 10, `Duty ${dutyLabel}`, "neutral");
       }
       if (ev1.connected && ev2.connected) {
-        addHeroPill(`Policy ${policy}`, "neutral");
+        addHeroPill("Current state", "neutral", 10, `Policy ${policy}`, "neutral");
       }
     }
-    const heroPillsMarkup = heroPills
+    const heroPillsMarkup = heroPillGroups
       .sort((left, right) => left.priority - right.priority)
-      .map((pill) => `<span class="status-pill tone-${this._safe(pill.tone)}">${this._safe(pill.label)}</span>`)
+      .map(
+        (group) => `
+          <div class="status-pill-group" data-plan-group="${this._safe(group.label.toLowerCase().replace(/[^a-z0-9]+/g, "-"))}">
+            <span class="status-pill-group-label tone-${this._safe(group.tone)}">${this._safe(group.label)}</span>
+            <span class="status-pill-group-items">
+              ${group.pills
+                .sort((left, right) => left.priority - right.priority)
+                .map(
+                  (pill) =>
+                    `<span class="status-pill tone-${this._safe(pill.tone)}">${this._safe(pill.label)}</span>`,
+                )
+                .join("")}
+            </span>
+          </div>
+        `,
+      )
       .join("");
     const heroGlowColors: PulseColors | undefined =
       heroVisual === "charging"
@@ -3189,15 +3264,34 @@ class SmartEVSEFlowCard extends LitElement {
           height: 16px;
         }
 
-        .status-pills {
+        .status-pills,
+        .status-pill-groups {
+          display: grid;
+          gap: 5px;
+          min-width: 0;
+        }
+
+        .status-pill-group {
           display: flex;
           flex-wrap: wrap;
           align-items: center;
           gap: 4px;
           min-width: 0;
+          padding: 3px;
+          border-radius: var(--chip-border-radius);
+          background: color-mix(in srgb, var(--sdc-text-muted) 7%, transparent);
         }
 
-        .status-pill {
+        .status-pill-group-items {
+          display: flex;
+          flex: 1 1 180px;
+          flex-wrap: wrap;
+          gap: 4px;
+          min-width: 0;
+        }
+
+        .status-pill,
+        .status-pill-group-label {
           --status-pill-color: var(--sdc-text-muted);
           display: inline-flex;
           align-items: center;
@@ -3217,19 +3311,28 @@ class SmartEVSEFlowCard extends LitElement {
           white-space: nowrap;
         }
 
-        .status-pill.tone-active {
+        .status-pill-group-label {
+          flex: 0 0 auto;
+          font-weight: 700;
+        }
+
+        .status-pill.tone-active,
+        .status-pill-group-label.tone-active {
           --status-pill-color: var(--primary-color, var(--status-active-color));
         }
 
-        .status-pill.tone-success {
+        .status-pill.tone-success,
+        .status-pill-group-label.tone-success {
           --status-pill-color: var(--status-success-color);
         }
 
-        .status-pill.tone-warn {
+        .status-pill.tone-warn,
+        .status-pill-group-label.tone-warn {
           --status-pill-color: var(--status-warn-color);
         }
 
-        .status-pill.tone-error {
+        .status-pill.tone-error,
+        .status-pill-group-label.tone-error {
           --status-pill-color: var(--status-alert-color);
         }
 
@@ -3664,7 +3767,7 @@ class SmartEVSEFlowCard extends LitElement {
                 >
                   <div class="status-copy">
                     <div class="status-title">${this._safe(activeTitle)}</div>
-                    <div class="status-pills">${heroPillsMarkup}</div>
+                    <div class="status-pills status-pill-groups">${heroPillsMarkup}</div>
                   </div>
                   <div class="status-action">
                     <ha-icon icon="mdi:ev-station"></ha-icon>
