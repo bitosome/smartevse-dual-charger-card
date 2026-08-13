@@ -177,10 +177,10 @@ const physicalFlowAnimates =
   (root.querySelector('style')?.textContent || '').includes('animation: dash 1.8s linear infinite');
 const initialPlanGroups = [...root.querySelectorAll('.status-pill-group')];
 const settingsSummaryLivesOnlyInHero =
-  initialPlanGroups[0]?.querySelector('.status-pill-group-label')?.textContent.trim() === 'Use schedule' &&
-  initialPlanGroups[0]?.querySelector('.status-pill')?.textContent.trim() === 'OFF' &&
-  initialPlanGroups[1]?.querySelector('.status-pill-group-label')?.textContent.trim() === 'Force charge' &&
-  initialPlanGroups[1]?.querySelector('.status-pill')?.textContent.trim() === 'OFF' &&
+  initialPlanGroups[0]?.querySelector('.status-pill-group-label')?.textContent.trim() === 'Use schedule · OFF' &&
+  !initialPlanGroups[0]?.querySelector('.status-pill') &&
+  initialPlanGroups[1]?.querySelector('.status-pill-group-label')?.textContent.trim() === 'Force charge · OFF' &&
+  !initialPlanGroups[1]?.querySelector('.status-pill') &&
   !root.querySelector('.flow-line-badges') &&
   !root.querySelector('.flow-line-badge') &&
   !(root.querySelector('style')?.textContent || '').includes('.flow-line-badge');
@@ -297,8 +297,7 @@ if (!savedSchedulePrice || !submenuDoesNotActivateSchedule || !enabledSchedule |
 const scheduleHeroGroup = root.querySelector('[data-plan-group="use-schedule"]');
 const heroPlanDetails = [...(scheduleHeroGroup?.querySelectorAll('.status-pill') || [])].map((node) => node.textContent.trim());
 const heroShowsCombinedPlan =
-  scheduleHeroGroup?.querySelector('.status-pill-group-label')?.textContent.trim() === 'Use schedule' &&
-  heroPlanDetails[0] === 'ON' &&
+  scheduleHeroGroup?.querySelector('.status-pill-group-label')?.textContent.trim() === 'Use schedule · ON' &&
   heroPlanDetails.includes('Acceptable price · ≤ 0.150 EUR/kWh') &&
   heroPlanDetails.some((detail) => detail.startsWith('Schedule · next charge ')) &&
   !heroPlanDetails.some((detail) => detail.startsWith('Waiting for'));
@@ -385,11 +384,9 @@ const standingScheduleGroup = root.querySelector('[data-plan-group="use-schedule
 const forcePriceHeroDetails = [...(forcePriceGroup?.querySelectorAll('.status-pill') || [])].map((node) => node.textContent.trim());
 const standingScheduleDetails = [...(standingScheduleGroup?.querySelectorAll('.status-pill') || [])].map((node) => node.textContent.trim());
 const forcePriceHeroIsUnambiguous =
-  forcePriceGroup?.querySelector('.status-pill-group-label')?.textContent.trim() === 'Force charge' &&
-  forcePriceHeroDetails[0] === 'ON' &&
+  forcePriceGroup?.querySelector('.status-pill-group-label')?.textContent.trim() === 'Force charge · ON' &&
   forcePriceHeroDetails.includes('Acceptable price · ≤ 0.150 EUR/kWh') &&
-  standingScheduleGroup?.querySelector('.status-pill-group-label')?.textContent.trim() === 'Use schedule' &&
-  standingScheduleDetails[0] === 'ON' &&
+  standingScheduleGroup?.querySelector('.status-pill-group-label')?.textContent.trim() === 'Use schedule · ON' &&
   standingScheduleDetails.some((detail) => detail.startsWith('Schedule · next charge ')) &&
   !standingScheduleDetails.some((detail) => detail.startsWith('Acceptable price · ')) &&
   ![...forcePriceHeroDetails, ...standingScheduleDetails].some((detail) => detail.startsWith('Waiting for'));
@@ -458,12 +455,10 @@ const orderedHeroGroups = [...root.querySelectorAll('.status-pill-group')];
 const scheduleHeroDetails = [...(orderedHeroGroups[0]?.querySelectorAll('.status-pill') || [])].map((node) => node.textContent.trim());
 const forceHeroDetails = [...(orderedHeroGroups[1]?.querySelectorAll('.status-pill') || [])].map((node) => node.textContent.trim());
 const forceTimerStaysInHero =
-  orderedHeroGroups[0]?.querySelector('.status-pill-group-label')?.textContent.trim() === 'Use schedule' &&
-  scheduleHeroDetails[0] === 'ON' &&
+  orderedHeroGroups[0]?.querySelector('.status-pill-group-label')?.textContent.trim() === 'Use schedule · ON' &&
   scheduleHeroDetails.some((detail) => detail.startsWith('Schedule · next charge ')) &&
   scheduleHeroDetails.includes('Acceptable price · ≤ 0.150 EUR/kWh') &&
-  orderedHeroGroups[1]?.querySelector('.status-pill-group-label')?.textContent.trim() === 'Force charge' &&
-  forceHeroDetails[0] === 'ON' &&
+  orderedHeroGroups[1]?.querySelector('.status-pill-group-label')?.textContent.trim() === 'Force charge · ON' &&
   forceHeroDetails.includes('Timer · 0:45') &&
   forceHeroDetails.includes('Acceptable price · ≤ 0.150 EUR/kWh') &&
   ![...scheduleHeroDetails, ...forceHeroDetails].some((detail) => detail.startsWith('Waiting for')) &&
@@ -554,11 +549,11 @@ const availableScheduleDetails = [...(root.querySelector('[data-plan-group="use-
 const availableForceDetails = [...(root.querySelector('[data-plan-group="force-charge"]')?.querySelectorAll('.status-pill') || [])]
   .map((node) => node.textContent.trim());
 const unavailableOptionsAreOmitted =
-  availableScheduleDetails[0] === 'ON' &&
   availableScheduleDetails.some((detail) => detail.startsWith('Schedule · ')) &&
   !availableScheduleDetails.some((detail) => detail.startsWith('Acceptable price · ')) &&
-  availableForceDetails.length === 1 &&
-  availableForceDetails[0] === 'OFF';
+  root.querySelector('[data-plan-group="use-schedule"] .status-pill-group-label')?.textContent.trim() === 'Use schedule · ON' &&
+  root.querySelector('[data-plan-group="force-charge"] .status-pill-group-label')?.textContent.trim() === 'Force charge · OFF' &&
+  availableForceDetails.length === 0;
 console.log(`${unavailableOptionsAreOmitted ? 'PASS' : 'FAIL'}: unavailable optional controls do not create hero pills`);
 if (!unavailableOptionsAreOmitted) ok = false;
 

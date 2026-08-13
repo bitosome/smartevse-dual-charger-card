@@ -3,7 +3,7 @@ import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { DESIGN_TOKENS_CSS } from "./shared/design-tokens";
 import { buildGlow, type PulseColors } from "./shared/glow";
 
-const CARD_VERSION = "0.0.34";
+const CARD_VERSION = "0.0.35";
 
 const ACTIVE_GLOW: PulseColors = {
   weak: "rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha))",
@@ -1919,12 +1919,28 @@ class SmartEVSEFlowCard extends LitElement {
           ? "Waiting for an eligible EV"
           : "Charging paused";
     const heroPillGroups: Array<{
+      id: string;
       label: string;
       tone: string;
       priority: number;
       pills: Array<{ label: string; tone: string; priority: number }>;
     }> = [];
+    const ensureHeroPillGroup = (groupId, groupLabel, groupTone, groupPriority) => {
+      let group = heroPillGroups.find((candidate) => candidate.id === groupId);
+      if (!group) {
+        group = {
+          id: groupId,
+          label: groupLabel,
+          tone: groupTone,
+          priority: groupPriority,
+          pills: [],
+        };
+        heroPillGroups.push(group);
+      }
+      return group;
+    };
     const addHeroPill = (
+      groupId,
       groupLabel,
       groupTone,
       groupPriority,
@@ -1935,11 +1951,7 @@ class SmartEVSEFlowCard extends LitElement {
       if (!label) {
         return;
       }
-      let group = heroPillGroups.find((candidate) => candidate.label === groupLabel);
-      if (!group) {
-        group = { label: groupLabel, tone: groupTone, priority: groupPriority, pills: [] };
-        heroPillGroups.push(group);
-      }
+      const group = ensureHeroPillGroup(groupId, groupLabel, groupTone, groupPriority);
       if (!group.pills.some((pill) => pill.label === label)) {
         group.pills.push({ label, tone, priority });
       }
@@ -1974,19 +1986,18 @@ class SmartEVSEFlowCard extends LitElement {
     );
 
     if (scheduleControlAvailable) {
-      addHeroPill(
-        "Use schedule",
+      ensureHeroPillGroup(
+        "use-schedule",
+        `Use schedule · ${scheduleSwitchOn ? "ON" : "OFF"}`,
         scheduleSwitchOn ? "active" : "neutral",
-        10,
-        scheduleSwitchOn ? "ON" : "OFF",
-        scheduleSwitchOn ? "success" : "neutral",
         10,
       );
     }
     if (scheduleControlAvailable && scheduleSwitchOn) {
       if (scheduleEntityAvailable) {
         addHeroPill(
-          "Use schedule",
+          "use-schedule",
+          "Use schedule · ON",
           "active",
           10,
           scheduleTimingPill,
@@ -1998,7 +2009,8 @@ class SmartEVSEFlowCard extends LitElement {
       // overriding the schedule; the raw entity may temporarily remain stale.
       if (schedulePriceAvailable && this._schedulePriceGate) {
         addHeroPill(
-          "Use schedule",
+          "use-schedule",
+          "Use schedule · ON",
           "active",
           10,
           `Acceptable price · ≤ ${acceptablePriceValue}`,
@@ -2009,18 +2021,17 @@ class SmartEVSEFlowCard extends LitElement {
     }
 
     if (forceControlAvailable) {
-      addHeroPill(
-        "Force charge",
+      ensureHeroPillGroup(
+        "force-charge",
+        `Force charge · ${forcePlanActive ? "ON" : "OFF"}`,
         forcePlanActive ? "active" : "neutral",
         20,
-        forcePlanActive ? "ON" : "OFF",
-        forcePlanActive ? "success" : "neutral",
-        10,
       );
     }
     if (forceControlAvailable && forcePlanActive) {
       if (forceTimerAvailable && forceTimerOn) {
         addHeroPill(
+          "force-charge",
           "Force charge",
           "active",
           20,
@@ -2031,6 +2042,7 @@ class SmartEVSEFlowCard extends LitElement {
       }
       if (forcePriceAvailable && forcePriceOn) {
         addHeroPill(
+          "force-charge",
           "Force charge",
           "active",
           20,
@@ -2044,7 +2056,7 @@ class SmartEVSEFlowCard extends LitElement {
       .sort((left, right) => left.priority - right.priority)
       .map(
         (group) => `
-          <div class="status-pill-group" data-plan-group="${this._safe(group.label.toLowerCase().replace(/[^a-z0-9]+/g, "-"))}">
+          <div class="status-pill-group" data-plan-group="${this._safe(group.id)}">
             <span class="status-pill-group-label tone-${this._safe(group.tone)}">${this._safe(group.label)}</span>
             <span class="status-pill-group-items">
               ${group.pills
