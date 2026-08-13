@@ -3,7 +3,7 @@ import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { DESIGN_TOKENS_CSS } from "./shared/design-tokens";
 import { buildGlow, type PulseColors } from "./shared/glow";
 
-const CARD_VERSION = "0.0.33";
+const CARD_VERSION = "0.0.34";
 
 const ACTIVE_GLOW: PulseColors = {
   weak: "rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha))",
@@ -1861,7 +1861,6 @@ class SmartEVSEFlowCard extends LitElement {
     const price = this._numberState(this._config.price_entity);
     const acceptablePrice = this._numberState(this._config.acceptable_price_entity);
     const priceValue = price === null ? "n/a" : `${price.toFixed(3)} ${this._currency}`;
-    const chargeReason = String(attrs.charge_reason ?? "").trim();
 
     const rawPolicy = this._state(this._config.charge_policy_entity) || this._pretty(attrs.charge_policy);
     const policyDraft =
@@ -1871,7 +1870,6 @@ class SmartEVSEFlowCard extends LitElement {
         ? this._editorDrafts[this._config.charge_policy_entity]
         : null;
     const policy = this._displayState(this._config.charge_policy_entity, policyDraft ?? rawPolicy);
-    const dutyLabel = this._formatSeconds(this._state(this._config.duty_remaining_entity));
     const timerLabel = this._formatSeconds(this._state(this._config.timer_remaining_entity));
     const scheduleState = this._state(this._config.schedule_entity);
     const scheduleSwitchOn = this._state(this._config.schedule_switch_entity) === "on";
@@ -1896,7 +1894,6 @@ class SmartEVSEFlowCard extends LitElement {
           ? "error"
           : "active"
       : "idle";
-    const anyConnected = ev1.connected || ev2.connected;
     // The hero represents the physical WLED device, so derive its glow from the
     // same per-SmartEVSE visuals instead of controller gating such as schedule,
     // price, or charge_allowed. Error wins, then charging, then connected/idle.
@@ -1921,24 +1918,6 @@ class SmartEVSEFlowCard extends LitElement {
         : chargeAllowed
           ? "Waiting for an eligible EV"
           : "Charging paused";
-    const controllerReasonPill = (() => {
-      switch (chargeReason.toLowerCase()) {
-        case "waiting_for_schedule_window":
-          return { label: "Waiting for schedule", tone: "warn" };
-        case "waiting_for_acceptable_price":
-          return { label: "Waiting for price", tone: "warn" };
-        case "price_sensor_unavailable":
-          return { label: "Price unavailable", tone: "error" };
-        case "schedule_entity_unavailable":
-          return { label: "Schedule unavailable", tone: "error" };
-        case "acceptable_price":
-        case "force_timer_acceptable_price":
-        case "schedule_acceptable_price":
-          return { label: `Price accepted · ${priceValue}`, tone: "success" };
-        default:
-          return null;
-      }
-    })();
     const heroPillGroups: Array<{
       label: string;
       tone: string;
@@ -1968,94 +1947,97 @@ class SmartEVSEFlowCard extends LitElement {
     const scheduleTimingPill = (() => {
       const nextEvent = this._formatDateTime(scheduleNextEvent);
       if (scheduleState === "on") {
-        return nextEvent === "n/a" ? "Window open" : `Window open · ends ${nextEvent}`;
+        return "Schedule · active now";
       }
-      return nextEvent === "n/a" ? "Next start unavailable" : `Next start · ${nextEvent}`;
+      return nextEvent === "n/a" ? "Schedule · next charge unavailable" : `Schedule · next charge ${nextEvent}`;
     })();
-    if (hasControllerError) {
-      addHeroPill("Controller", "error", 0, this._pretty(controllerError), "error", 0);
-    } else if (forcePlanActive) {
-      // Force is the active override, so its live state and limits form the first
-      // group. The standing schedule remains visible as a separate second group.
-      if (controllerReasonPill) {
-        addHeroPill("Force charge", "active", 10, controllerReasonPill.label, controllerReasonPill.tone, 10);
-      } else if (forcePriceOn) {
+    const scheduleControlAvailable = Boolean(this._entity(this._config.schedule_switch_entity));
+    const scheduleEntityAvailable = Boolean(this._entity(this._config.schedule_entity));
+    const schedulePriceAvailable = Boolean(
+      this._entity(this._schedulePriceEntity()) &&
+        this._entity(this._config.acceptable_price_entity) &&
+        this._entity(this._config.price_entity),
+    );
+    const forceControlAvailable = Boolean(
+      this._entity(this._config.force_charge_entity) ||
+        this._entity(this._config.force_timer_entity) ||
+        this._entity(this._config.force_price_entity),
+    );
+    const forceTimerAvailable = Boolean(
+      this._entity(this._config.force_timer_entity) &&
+        this._entity(this._config.force_charge_duration_entity),
+    );
+    const forcePriceAvailable = Boolean(
+      this._entity(this._config.force_price_entity) &&
+        this._entity(this._config.acceptable_price_entity) &&
+        this._entity(this._config.price_entity),
+    );
+
+    if (scheduleControlAvailable) {
+      addHeroPill(
+        "Use schedule",
+        scheduleSwitchOn ? "active" : "neutral",
+        10,
+        scheduleSwitchOn ? "ON" : "OFF",
+        scheduleSwitchOn ? "success" : "neutral",
+        10,
+      );
+    }
+    if (scheduleControlAvailable && scheduleSwitchOn) {
+      if (scheduleEntityAvailable) {
         addHeroPill(
-          "Force charge",
+          "Use schedule",
           "active",
           10,
-          priceAccepted ? `Price accepted · ${priceValue}` : "Waiting for price",
-          priceAccepted ? "success" : "warn",
-          10,
-        );
-      }
-      if (forceTimerOn) {
-        const timerValue = timerLabel !== "n/a" ? timerLabel : this._formatMinutes(forceDuration);
-        addHeroPill("Force charge", "active", 10, `Timer · ${timerValue} left`, "active", 20);
-      }
-      if (forcePriceOn) {
-        addHeroPill("Force charge", "active", 10, `Price ≤ ${acceptablePriceValue}`, "active", 30);
-      }
-      if (!forceTimerOn && !forcePriceOn) {
-        addHeroPill(
-          "Force charge",
-          "active",
-          10,
-          anyConnected ? "Unrestricted" : "Waiting for plug-in",
-          anyConnected ? "success" : "warn",
-          10,
-        );
-      }
-      if (scheduleSwitchOn) {
-        addHeroPill(
-          "Schedule",
-          "neutral",
-          20,
           scheduleTimingPill,
           scheduleState === "on" ? "success" : "neutral",
-          10,
+          20,
         );
-        // The submenu's saved option is authoritative while Force charge is
-        // overriding the schedule; the raw entity may temporarily remain stale.
-        if (this._schedulePriceGate) {
-          addHeroPill("Schedule", "neutral", 20, `Price ≤ ${acceptablePriceValue}`, "neutral", 20);
-        }
       }
-    } else if (scheduleSwitchOn) {
-      if (controllerReasonPill) {
-        addHeroPill("Schedule", "active", 10, controllerReasonPill.label, controllerReasonPill.tone, 10);
-      }
-      addHeroPill(
-        "Schedule",
-        "active",
-        10,
-        scheduleTimingPill,
-        scheduleState === "on" ? "success" : "neutral",
-        20,
-      );
-      if (this._schedulePriceGate) {
-        addHeroPill("Schedule", "active", 10, `Price ≤ ${acceptablePriceValue}`, "active", 30);
-      }
-      if (activeRaw && dutyLabel !== "n/a") {
-        addHeroPill("Schedule", "active", 10, `Duty ${dutyLabel}`, "neutral", 40);
-      }
-    } else {
-      if (activeEv) {
+      // The submenu's saved option is authoritative while Force charge is
+      // overriding the schedule; the raw entity may temporarily remain stale.
+      if (schedulePriceAvailable && this._schedulePriceGate) {
         addHeroPill(
-          "Current state",
-          "neutral",
+          "Use schedule",
+          "active",
           10,
-          `${activeEv.state} · ${this._formatCurrent(activeEv.chargeCurrent)}`,
-          activeEv.isCharging ? "success" : "neutral",
+          `Acceptable price · ≤ ${acceptablePriceValue}`,
+          "active",
+          30,
         );
-      } else if (chargeReason && chargeReason.toLowerCase() !== "idle") {
-        addHeroPill("Current state", "neutral", 10, this._pretty(chargeReason), "neutral");
       }
-      if (activeRaw && dutyLabel !== "n/a") {
-        addHeroPill("Current state", "neutral", 10, `Duty ${dutyLabel}`, "neutral");
+    }
+
+    if (forceControlAvailable) {
+      addHeroPill(
+        "Force charge",
+        forcePlanActive ? "active" : "neutral",
+        20,
+        forcePlanActive ? "ON" : "OFF",
+        forcePlanActive ? "success" : "neutral",
+        10,
+      );
+    }
+    if (forceControlAvailable && forcePlanActive) {
+      if (forceTimerAvailable && forceTimerOn) {
+        addHeroPill(
+          "Force charge",
+          "active",
+          20,
+          `Timer · ${this._formatMinutes(forceDuration)}`,
+          "active",
+          20,
+        );
       }
-      if (ev1.connected && ev2.connected) {
-        addHeroPill("Current state", "neutral", 10, `Policy ${policy}`, "neutral");
+      if (forcePriceAvailable && forcePriceOn) {
+        addHeroPill(
+          "Force charge",
+          "active",
+          20,
+          `Acceptable price · ≤ ${acceptablePriceValue}`,
+          "active",
+          30,
+        );
       }
     }
     const heroPillsMarkup = heroPillGroups
