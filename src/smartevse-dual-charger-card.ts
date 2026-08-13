@@ -3,7 +3,7 @@ import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { DESIGN_TOKENS_CSS } from "./shared/design-tokens";
 import { buildGlow, type PulseColors } from "./shared/glow";
 
-const CARD_VERSION = "0.0.36";
+const CARD_VERSION = "0.0.37";
 
 const ACTIVE_GLOW: PulseColors = {
   weak: "rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha))",
@@ -2014,7 +2014,7 @@ class SmartEVSEFlowCard extends LitElement {
           "active",
           10,
           `Acceptable price · ≤ ${acceptablePriceValue}`,
-          "active",
+          priceAccepted ? "success" : "neutral",
           30,
         );
       }
@@ -2047,7 +2047,7 @@ class SmartEVSEFlowCard extends LitElement {
           "active",
           20,
           `Acceptable price · ≤ ${acceptablePriceValue}`,
-          "active",
+          priceAccepted ? "success" : "neutral",
           30,
         );
       }

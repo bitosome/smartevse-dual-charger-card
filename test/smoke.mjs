@@ -301,9 +301,12 @@ if (!savedSchedulePrice || !submenuDoesNotActivateSchedule || !enabledSchedule |
 
 const scheduleHeroGroup = root.querySelector('[data-plan-group="use-schedule"]');
 const heroPlanDetails = [...(scheduleHeroGroup?.querySelectorAll('.status-pill') || [])].map((node) => node.textContent.trim());
+const schedulePriceIsUnmet = [...(scheduleHeroGroup?.querySelectorAll('.status-pill.tone-neutral') || [])]
+  .some((node) => node.textContent.trim() === 'Acceptable price · ≤ 0.150 EUR/kWh');
 const heroShowsCombinedPlan =
   scheduleHeroGroup?.querySelector('.status-pill-group-label')?.textContent.trim() === 'Use schedule · ON' &&
   heroPlanDetails.includes('Acceptable price · ≤ 0.150 EUR/kWh') &&
+  schedulePriceIsUnmet &&
   heroPlanDetails.some((detail) => detail.startsWith('Schedule · next charge ')) &&
   !heroPlanDetails.some((detail) => detail.startsWith('Waiting for'));
 console.log(`${heroShowsCombinedPlan ? 'PASS' : 'FAIL'}: enabled Schedule group shows ON, next charge, and its enabled acceptable-price setting`);
@@ -388,9 +391,12 @@ const forcePriceGroup = root.querySelector('[data-plan-group="force-charge"]');
 const standingScheduleGroup = root.querySelector('[data-plan-group="use-schedule"]');
 const forcePriceHeroDetails = [...(forcePriceGroup?.querySelectorAll('.status-pill') || [])].map((node) => node.textContent.trim());
 const standingScheduleDetails = [...(standingScheduleGroup?.querySelectorAll('.status-pill') || [])].map((node) => node.textContent.trim());
+const forcePriceIsUnmet = [...(forcePriceGroup?.querySelectorAll('.status-pill.tone-neutral') || [])]
+  .some((node) => node.textContent.trim() === 'Acceptable price · ≤ 0.150 EUR/kWh');
 const forcePriceHeroIsUnambiguous =
   forcePriceGroup?.querySelector('.status-pill-group-label')?.textContent.trim() === 'Force charge · ON' &&
   forcePriceHeroDetails.includes('Acceptable price · ≤ 0.150 EUR/kWh') &&
+  forcePriceIsUnmet &&
   standingScheduleGroup?.querySelector('.status-pill-group-label')?.textContent.trim() === 'Use schedule · ON' &&
   standingScheduleDetails.some((detail) => detail.startsWith('Schedule · next charge ')) &&
   !standingScheduleDetails.some((detail) => detail.startsWith('Acceptable price · ')) &&
@@ -472,6 +478,22 @@ const forceTimerStaysInHero =
 console.log(`${savedDuration && savedTimerPrice && timerAndPriceOn ? 'PASS' : 'FAIL'}: force charge supports timer plus acceptable price`);
 console.log(`${forceTimerStaysInHero ? 'PASS' : 'FAIL'}: maximum combination shows Schedule first and only enabled settings in each group`);
 if (!savedDuration || !savedTimerPrice || !timerAndPriceOn || !forceTimerStaysInHero) ok = false;
+
+// Both plans apply the same live color rule to an enabled price condition.
+states['sensor.current_price'].state = '0.10';
+el.hass = hass;
+await new Promise((r) => setTimeout(r, 30));
+const acceptedSchedulePrice = root.querySelector(
+  '[data-plan-group="use-schedule"] .status-pill.tone-success',
+)?.textContent.trim() === 'Acceptable price · ≤ 0.150 EUR/kWh';
+const acceptedForcePrice = root.querySelector(
+  '[data-plan-group="force-charge"] .status-pill.tone-success',
+)?.textContent.trim() === 'Acceptable price · ≤ 0.150 EUR/kWh';
+console.log(`${acceptedSchedulePrice && acceptedForcePrice ? 'PASS' : 'FAIL'}: both acceptable-price pills turn green when the live price meets the limit`);
+if (!acceptedSchedulePrice || !acceptedForcePrice) ok = false;
+states['sensor.current_price'].state = '0.18';
+el.hass = hass;
+await new Promise((r) => setTimeout(r, 30));
 
 openForceWizard();
 await new Promise((r) => setTimeout(r, 30));
