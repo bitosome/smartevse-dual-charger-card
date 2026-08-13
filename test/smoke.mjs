@@ -394,6 +394,7 @@ const standingScheduleDetails = [...(standingScheduleGroup?.querySelectorAll('.s
 const forcePriceIsUnmet = [...(forcePriceGroup?.querySelectorAll('.status-pill.tone-neutral') || [])]
   .some((node) => node.textContent.trim() === 'Acceptable price · ≤ 0.150 EUR/kWh');
 const forcePriceHeroIsUnambiguous =
+  root.querySelector('.status-title')?.textContent.trim() === 'Force charge waiting for acceptable price' &&
   forcePriceGroup?.querySelector('.status-pill-group-label')?.textContent.trim() === 'Force charge · ON' &&
   forcePriceHeroDetails.includes('Acceptable price · ≤ 0.150 EUR/kWh') &&
   forcePriceIsUnmet &&
@@ -471,6 +472,7 @@ const forceTimerStaysInHero =
   scheduleHeroDetails.includes('Acceptable price · ≤ 0.150 EUR/kWh') &&
   orderedHeroGroups[1]?.querySelector('.status-pill-group-label')?.textContent.trim() === 'Force charge · ON' &&
   forceHeroDetails.includes('Timer · 0:45') &&
+  orderedHeroGroups[1]?.querySelector('.status-pill.tone-neutral')?.textContent.trim() === 'Timer · 0:45' &&
   forceHeroDetails.includes('Acceptable price · ≤ 0.150 EUR/kWh') &&
   ![...scheduleHeroDetails, ...forceHeroDetails].some((detail) => detail.startsWith('Waiting for')) &&
   orderedHeroGroups.length === 2 &&
@@ -489,8 +491,12 @@ const acceptedSchedulePrice = root.querySelector(
 const acceptedForcePrice = root.querySelector(
   '[data-plan-group="force-charge"] .status-pill.tone-success',
 )?.textContent.trim() === 'Acceptable price · ≤ 0.150 EUR/kWh';
+const activeForceTimer = root.querySelector(
+  '[data-plan-group="force-charge"] .status-pill.tone-active',
+)?.textContent.trim() === 'Timer · 0:45';
 console.log(`${acceptedSchedulePrice && acceptedForcePrice ? 'PASS' : 'FAIL'}: both acceptable-price pills turn green when the live price meets the limit`);
-if (!acceptedSchedulePrice || !acceptedForcePrice) ok = false;
+console.log(`${activeForceTimer ? 'PASS' : 'FAIL'}: combined Force timer returns to active color when its price condition is met`);
+if (!acceptedSchedulePrice || !acceptedForcePrice || !activeForceTimer) ok = false;
 states['sensor.current_price'].state = '0.18';
 el.hass = hass;
 await new Promise((r) => setTimeout(r, 30));

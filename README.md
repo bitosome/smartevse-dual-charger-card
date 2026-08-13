@@ -2,7 +2,7 @@
 
 Standalone Lovelace card for the SmartEVSE Dual Charger Home Assistant integration.
 
-Version: `0.0.37`
+Version: `0.0.38`
 
 This repository contains only the frontend card and local preview assets.
 
@@ -111,6 +111,8 @@ The card also expects the related control entities configured in `card_flow.yaml
 - When Use schedule is ON, its group shows the next charge time (or active-now state) and its acceptable-price limit only when that option exists and is enabled.
 - When Force charge is ON, its group shows configured timer and acceptable-price limits only when those options exist and are enabled.
 - Enabled acceptable-price pills use the same live state in both groups: green when the current price meets the limit, gray while it does not or the price is unavailable.
+- In a combined Force timer + acceptable-price plan, the timer pill is gray while price blocks charging and active when the price condition is met.
+- The hero title uses the controller's reported blocking reason, including `Force charge waiting for acceptable price`, so the cause is explicit at a glance.
 - Runtime controller reasons remain represented by the hero title instead of being mixed into the settings pills.
 - While Force charge overrides Schedule, the Schedule group follows its saved submenu options and ignores transient stale switch state from the controller.
 - Hero details use individual semantic pills for every active plan, option, constraint, and controller state, allowing combinations to remain visible without compressed sentences.

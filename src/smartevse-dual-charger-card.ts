@@ -3,7 +3,7 @@ import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { DESIGN_TOKENS_CSS } from "./shared/design-tokens";
 import { buildGlow, type PulseColors } from "./shared/glow";
 
-const CARD_VERSION = "0.0.37";
+const CARD_VERSION = "0.0.38";
 
 const ACTIVE_GLOW: PulseColors = {
   weak: "rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha))",
@@ -1861,6 +1861,7 @@ class SmartEVSEFlowCard extends LitElement {
     const price = this._numberState(this._config.price_entity);
     const acceptablePrice = this._numberState(this._config.acceptable_price_entity);
     const priceValue = price === null ? "n/a" : `${price.toFixed(3)} ${this._currency}`;
+    const chargeReason = String(attrs.charge_reason ?? "").trim().toLowerCase();
 
     const rawPolicy = this._state(this._config.charge_policy_entity) || this._pretty(attrs.charge_policy);
     const policyDraft =
@@ -1909,9 +1910,31 @@ class SmartEVSEFlowCard extends LitElement {
     const hasControllerError = controllerError && !["NONE", "None", "unknown", "unavailable"].includes(controllerError);
     const acceptablePriceValue = acceptablePrice !== null ? `${acceptablePrice.toFixed(3)} ${this._currency}` : "n/a";
     const forcePlanActive = this._isForcePlanActive();
+    const gatingTitle = (() => {
+      switch (chargeReason) {
+        case "waiting_for_acceptable_price":
+          return forcePlanActive
+            ? "Force charge waiting for acceptable price"
+            : scheduleSwitchOn
+              ? "Scheduled charge waiting for acceptable price"
+              : "Waiting for acceptable price";
+        case "price_sensor_unavailable":
+          return "Electricity price unavailable";
+        case "waiting_for_schedule_window":
+          return "Waiting for scheduled charge";
+        case "schedule_entity_unavailable":
+          return "Charging schedule unavailable";
+        case "mains_data_unavailable":
+          return "Mains data unavailable";
+        default:
+          return "";
+      }
+    })();
     const activeTitle = hasControllerError
       ? "Controller error"
-      : activeEv
+      : gatingTitle
+        ? gatingTitle
+        : activeEv
         ? activeEv.isCharging
           ? `Charging ${activeEv.smartevseName}`
           : `${activeEv.smartevseName} selected`
@@ -2036,7 +2059,7 @@ class SmartEVSEFlowCard extends LitElement {
           "active",
           20,
           `Timer · ${this._formatMinutes(forceDuration)}`,
-          "active",
+          forcePriceOn && !priceAccepted ? "neutral" : "active",
           20,
         );
       }
