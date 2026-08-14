@@ -3,7 +3,7 @@ import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { DESIGN_TOKENS_CSS } from "./shared/design-tokens";
 import { buildGlow, type PulseColors } from "./shared/glow";
 
-const CARD_VERSION = "0.0.39";
+const CARD_VERSION = "0.0.40";
 
 const ACTIVE_GLOW: PulseColors = {
   weak: "rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha))",
@@ -3210,7 +3210,7 @@ class SmartEVSEFlowCard extends LitElement {
           width: 100%;
           min-height: 92px;
           height: auto;
-          padding: 10px 48px 10px 12px;
+          padding: 10px var(--tile-padding-large);
           border-radius: var(--tile-border-radius);
           border: 0;
           background: var(--sdc-surface-control);
@@ -3270,6 +3270,7 @@ class SmartEVSEFlowCard extends LitElement {
         }
 
         .status-title {
+          padding-right: calc(30px + var(--medium-gap));
           font-size: 16px;
           line-height: 1.18;
           overflow-wrap: anywhere;
@@ -3300,6 +3301,7 @@ class SmartEVSEFlowCard extends LitElement {
         .status-pill-groups {
           display: grid;
           gap: 5px;
+          width: 100%;
           min-width: 0;
         }
 
@@ -3308,7 +3310,14 @@ class SmartEVSEFlowCard extends LitElement {
           flex-wrap: wrap;
           align-items: center;
           gap: 4px;
+          width: 100%;
           min-width: 0;
+        }
+
+        .status-pill-group + .status-pill-group {
+          margin-top: var(--small-gap);
+          padding-top: var(--medium-gap);
+          border-top: 1px solid color-mix(in srgb, var(--sdc-text-muted) 22%, transparent);
         }
 
         .status-pill-group-items {
@@ -3323,7 +3332,13 @@ class SmartEVSEFlowCard extends LitElement {
           display: flex;
           flex-wrap: wrap;
           gap: 4px;
+          width: 100%;
           min-width: 0;
+        }
+
+        .status-pill-group-items .status-pill,
+        .status-runtime-pills .status-pill {
+          flex: 1 1 auto;
         }
 
         .status-pill,
@@ -3348,7 +3363,7 @@ class SmartEVSEFlowCard extends LitElement {
         }
 
         .status-pill-group-label {
-          flex: 0 0 auto;
+          flex: 1 1 auto;
           font-weight: 700;
         }
 

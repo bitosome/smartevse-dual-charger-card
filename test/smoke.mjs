@@ -193,12 +193,19 @@ const groupsHaveNoVisualContainer =
   !(root.querySelector('style')?.textContent || '').includes(
     'background: color-mix(in srgb, var(--sdc-text-muted) 7%, transparent)',
   );
+const pillGroupsFillAndSeparate =
+  (root.querySelector('style')?.textContent || '').includes('padding: 10px var(--tile-padding-large)') &&
+  (root.querySelector('style')?.textContent || '').includes('.status-pill-group + .status-pill-group') &&
+  (root.querySelector('style')?.textContent || '').includes('border-top: 1px solid') &&
+  (root.querySelector('style')?.textContent || '').includes('.status-pill-group-items .status-pill') &&
+  (root.querySelector('style')?.textContent || '').includes('flex: 1 1 auto');
 console.log(`${physicalFlowAnimates ? 'PASS' : 'FAIL'}: physical charging current animates its connector independently of charge_allowed`);
 console.log(`${dutyCountdownIsVisible ? 'PASS' : 'FAIL'}: active charging shows the live duty-cycle countdown in the hero`);
 console.log(`${mobilePillDetailsWrapBelowTheirGroup ? 'PASS' : 'FAIL'}: mobile plan details wrap below their primary pill`);
 console.log(`${settingsSummaryLivesOnlyInHero ? 'PASS' : 'FAIL'}: available Schedule and Force groups always show OFF without connector-line badges`);
 console.log(`${groupsHaveNoVisualContainer ? 'PASS' : 'FAIL'}: pill groups use spacing without a background container`);
-if (!physicalFlowAnimates || !dutyCountdownIsVisible || !mobilePillDetailsWrapBelowTheirGroup || !settingsSummaryLivesOnlyInHero || !groupsHaveNoVisualContainer) ok = false;
+console.log(`${pillGroupsFillAndSeparate ? 'PASS' : 'FAIL'}: hero pill groups fill the tile width and use a divider`);
+if (!physicalFlowAnimates || !dutyCountdownIsVisible || !mobilePillDetailsWrapBelowTheirGroup || !settingsSummaryLivesOnlyInHero || !groupsHaveNoVisualContainer || !pillGroupsFillAndSeparate) ok = false;
 controllerAttrs.charge_allowed = originalFlowState.chargeAllowed;
 controllerAttrs.active_smartevse_raw = originalFlowState.activeRaw;
 controllerAttrs.smartevse_1_state = originalFlowState.state;
