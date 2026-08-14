@@ -2,7 +2,7 @@
 
 Standalone Lovelace card for the SmartEVSE Dual Charger Home Assistant integration.
 
-Version: `0.0.47`
+Version: `0.0.48`
 
 This repository contains only the frontend card and local preview assets.
 
@@ -10,7 +10,7 @@ This repository contains only the frontend card and local preview assets.
 
 - Visual power-flow layout with Home at the top and two SmartEVSE devices below it.
 - Animated flow line to the active SmartEVSE using the same charging/idle/error color vocabulary as the integration WLED visuals.
-- Per-SmartEVSE state cards with compact state, mode, offered-current, and max-current pills plus detected battery level.
+- Per-SmartEVSE state cards with static State, Mode, Offer, and Max labels paired with compact value pills, plus detected battery level.
 - Optional EV battery node below each SmartEVSE when the integration reports a connected EV.
 - The hero tile is the single Charging Plan control for all schedule and force-charge behavior.
 - Hero glow always mirrors the physical WLED state: off when disconnected, blue while connected/idle, green while charging, and red on a SmartEVSE error.

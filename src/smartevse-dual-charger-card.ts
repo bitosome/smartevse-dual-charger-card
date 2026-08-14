@@ -3,7 +3,7 @@ import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { DESIGN_TOKENS_CSS } from "./shared/design-tokens";
 import { buildGlow, type PulseColors } from "./shared/glow";
 
-const CARD_VERSION = "0.0.47";
+const CARD_VERSION = "0.0.48";
 
 const ACTIVE_GLOW: PulseColors = {
   weak: "rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha))",
@@ -1715,15 +1715,17 @@ class SmartEVSEFlowCard extends LitElement {
     const stateTone = ev.hasError ? "error" : ev.isCharging ? "success" : ev.active ? "active" : "neutral";
     const modeTone = String(ev.mode).toLowerCase() === "smart" ? "active" : "neutral";
     const offerTone = ev.chargeCurrent > 0.1 ? "success" : "neutral";
-    const detailPills = [
-      { label: `State · ${ev.state}`, tone: stateTone },
-      { label: `Mode · ${ev.mode}`, tone: modeTone },
-      { label: `Offer · ${this._formatCurrent(ev.chargeCurrent)}`, tone: offerTone },
-      { label: `Max · ${this._formatCurrent(ev.maxCurrent)}`, tone: "neutral" },
+    const detailRows = [
+      { title: "State", value: ev.state, tone: stateTone },
+      { title: "Mode", value: ev.mode, tone: modeTone },
+      { title: "Offer", value: this._formatCurrent(ev.chargeCurrent), tone: offerTone },
+      { title: "Max", value: this._formatCurrent(ev.maxCurrent), tone: "neutral" },
     ]
       .map(
-        (pill) =>
-          `<span class="status-pill ev-status-pill tone-${this._safe(pill.tone)}">${this._safe(pill.label)}</span>`,
+        (detail) => `
+          <span class="ev-status-label">${this._safe(detail.title)}</span>
+          <span class="status-pill ev-status-pill tone-${this._safe(detail.tone)}">${this._safe(detail.value)}</span>
+        `,
       )
       .join("");
     const smartevseTitle = ev.smartevseName || (ev.key === "smartevse_1" ? "SmartEVSE 1" : "SmartEVSE 2");
@@ -1770,7 +1772,7 @@ class SmartEVSEFlowCard extends LitElement {
                 <div class="ev-label-text">${this._safe(smartevseTitle)}</div>
               </div>
             </div>
-            <div class="ev-status-pills">${detailPills}</div>
+            <div class="ev-status-details">${detailRows}</div>
           </section>
         </div>
         ${vehicleNode}
@@ -3362,11 +3364,26 @@ class SmartEVSEFlowCard extends LitElement {
           white-space: nowrap;
         }
 
-        .ev-status-pills {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 4px;
+        .ev-status-details {
+          display: grid;
+          grid-template-columns: max-content minmax(0, 1fr);
+          align-items: center;
+          column-gap: var(--medium-gap);
+          row-gap: 4px;
           min-width: 0;
+        }
+
+        .ev-status-label {
+          color: var(--sdc-text-muted);
+          font-size: var(--sdc-font-tiny);
+          font-weight: var(--sdc-weight-strong);
+          letter-spacing: var(--sdc-letter-label);
+          line-height: 1;
+          text-transform: uppercase;
+        }
+
+        .ev-status-pill {
+          justify-self: start;
         }
 
         .vehicle-node {
