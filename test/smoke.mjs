@@ -240,10 +240,11 @@ const mainMenuUsesIndependentToggles =
   mainPlanToggles.length === 2 &&
   !root.querySelector('[data-action="stop-force-charge"]') &&
   forceTileText.includes('Force charge') &&
-  forceTileText.includes('Unrestricted · Off') &&
+  !root.querySelector('.modal-subtitle') &&
+  !root.querySelector('.wizard-option-detail') &&
   !root.textContent.includes('Charge now');
 console.log(`${hasTwoPlanFamilies ? 'PASS' : 'FAIL'}: wizard groups charging into schedule and force-charge plans`);
-console.log(`${mainMenuUsesIndependentToggles ? 'PASS' : 'FAIL'}: main plan tiles expose independent toggles and saved-option summaries`);
+console.log(`${mainMenuUsesIndependentToggles ? 'PASS' : 'FAIL'}: main plan tiles expose independent toggles with title-only copy`);
 if (!forceWizardOpened || !hasTwoPlanFamilies || !mainMenuUsesIndependentToggles) ok = false;
 
 // The main-menu force toggle enables and disables the saved unrestricted mode.
@@ -256,7 +257,7 @@ click('[data-action="toggle-charging-plan"][data-mode="now"]');
 await new Promise((r) => setTimeout(r, 40));
 const forceDisabledFromMain =
   states['switch.force'].state === 'off' &&
-  (root.querySelector('[data-action="choose-force-mode"][data-mode="now"]')?.textContent || '').includes('Unrestricted · Off');
+  root.querySelector('[data-action="toggle-charging-plan"][data-mode="now"]')?.getAttribute('aria-checked') === 'false';
 console.log(`${forceEnabledFromMain && forceDisabledFromMain ? 'PASS' : 'FAIL'}: force-charge main toggle controls the plan without losing its mode`);
 if (!forceEnabledFromMain || !forceDisabledFromMain) ok = false;
 
@@ -269,9 +270,17 @@ await new Promise((r) => setTimeout(r, 20));
 const scheduleNavigationIsClean =
   root.querySelectorAll('[data-action="back-force-wizard"]').length === 1 &&
   !root.querySelector('.wizard-secondary');
+const settingsUseTitlesOnly =
+  !root.querySelector('.modal-subtitle') &&
+  !root.querySelector('.wizard-option-detail') &&
+  !root.querySelector('.wizard-entity-id') &&
+  !root.querySelector('.wizard-field-helper') &&
+  !root.querySelector('.wizard-rule') &&
+  !root.querySelector('.setting-detail');
 console.log(`${moreInfoEntity === 'schedule.charging' ? 'PASS' : 'FAIL'}: schedule entity opens Home Assistant more-info`);
 console.log(`${scheduleNavigationIsClean ? 'PASS' : 'FAIL'}: wizard pages use only the top back arrow`);
-if (moreInfoEntity !== 'schedule.charging' || !scheduleNavigationIsClean) ok = false;
+console.log(`${settingsUseTitlesOnly ? 'PASS' : 'FAIL'}: settings dialogs omit explanatory copy and its layout`);
+if (moreInfoEntity !== 'schedule.charging' || !scheduleNavigationIsClean || !settingsUseTitlesOnly) ok = false;
 
 // Schedule + acceptable price enables both gates and saves the threshold.
 click('[data-action="toggle-schedule-price"]');
@@ -347,23 +356,19 @@ const selectedScheduleGlows =
   !!root.querySelector('.wizard-option-wrap.selected [data-mode="schedule"]') &&
   !!root.querySelector('.wizard-option-wrap.selected .glow-under') &&
   !root.textContent.includes('Current plan');
-const scheduleSummaryVisible =
-  (root.querySelector('[data-action="choose-force-mode"][data-mode="schedule"]')?.textContent || '')
-    .includes('Schedule + acceptable price ≤ 0.150 EUR/kWh');
 click('[data-action="toggle-charging-plan"][data-mode="schedule"]');
 await new Promise((r) => setTimeout(r, 40));
 const scheduleDisabledButRemembered =
   states['switch.schedule'].state === 'off' &&
   states['switch.schedule_price'].state === 'off' &&
-  (root.querySelector('[data-action="choose-force-mode"][data-mode="schedule"]')?.textContent || '')
-    .includes('Schedule + acceptable price ≤ 0.150 EUR/kWh · Off');
+  el._schedulePriceGate === true;
 click('[data-action="toggle-charging-plan"][data-mode="schedule"]');
 await new Promise((r) => setTimeout(r, 40));
 const scheduleReenabledWithSavedPrice =
   states['switch.schedule'].state === 'on' && states['switch.schedule_price'].state === 'on';
 console.log(`${selectedScheduleGlows ? 'PASS' : 'FAIL'}: active schedule glows without a current-plan panel`);
-console.log(`${scheduleSummaryVisible && scheduleDisabledButRemembered && scheduleReenabledWithSavedPrice ? 'PASS' : 'FAIL'}: schedule toggle preserves and restores its acceptable-price option`);
-if (!selectedScheduleGlows || !scheduleSummaryVisible || !scheduleDisabledButRemembered || !scheduleReenabledWithSavedPrice) ok = false;
+console.log(`${scheduleDisabledButRemembered && scheduleReenabledWithSavedPrice ? 'PASS' : 'FAIL'}: schedule toggle preserves and restores its acceptable-price option`);
+if (!selectedScheduleGlows || !scheduleDisabledButRemembered || !scheduleReenabledWithSavedPrice) ok = false;
 
 click('[data-action="choose-force-mode"][data-mode="schedule"]');
 await new Promise((r) => setTimeout(r, 30));
@@ -532,30 +537,26 @@ await new Promise((r) => setTimeout(r, 30));
 
 openForceWizard();
 await new Promise((r) => setTimeout(r, 30));
-const configuredForceSummary =
-  (root.querySelector('[data-action="choose-force-mode"][data-mode="now"]')?.textContent || '')
-    .includes('Timer 0:45 + Acceptable price ≤ 0.150 EUR/kWh');
+const configuredForceOptions = el._forceNowTimer === true && el._forceNowPrice === true;
 click('[data-action="toggle-charging-plan"][data-mode="now"]');
 await new Promise((r) => setTimeout(r, 40));
 const forceDisabledButRemembered =
   states['switch.schedule'].state === 'on' &&
   states['switch.force_timer'].state === 'off' &&
   states['switch.force_price'].state === 'off' &&
-  (root.querySelector('[data-action="choose-force-mode"][data-mode="now"]')?.textContent || '')
-    .includes('Timer 0:45 + Acceptable price ≤ 0.150 EUR/kWh · Off');
+  el._forceNowTimer === true &&
+  el._forceNowPrice === true;
 click('[data-action="close-force-wizard"]');
 el.setConfig(config);
 openForceWizard();
 await new Promise((r) => setTimeout(r, 30));
-const forceSummarySurvivesReload =
-  (root.querySelector('[data-action="choose-force-mode"][data-mode="now"]')?.textContent || '')
-    .includes('Timer 0:45 + Acceptable price ≤ 0.150 EUR/kWh · Off');
+const forceOptionsSurviveReload = el._forceNowTimer === true && el._forceNowPrice === true;
 click('[data-action="toggle-charging-plan"][data-mode="now"]');
 await new Promise((r) => setTimeout(r, 40));
 const forceReenabledWithSavedOptions =
   states['switch.force'].state === 'on' && states['switch.force_timer'].state === 'on' && states['switch.force_price'].state === 'on';
-console.log(`${configuredForceSummary && forceDisabledButRemembered && forceSummarySurvivesReload && forceReenabledWithSavedOptions ? 'PASS' : 'FAIL'}: force-charge toggle persists and restores timer plus acceptable-price options`);
-if (!configuredForceSummary || !forceDisabledButRemembered || !forceSummarySurvivesReload || !forceReenabledWithSavedOptions) ok = false;
+console.log(`${configuredForceOptions && forceDisabledButRemembered && forceOptionsSurviveReload && forceReenabledWithSavedOptions ? 'PASS' : 'FAIL'}: force-charge toggle persists and restores timer plus acceptable-price options`);
+if (!configuredForceOptions || !forceDisabledButRemembered || !forceOptionsSurviveReload || !forceReenabledWithSavedOptions) ok = false;
 
 // Turning off the price option leaves a timer-only plan.
 openForceWizard();
@@ -589,7 +590,7 @@ click('[data-action="toggle-charging-plan"][data-mode="now"]');
 await new Promise((r) => setTimeout(r, 40));
 const stoppedForce =
   states['switch.force'].state === 'off' &&
-  (root.querySelector('[data-action="choose-force-mode"][data-mode="now"]')?.textContent || '').includes('Unrestricted · Off');
+  root.querySelector('[data-action="toggle-charging-plan"][data-mode="now"]')?.getAttribute('aria-checked') === 'false';
 console.log(`${selectedForceChargeGlows && stoppedForce ? 'PASS' : 'FAIL'}: selected force-charge plan glows and is controlled by its tile toggle`);
 if (!selectedForceChargeGlows || !stoppedForce) ok = false;
 

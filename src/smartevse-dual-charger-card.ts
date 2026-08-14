@@ -3,7 +3,7 @@ import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { DESIGN_TOKENS_CSS } from "./shared/design-tokens";
 import { buildGlow, type PulseColors } from "./shared/glow";
 
-const CARD_VERSION = "0.0.41";
+const CARD_VERSION = "0.0.42";
 
 const ACTIVE_GLOW: PulseColors = {
   weak: "rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha))",
@@ -879,30 +879,6 @@ class SmartEVSEFlowCard extends LitElement {
     return this._config.force_charge_entity;
   }
 
-  _activeForceMode() {
-    const forceOn = this._state(this._config.force_charge_entity) === "on";
-    const timerOn = this._state(this._config.force_timer_entity) === "on";
-    const priceOn = this._state(this._config.force_price_entity) === "on";
-    if (timerOn && priceOn) {
-      return "timer_price";
-    }
-    if (timerOn) {
-      return "timer";
-    }
-    if (priceOn) {
-      return this._state(this._config.schedule_switch_entity) === "on" && !forceOn && !this._forcePlanEnabled
-        ? "schedule_price"
-        : "price";
-    }
-    if (forceOn) {
-      return "simple";
-    }
-    if (this._state(this._config.schedule_switch_entity) === "on") {
-      return "schedule";
-    }
-    return null;
-  }
-
   _openForceWizard() {
     this._settingsModalOpen = false;
     this._forceWizardOpen = true;
@@ -974,26 +950,6 @@ class SmartEVSEFlowCard extends LitElement {
       this._state(this._config.force_timer_entity) === "on" ||
       (priceOn && (!scheduleOn || this._forcePlanEnabled))
     );
-  }
-
-  _schedulePlanSummary(acceptablePrice) {
-    if (!this._schedulePriceGate) {
-      return "Schedule only";
-    }
-    const threshold = acceptablePrice !== null ? ` ≤ ${acceptablePrice.toFixed(3)} ${this._currency}` : "";
-    return `Schedule + acceptable price${threshold}`;
-  }
-
-  _forcePlanSummary(forceDuration, acceptablePrice) {
-    const options = [];
-    if (this._forceNowTimer) {
-      options.push(`Timer ${this._formatMinutes(forceDuration)}`);
-    }
-    if (this._forceNowPrice) {
-      const threshold = acceptablePrice !== null ? ` ≤ ${acceptablePrice.toFixed(3)} ${this._currency}` : "";
-      options.push(`Acceptable price${threshold}`);
-    }
-    return options.length ? options.join(" + ") : "Unrestricted";
   }
 
   async _toggleChargingPlan(mode) {
@@ -1256,7 +1212,6 @@ class SmartEVSEFlowCard extends LitElement {
           icon: "mdi:source-fork",
           label: "Charge Policy",
           value: policy,
-          detail: "Tap to edit",
           presentation: "submenu",
         })}
         ${this._settingTile({
@@ -1264,7 +1219,6 @@ class SmartEVSEFlowCard extends LitElement {
           icon: "mdi:swap-horizontal-bold",
           label: "Duty Cycle",
           value: this._formatMinutes(dutyCycleMinutes),
-          detail: "Tap to edit",
         })}
       </div>
     `;
@@ -1284,7 +1238,6 @@ class SmartEVSEFlowCard extends LitElement {
             <div>
               <div class="modal-kicker">Controls</div>
               <div class="modal-title">Policy & limits</div>
-              <div class="modal-subtitle">Configure charging priority and duty cycle.</div>
             </div>
             <button class="modal-close" data-action="close-settings" type="button">Close</button>
           </div>
@@ -1294,7 +1247,7 @@ class SmartEVSEFlowCard extends LitElement {
     `;
   }
 
-  _forceWizardNumberField(entityId, label, helper) {
+  _forceWizardNumberField(entityId, label) {
     const meta = this._editorMeta(entityId);
     if (!meta.supported || meta.kind !== "number") {
       return `<div class="wizard-error">The configured ${this._safe(label.toLowerCase())} entity is unavailable.</div>`;
@@ -1318,53 +1271,15 @@ class SmartEVSEFlowCard extends LitElement {
           />
           ${meta.unit ? `<span class="wizard-input-unit">${this._safe(meta.unit)}</span>` : ""}
         </span>
-        <span class="wizard-field-helper">${this._safe(helper)}</span>
       </label>
     `;
   }
 
-  _forceWizardModal({
-    priceValue,
-    acceptablePrice,
-    forceDuration,
-    timerLabel,
-    scheduleState,
-    scheduleNextEvent,
-    priceAccepted,
-  }) {
+  _forceWizardModal() {
     if (!this._forceWizardOpen) {
       return "";
     }
 
-    const activeMode = this._activeForceMode();
-    const activeDetail =
-      activeMode === "schedule_price"
-        ? scheduleState !== "on"
-          ? "Waiting for the schedule window"
-          : priceAccepted
-            ? "Schedule is open and price is acceptable"
-            : "Schedule is open; waiting for an acceptable price"
-        : activeMode === "schedule"
-          ? scheduleState === "on"
-            ? "Schedule window is open"
-            : `Next change ${this._formatDateTime(scheduleNextEvent)}`
-          : activeMode === "price"
-            ? priceAccepted
-              ? `Current price accepted: ${priceValue}`
-              : `Waiting for price ≤ ${
-                  acceptablePrice !== null ? `${acceptablePrice.toFixed(3)} ${this._currency}` : "threshold"
-                }`
-            : activeMode === "timer" || activeMode === "timer_price"
-              ? this._state(this._config.schedule_switch_entity) === "on"
-                ? `Remaining ${timerLabel}; scheduled charging resumes afterward`
-                : activeMode === "timer_price"
-                  ? priceAccepted
-                    ? `Charging below the price limit · ${timerLabel} remaining`
-                    : `Waiting for an acceptable price · ${timerLabel} remaining`
-                  : `Remaining ${timerLabel}`
-              : activeMode === "simple" && this._state(this._config.schedule_switch_entity) === "on"
-                ? "Scheduled charging will resume when this is turned off"
-                : "Immediate charging request";
     const busy = this._forceWizardBusy;
     const error = this._forceWizardError
       ? `<div class="wizard-error" role="alert">${this._safe(this._forceWizardError)}</div>`
@@ -1373,8 +1288,6 @@ class SmartEVSEFlowCard extends LitElement {
     if (this._forceWizardStep === "choose") {
       const scheduleEnabled = this._isSchedulePlanActive();
       const forceEnabled = this._isForcePlanActive();
-      const scheduleSummary = this._schedulePlanSummary(acceptablePrice);
-      const forceSummary = this._forcePlanSummary(forceDuration, acceptablePrice);
       const choices = [
         {
           mode: "schedule",
@@ -1384,9 +1297,6 @@ class SmartEVSEFlowCard extends LitElement {
           available: Boolean(
             this._entity(this._config.schedule_switch_entity) && this._entity(this._config.schedule_entity),
           ),
-          detail: `${scheduleSummary} · ${
-            scheduleEnabled ? (scheduleState === "on" ? "Window open" : "Waiting for window") : "Off"
-          }`,
         },
         {
           mode: "now",
@@ -1398,7 +1308,6 @@ class SmartEVSEFlowCard extends LitElement {
               this._entity(this._config.force_timer_entity) ||
               this._entity(this._config.force_price_entity),
           ),
-          detail: `${forceSummary} · ${forceEnabled ? activeDetail || "On" : "Off"}`,
         },
       ];
       return `
@@ -1408,7 +1317,6 @@ class SmartEVSEFlowCard extends LitElement {
               <div>
                 <div class="modal-kicker">Charging plan</div>
                 <div class="modal-title">How should charging run?</div>
-                <div class="modal-subtitle">Use each toggle to enable or disable a plan. Open a tile to customize its saved options.</div>
               </div>
               <button class="modal-close" data-action="close-force-wizard" type="button" ${busy ? "disabled" : ""}>Close</button>
             </div>
@@ -1430,9 +1338,6 @@ class SmartEVSEFlowCard extends LitElement {
                           <span class="wizard-option-icon"><ha-icon icon="${this._safe(choice.icon)}"></ha-icon></span>
                           <span class="wizard-option-copy">
                             <span class="wizard-option-title">${this._safe(choice.title)}</span>
-                            <span class="wizard-option-detail">${
-                              choice.available ? this._safe(choice.detail) : "Required charging entities are unavailable."
-                            }</span>
                           </span>
                           <ha-icon class="wizard-option-next" icon="mdi:chevron-right"></ha-icon>
                         </button>
@@ -1474,9 +1379,6 @@ class SmartEVSEFlowCard extends LitElement {
         this._entity(this._config.price_entity),
     );
     const title = isSchedule ? "Scheduled charging" : "Force charge";
-    const subtitle = isSchedule
-      ? "Customize the standing schedule. Use its main-menu toggle to turn it on or off."
-      : "Customize optional limits. Use the main-menu toggle to turn Force charge on or off.";
     const field = isSchedule
       ? `
           <button
@@ -1489,12 +1391,6 @@ class SmartEVSEFlowCard extends LitElement {
             <span class="wizard-option-icon"><ha-icon icon="mdi:calendar-clock"></ha-icon></span>
             <span class="wizard-option-copy">
               <span class="wizard-option-title">${this._safe(scheduleName)}</span>
-              <span class="wizard-option-detail">${
-                scheduleEntity
-                  ? `${scheduleState === "on" ? "Active now" : "Next change"}: ${this._formatDateTime(scheduleNextEvent)} · Tap to edit`
-                  : "Configured schedule entity is unavailable."
-              }</span>
-              <span class="wizard-entity-id">${this._safe(this._config.schedule_entity)}</span>
             </span>
             <ha-icon class="wizard-option-next" icon="mdi:chevron-right"></ha-icon>
           </button>
@@ -1509,7 +1405,6 @@ class SmartEVSEFlowCard extends LitElement {
             >
               <span class="wizard-toggle-copy">
                 <strong>Also require an acceptable price</strong>
-                <span>Charging starts only when both the schedule and price conditions are satisfied.</span>
               </span>
               <span class="wizard-toggle-state ${this._schedulePriceGate ? "selected" : ""}" aria-hidden="true">
                 <span class="wizard-toggle-state-thumb"></span>
@@ -1522,12 +1417,7 @@ class SmartEVSEFlowCard extends LitElement {
                     ${this._forceWizardNumberField(
                       this._config.acceptable_price_entity,
                       "Maximum acceptable price",
-                      `Current price: ${priceValue}.`,
                     )}
-                    <div class="wizard-rule">
-                      <ha-icon icon="mdi:information-outline"></ha-icon>
-                      <span>If the schedule is active but the price is too high, charging waits until the price becomes acceptable.</span>
-                    </div>
                   </div>
                 `
                 : ""
@@ -1546,7 +1436,6 @@ class SmartEVSEFlowCard extends LitElement {
             >
               <span class="wizard-toggle-copy">
                 <strong>Stop after a set time</strong>
-                <span>${timerAvailable ? `Current duration: ${this._formatMinutes(forceDuration)}.` : "Timer entities are unavailable."}</span>
               </span>
               <span class="wizard-toggle-state ${this._forceNowTimer ? "selected" : ""}" aria-hidden="true">
                 <span class="wizard-toggle-state-thumb"></span>
@@ -1557,7 +1446,6 @@ class SmartEVSEFlowCard extends LitElement {
                 ? `<div class="wizard-expansion">${this._forceWizardNumberField(
                     this._config.force_charge_duration_entity,
                     "Charging duration",
-                    "The timer starts when this plan is enabled.",
                   )}</div>`
                 : ""
             }
@@ -1573,7 +1461,6 @@ class SmartEVSEFlowCard extends LitElement {
             >
               <span class="wizard-toggle-copy">
                 <strong>Require an acceptable price</strong>
-                <span>${priceAvailable ? `Current price: ${priceValue}.` : "Price entities are unavailable."}</span>
               </span>
               <span class="wizard-toggle-state ${this._forceNowPrice ? "selected" : ""}" aria-hidden="true">
                 <span class="wizard-toggle-state-thumb"></span>
@@ -1584,9 +1471,6 @@ class SmartEVSEFlowCard extends LitElement {
                 ? `<div class="wizard-expansion">${this._forceWizardNumberField(
                     this._config.acceptable_price_entity,
                     "Maximum acceptable price",
-                    this._forceNowTimer
-                      ? "Charging stops when the timer expires and only runs while the price is acceptable."
-                      : "Charging begins whenever the price becomes acceptable.",
                   )}</div>`
                 : ""
             }
@@ -1603,7 +1487,6 @@ class SmartEVSEFlowCard extends LitElement {
             <div class="modal-copy">
               <div class="modal-kicker">Charging plan</div>
               <div class="modal-title">${this._safe(title)}</div>
-              <div class="modal-subtitle">${this._safe(subtitle)}</div>
             </div>
             <button class="modal-close" data-action="close-force-wizard" type="button" ${busy ? "disabled" : ""}>Close</button>
           </div>
@@ -1623,9 +1506,6 @@ class SmartEVSEFlowCard extends LitElement {
     const name = entity?.attributes?.friendly_name || "Setting";
     const isChargePolicy = entityId === this._config.charge_policy_entity;
     const title = isChargePolicy ? "Charge Policy" : name;
-    const subtitle = isChargePolicy
-      ? "Choose which SmartEVSE gets priority when both vehicles can charge."
-      : "Update this setting without opening the Home Assistant entity dialog.";
     const draft = this._editorDraft(entityId);
     const content =
       meta.kind === "select"
@@ -1665,7 +1545,6 @@ class SmartEVSEFlowCard extends LitElement {
             <div class="modal-copy">
               <div class="modal-kicker">Controls</div>
               <div class="modal-title">${this._safe(title)}</div>
-              <div class="modal-subtitle">${this._safe(subtitle)}</div>
             </div>
             <button class="modal-close" data-action="close-settings" type="button">Close</button>
           </div>
@@ -1675,7 +1554,7 @@ class SmartEVSEFlowCard extends LitElement {
     `;
   }
 
-  _settingTile({ entityId, icon, label, value, detail, presentation = "inline" }) {
+  _settingTile({ entityId, icon, label, value, presentation = "inline" }) {
     if (!entityId) {
       return "";
     }
@@ -1689,7 +1568,6 @@ class SmartEVSEFlowCard extends LitElement {
           <div class="setting-copy">
             <div class="setting-label">${this._safe(label)}</div>
             <div class="setting-value">${this._safe(value)}</div>
-            <div class="setting-detail">${this._safe(detail)}</div>
           </div>
         </button>
       `;
@@ -1736,7 +1614,6 @@ class SmartEVSEFlowCard extends LitElement {
         <div class="setting-copy">
           <div class="setting-label">${this._safe(label)}</div>
           <div class="setting-value">${this._safe(value)}</div>
-          <div class="setting-detail">${this._safe(detail)}</div>
           <div class="setting-editor">
             ${control}
             <div class="setting-editor-actions">
@@ -2412,11 +2289,6 @@ class SmartEVSEFlowCard extends LitElement {
           letter-spacing: var(--sdc-letter-title);
         }
 
-        .setting-detail,
-        .modal-subtitle {
-          color: var(--sdc-text-muted);
-        }
-
         .control-label,
         .setting-label {
           margin-bottom: 0;
@@ -2453,11 +2325,6 @@ class SmartEVSEFlowCard extends LitElement {
         .control-tile.state-warn .control-icon,
         .control-tile.state-warn .control-value {
           color: var(--sdc-led-error);
-        }
-
-        .setting-detail {
-          font-size: var(--sdc-font-detail);
-          line-height: 1.35;
         }
 
         .setting-editor {
@@ -2652,13 +2519,6 @@ class SmartEVSEFlowCard extends LitElement {
           color: var(--primary-text-color);
           font-size: var(--sdc-font-title);
           line-height: 1.12;
-        }
-
-        .modal-subtitle {
-          font-size: var(--sdc-font-body);
-          line-height: 1.3;
-          margin-top: 5px;
-          max-width: 300px;
         }
 
         .modal-close {
@@ -2884,14 +2744,6 @@ class SmartEVSEFlowCard extends LitElement {
           line-height: 1.2;
         }
 
-        .wizard-option-detail,
-        .wizard-toggle-copy span,
-        .wizard-field-helper {
-          color: var(--sdc-text-muted);
-          font-size: var(--sdc-font-detail);
-          line-height: 1.35;
-        }
-
         .wizard-option-next {
           color: var(--sdc-text-muted);
         }
@@ -2900,10 +2752,8 @@ class SmartEVSEFlowCard extends LitElement {
           color: var(--sdc-action-color);
         }
 
-        .wizard-schedule-entity,
-        .wizard-rule {
+        .wizard-schedule-entity {
           display: grid;
-          grid-template-columns: 36px minmax(0, 1fr);
           align-items: center;
           gap: var(--medium-gap);
           padding: var(--tile-padding);
@@ -2921,14 +2771,6 @@ class SmartEVSEFlowCard extends LitElement {
           cursor: pointer;
           font: inherit;
           text-align: left;
-        }
-
-        .wizard-entity-id {
-          color: var(--sdc-text-muted);
-          font-size: 10px;
-          line-height: 1.25;
-          opacity: 0.72;
-          overflow-wrap: anywhere;
         }
 
         .wizard-expandable {
@@ -2988,12 +2830,6 @@ class SmartEVSEFlowCard extends LitElement {
           background: transparent;
         }
 
-        .wizard-expandable .wizard-rule {
-          padding-top: 0;
-          border-radius: 0;
-          background: transparent;
-        }
-
         .wizard-toggle-state {
           position: relative;
           width: 38px;
@@ -3022,19 +2858,6 @@ class SmartEVSEFlowCard extends LitElement {
 
         .wizard-toggle-state.selected .wizard-toggle-state-thumb {
           transform: translateX(16px);
-        }
-
-        .wizard-rule {
-          grid-template-columns: 20px minmax(0, 1fr);
-          align-items: start;
-          color: var(--sdc-text-muted);
-          font-size: var(--sdc-font-detail);
-          line-height: 1.4;
-        }
-
-        .wizard-rule ha-icon {
-          --mdc-icon-size: 16px;
-          color: var(--sdc-action-color);
         }
 
         .wizard-field {
@@ -3834,15 +3657,7 @@ class SmartEVSEFlowCard extends LitElement {
             </div>
           </div>
 
-          ${this._forceWizardModal({
-            priceValue,
-            acceptablePrice,
-            forceDuration,
-            timerLabel,
-            scheduleState,
-            scheduleNextEvent,
-            priceAccepted,
-          })}
+          ${this._forceWizardModal()}
         </div>
       </ha-card>
     `;
