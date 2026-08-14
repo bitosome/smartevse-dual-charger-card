@@ -3,7 +3,7 @@ import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { DESIGN_TOKENS_CSS } from "./shared/design-tokens";
 import { buildGlow, type PulseColors } from "./shared/glow";
 
-const CARD_VERSION = "0.0.46";
+const CARD_VERSION = "0.0.47";
 
 const ACTIVE_GLOW: PulseColors = {
   weak: "rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha))",
@@ -353,7 +353,6 @@ class SmartEVSEFlowCard extends LitElement {
       "smartevse_1_mode",
       "smartevse_1_charge_current",
       "smartevse_1_max_current",
-      "smartevse_1_override_current",
       "smartevse_1_error",
       "smartevse_1_session_complete",
       "smartevse_2_connected_ev",
@@ -363,7 +362,6 @@ class SmartEVSEFlowCard extends LitElement {
       "smartevse_2_mode",
       "smartevse_2_charge_current",
       "smartevse_2_max_current",
-      "smartevse_2_override_current",
       "smartevse_2_error",
       "smartevse_2_session_complete",
     ];
@@ -629,7 +627,6 @@ class SmartEVSEFlowCard extends LitElement {
     const mode = String(attrs[`${key}_mode`] ?? "").trim();
     const chargeCurrent = Number(attrs[`${key}_charge_current`] ?? 0);
     const maxCurrent = Number(attrs[`${key}_max_current`] ?? 0);
-    const overrideCurrent = Number(attrs[`${key}_override_current`] ?? 0);
     const error = String(attrs[`${key}_error`] ?? "").trim();
     const sessionComplete = Boolean(attrs[`${key}_session_complete`]);
     const active = attrs.active_smartevse_raw === key;
@@ -666,7 +663,6 @@ class SmartEVSEFlowCard extends LitElement {
       battery,
       chargeCurrent: Number.isFinite(chargeCurrent) ? chargeCurrent : 0,
       maxCurrent: Number.isFinite(maxCurrent) ? maxCurrent : 0,
-      overrideCurrent: Number.isFinite(overrideCurrent) ? overrideCurrent : 0,
       error,
       hasError,
       sessionComplete,
@@ -1716,21 +1712,19 @@ class SmartEVSEFlowCard extends LitElement {
   }
 
   _evNode(ev) {
-    const metaPills = [
-      `
-        <span class="ev-pill">
-          <span class="ev-pill-label">State</span>
-          <span class="ev-pill-value">${this._safe(ev.state)}</span>
-        </span>
-      `,
-      `
-        <span class="ev-pill">
-          <span class="ev-pill-label">Mode</span>
-          <span class="ev-pill-value">${this._safe(ev.mode)}</span>
-        </span>
-      `,
+    const stateTone = ev.hasError ? "error" : ev.isCharging ? "success" : ev.active ? "active" : "neutral";
+    const modeTone = String(ev.mode).toLowerCase() === "smart" ? "active" : "neutral";
+    const offerTone = ev.chargeCurrent > 0.1 ? "success" : "neutral";
+    const detailPills = [
+      { label: `State · ${ev.state}`, tone: stateTone },
+      { label: `Mode · ${ev.mode}`, tone: modeTone },
+      { label: `Offer · ${this._formatCurrent(ev.chargeCurrent)}`, tone: offerTone },
+      { label: `Max · ${this._formatCurrent(ev.maxCurrent)}`, tone: "neutral" },
     ]
-      .filter(Boolean)
+      .map(
+        (pill) =>
+          `<span class="status-pill ev-status-pill tone-${this._safe(pill.tone)}">${this._safe(pill.label)}</span>`,
+      )
       .join("");
     const smartevseTitle = ev.smartevseName || (ev.key === "smartevse_1" ? "SmartEVSE 1" : "SmartEVSE 2");
     const vehicleTitle =
@@ -1776,21 +1770,7 @@ class SmartEVSEFlowCard extends LitElement {
                 <div class="ev-label-text">${this._safe(smartevseTitle)}</div>
               </div>
             </div>
-            <div class="ev-meta-pills">${metaPills}</div>
-            <div class="ev-measure-pills">
-              <span class="ev-pill measure-pill">
-                <span class="ev-pill-label">Offer</span>
-                <span class="ev-pill-value">${this._safe(this._formatCurrent(ev.chargeCurrent))}</span>
-              </span>
-              <span class="ev-pill measure-pill">
-                <span class="ev-pill-label">Max</span>
-                <span class="ev-pill-value">${this._safe(this._formatCurrent(ev.maxCurrent))}</span>
-              </span>
-              <span class="ev-pill measure-pill">
-                <span class="ev-pill-label">Override</span>
-                <span class="ev-pill-value">${this._safe(this._formatCurrent(ev.overrideCurrent))}</span>
-              </span>
-            </div>
+            <div class="ev-status-pills">${detailPills}</div>
           </section>
         </div>
         ${vehicleNode}
@@ -3382,70 +3362,11 @@ class SmartEVSEFlowCard extends LitElement {
           white-space: nowrap;
         }
 
-        .ev-meta-pills {
-          display: grid;
-          grid-template-columns: 1fr;
-          gap: var(--medium-gap);
-          margin-bottom: var(--medium-gap);
-        }
-
-        .ev-meta-pills .ev-pill:first-child {
-          border-radius: var(--chip-border-radius);
-          background: var(--chip-background-color);
-        }
-
-        .ev-meta-pills .ev-pill:first-child .ev-pill-value {
-          font-size: var(--sdc-font-value);
-          font-weight: var(--sdc-weight-strong);
-          letter-spacing: var(--sdc-letter-title);
-        }
-
-        .ev-pill {
-          position: relative;
-          display: grid;
-          place-items: center;
-          min-width: 0;
-          min-height: 25px;
-          padding: 8px 6px 3px;
-          border-radius: var(--chip-border-radius);
-          background: var(--chip-background-color);
-          border: 0;
-          text-align: center;
-        }
-
-        .ev-pill-accent {
-          background: rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha));
-        }
-
-        .ev-pill-label {
-          position: absolute;
-          top: 3px;
-          left: 6px;
-          font-size: var(--sdc-font-tiny);
-          letter-spacing: var(--sdc-letter-label);
-          text-transform: uppercase;
-          color: var(--sdc-text-muted);
-          line-height: 1;
-        }
-
-        .ev-pill-value {
+        .ev-status-pills {
           display: flex;
-          align-items: center;
-          justify-content: center;
-          width: 100%;
-          min-height: 12px;
-          font-size: var(--sdc-font-button);
-          font-weight: var(--sdc-weight-medium);
+          flex-wrap: wrap;
+          gap: 4px;
           min-width: 0;
-          text-align: center;
-          overflow-wrap: anywhere;
-          line-height: 1.2;
-        }
-
-        .ev-measure-pills {
-          display: grid;
-          grid-template-columns: 1fr;
-          gap: var(--medium-gap);
         }
 
         .vehicle-node {

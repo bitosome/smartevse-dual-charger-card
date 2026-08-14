@@ -151,6 +151,19 @@ const checks = {
     root.querySelector('ha-card')?.getAttribute('style')?.includes('--sdc-led-charging-rgb: 44, 199, 88;') &&
     root.querySelector('.status-glow')?.getAttribute('style')?.includes('var(--sdc-led-idle-glow-duration)') &&
     root.querySelector('.ev-node-wrap')?.getAttribute('style')?.includes('--node-rgb: 23, 67, 101;'),
+  'SmartEVSE nodes use compact pills without override': (() => {
+    const nodes = [...root.querySelectorAll('.ev-node')];
+    return nodes.length === 2 && nodes.every((node) => {
+      const details = [...node.querySelectorAll('.ev-status-pill')].map((pill) => pill.textContent.trim());
+      return details.length === 4 &&
+        details.some((detail) => detail.startsWith('State · ')) &&
+        details.some((detail) => detail.startsWith('Mode · ')) &&
+        details.some((detail) => detail.startsWith('Offer · ')) &&
+        details.some((detail) => detail.startsWith('Max · ')) &&
+        !details.some((detail) => detail.startsWith('Override · ')) &&
+        !node.querySelector('.ev-pill');
+    });
+  })(),
 };
 let ok = true;
 for (const [name, pass] of Object.entries(checks)) {
