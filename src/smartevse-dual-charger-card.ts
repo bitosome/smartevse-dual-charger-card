@@ -3,7 +3,7 @@ import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { DESIGN_TOKENS_CSS } from "./shared/design-tokens";
 import { buildGlow, type PulseColors } from "./shared/glow";
 
-const CARD_VERSION = "0.0.40";
+const CARD_VERSION = "0.0.41";
 
 const ACTIVE_GLOW: PulseColors = {
   weak: "rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha))",
@@ -3321,11 +3321,7 @@ class SmartEVSEFlowCard extends LitElement {
         }
 
         .status-pill-group-items {
-          display: flex;
-          flex: 1 1 180px;
-          flex-wrap: wrap;
-          gap: 4px;
-          min-width: 0;
+          display: contents;
         }
 
         .status-runtime-pills {
@@ -3334,11 +3330,6 @@ class SmartEVSEFlowCard extends LitElement {
           gap: 4px;
           width: 100%;
           min-width: 0;
-        }
-
-        .status-pill-group-items .status-pill,
-        .status-runtime-pills .status-pill {
-          flex: 1 1 auto;
         }
 
         .status-pill,
@@ -3363,7 +3354,7 @@ class SmartEVSEFlowCard extends LitElement {
         }
 
         .status-pill-group-label {
-          flex: 1 1 auto;
+          flex: 0 0 auto;
           font-weight: 700;
         }
 
@@ -3801,12 +3792,6 @@ class SmartEVSEFlowCard extends LitElement {
           }
         }
 
-        @container smartevse-card (max-width: 480px) {
-          .status-pill-group-items {
-            flex-basis: 100%;
-            width: 100%;
-          }
-        }
       </style>
 
       <ha-card style="${this._safe(wledStyleVars)}">

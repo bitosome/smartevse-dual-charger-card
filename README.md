@@ -2,7 +2,7 @@
 
 Standalone Lovelace card for the SmartEVSE Dual Charger Home Assistant integration.
 
-Version: `0.0.40`
+Version: `0.0.41`
 
 This repository contains only the frontend card and local preview assets.
 
@@ -107,7 +107,7 @@ The card also expects the related control entities configured in `card_flow.yaml
 - The live duty-cycle countdown appears in the hero while a charger is active, and an enabled Force timer shows its live remaining time there instead of only its configured duration.
 - When Schedule and Force charge are both enabled, the hero identifies the active Force plan first and reports the controller's actual gating reason; Schedule remains enabled underneath.
 - Hero pills are a settings summary grouped as Use schedule first and Force charge second; ON/OFF is included directly in each group's primary pill.
-- Hero pill rows use the tile's full inner width, while preserving its standard padding.
+- Hero pills remain compact and use all available tile width before wrapping, while preserving the standard inner padding.
 - Schedule and Force charge groups are separated with spacing and a subtle divider, without an additional background container behind the pills.
 - When Use schedule is ON, its group shows the next charge time, or both the active-now state and window end time, plus its acceptable-price limit only when that option exists and is enabled.
 - When Force charge is ON, its group shows the live timer countdown and acceptable-price limit only when those options exist and are enabled.
