@@ -159,6 +159,8 @@ const checks = {
       return labels.join('|') === 'State|Mode|Offer|Max' &&
         values.length === 4 &&
         values.every((value) => !value.includes(' · ')) &&
+        (root.querySelector('style')?.textContent || '').includes('justify-self: stretch') &&
+        (root.querySelector('style')?.textContent || '').includes('width: 100%') &&
         !node.textContent.includes('Override') &&
         !node.querySelector('.ev-pill');
     });
