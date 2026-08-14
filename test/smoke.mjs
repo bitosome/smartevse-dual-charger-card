@@ -485,10 +485,13 @@ await new Promise((r) => setTimeout(r, 30));
 const timerPriceCallStart = calls.length;
 click('[data-action="toggle-force-now-timer"]');
 await new Promise((r) => setTimeout(r, 50));
-const durationInput = root.querySelector('.force-input[data-entity="number.duration"]');
+const durationHoursInput = root.querySelector('.force-duration-input[data-entity="number.duration"][data-duration-part="hours"]');
+const durationMinutesInput = root.querySelector('.force-duration-input[data-entity="number.duration"][data-duration-part="minutes"]');
 const timerPriceInput = root.querySelector('.force-input[data-entity="number.price"]');
 const timerExpandsInline =
-  !!durationInput?.closest('.wizard-expandable')?.querySelector('[data-action="toggle-force-now-timer"]');
+  durationHoursInput?.value === '1' &&
+  durationMinutesInput?.value === '0' &&
+  !!durationHoursInput?.closest('.wizard-expandable')?.querySelector('[data-action="toggle-force-now-timer"]');
 const priceExpandsInline =
   !!timerPriceInput?.closest('.wizard-expandable')?.querySelector('[data-action="toggle-force-now-price"]');
 const forceNowUsesSwitches =
@@ -499,14 +502,16 @@ const forceNowUsesSwitches =
 console.log(`${timerExpandsInline && priceExpandsInline ? 'PASS' : 'FAIL'}: force-charge fields expand inside their option tiles`);
 console.log(`${forceNowUsesSwitches ? 'PASS' : 'FAIL'}: Force charge submenu uses switches instead of tick indicators`);
 if (!timerExpandsInline || !priceExpandsInline || !forceNowUsesSwitches) ok = false;
-if (durationInput) {
-  durationInput.value = '45';
-  durationInput.dispatchEvent(new win.Event('input', { bubbles: true, composed: true }));
-  durationInput.dispatchEvent(new win.Event('change', { bubbles: true, composed: true }));
+if (durationHoursInput && durationMinutesInput) {
+  durationHoursInput.value = '1';
+  durationMinutesInput.value = '45';
+  durationHoursInput.dispatchEvent(new win.Event('input', { bubbles: true, composed: true }));
+  durationMinutesInput.dispatchEvent(new win.Event('input', { bubbles: true, composed: true }));
+  durationMinutesInput.dispatchEvent(new win.Event('change', { bubbles: true, composed: true }));
 }
 await new Promise((r) => setTimeout(r, 50));
 const timerPriceCalls = calls.slice(timerPriceCallStart);
-const savedDuration = timerPriceCalls.some((c) => c[0] === 'number' && c[1] === 'set_value' && c[2].entity_id === 'number.duration' && c[2].value === 45);
+const savedDuration = timerPriceCalls.some((c) => c[0] === 'number' && c[1] === 'set_value' && c[2].entity_id === 'number.duration' && c[2].value === 105);
 const savedTimerPrice = timerPriceCalls.some((c) => c[0] === 'number' && c[1] === 'set_value' && c[2].entity_id === 'number.price');
 const timerAndPriceOn = states['switch.force'].state === 'on' && states['switch.force_timer'].state === 'on' && states['switch.force_price'].state === 'on';
 const orderedHeroGroups = [...root.querySelectorAll('.status-pill-group')];

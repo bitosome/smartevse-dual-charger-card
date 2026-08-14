@@ -3,7 +3,7 @@ import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { DESIGN_TOKENS_CSS } from "./shared/design-tokens";
 import { buildGlow, type PulseColors } from "./shared/glow";
 
-const CARD_VERSION = "0.0.44";
+const CARD_VERSION = "0.0.45";
 
 const ACTIVE_GLOW: PulseColors = {
   weak: "rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha))",
@@ -801,6 +801,37 @@ class SmartEVSEFlowCard extends LitElement {
     this._editorDrafts[entityId] = value;
   }
 
+  _durationMinutesFromInput(input) {
+    const container = input?.closest?.(".wizard-duration-inputs");
+    const hoursInput = container?.querySelector?.('[data-duration-part="hours"]');
+    const minutesInput = container?.querySelector?.('[data-duration-part="minutes"]');
+    const hours = Number.parseInt(hoursInput?.value ?? "", 10);
+    const minutes = Number.parseInt(minutesInput?.value ?? "", 10);
+    if (!Number.isFinite(hours) || !Number.isFinite(minutes) || hours < 0 || minutes < 0 || minutes > 59) {
+      return null;
+    }
+    return hours * 60 + minutes;
+  }
+
+  _updateForceDurationDraft(input) {
+    const entityId = input?.dataset?.entity;
+    const totalMinutes = this._durationMinutesFromInput(input);
+    if (!entityId || totalMinutes === null) {
+      return false;
+    }
+    this._updateEditorDraft(entityId, String(totalMinutes));
+    return true;
+  }
+
+  async _saveForceDurationInput(input) {
+    if (!this._updateForceDurationDraft(input)) {
+      this._forceWizardError = "Enter valid hours and minutes between 0 and 59.";
+      this._render();
+      return;
+    }
+    await this._saveForceWizardNumber(input.dataset.entity);
+  }
+
   async _saveEditor(entityId) {
     const meta = this._editorMeta(entityId);
     if (!meta.supported) {
@@ -1275,6 +1306,62 @@ class SmartEVSEFlowCard extends LitElement {
     `;
   }
 
+  _forceDurationField(entityId) {
+    const meta = this._editorMeta(entityId);
+    if (!meta.supported || meta.kind !== "number") {
+      return `<div class="wizard-error">The configured charging duration entity is unavailable.</div>`;
+    }
+    const rawMinutes = Number.parseFloat(this._editorDraft(entityId));
+    const totalMinutes = Number.isFinite(rawMinutes) ? Math.max(0, Math.round(rawMinutes)) : 0;
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    const maximumHours = meta.max !== null ? `max="${this._safe(Math.floor(meta.max / 60))}"` : "";
+    const minuteStep = Number.isFinite(Number(meta.step)) && Number(meta.step) > 0 && Number(meta.step) < 60
+      ? Number(meta.step)
+      : 1;
+    return `
+      <div class="wizard-field wizard-duration-field">
+        <span class="wizard-field-label">Charging duration</span>
+        <div class="wizard-duration-inputs">
+          <label class="wizard-duration-part">
+            <span class="wizard-duration-part-label">Hours</span>
+            <span class="wizard-input-wrap">
+              <input
+                class="setting-input force-input force-duration-input"
+                data-entity="${this._safe(entityId)}"
+                data-duration-part="hours"
+                type="number"
+                inputmode="numeric"
+                min="0"
+                ${maximumHours}
+                step="1"
+                value="${this._safe(hours)}"
+              />
+              <span class="wizard-input-unit">h</span>
+            </span>
+          </label>
+          <label class="wizard-duration-part">
+            <span class="wizard-duration-part-label">Minutes</span>
+            <span class="wizard-input-wrap">
+              <input
+                class="setting-input force-input force-duration-input"
+                data-entity="${this._safe(entityId)}"
+                data-duration-part="minutes"
+                type="number"
+                inputmode="numeric"
+                min="0"
+                max="59"
+                step="${this._safe(minuteStep)}"
+                value="${this._safe(minutes)}"
+              />
+              <span class="wizard-input-unit">min</span>
+            </span>
+          </label>
+        </div>
+      </div>
+    `;
+  }
+
   _forceWizardModal() {
     if (!this._forceWizardOpen) {
       return "";
@@ -1445,9 +1532,8 @@ class SmartEVSEFlowCard extends LitElement {
             </button>
             ${
               this._forceNowTimer
-                ? `<div class="wizard-expansion">${this._forceWizardNumberField(
+                ? `<div class="wizard-expansion">${this._forceDurationField(
                     this._config.force_charge_duration_entity,
-                    "Charging duration",
                   )}</div>`
                 : ""
             }
@@ -2881,6 +2967,28 @@ class SmartEVSEFlowCard extends LitElement {
           gap: var(--medium-gap);
         }
 
+        .wizard-duration-inputs {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: var(--medium-gap);
+          min-width: 0;
+        }
+
+        .wizard-duration-part {
+          display: grid;
+          gap: var(--small-gap);
+          min-width: 0;
+        }
+
+        .wizard-duration-part-label {
+          color: var(--sdc-text-muted);
+          font-size: var(--sdc-font-label);
+          font-weight: var(--sdc-weight-strong);
+          letter-spacing: var(--sdc-letter-label);
+          line-height: 1;
+          text-transform: uppercase;
+        }
+
         .wizard-input-unit {
           color: var(--sdc-text-muted);
           font-size: var(--sdc-font-body);
@@ -3786,6 +3894,10 @@ class SmartEVSEFlowCard extends LitElement {
       if (!element) {
         return;
       }
+      if (element.classList.contains("force-duration-input")) {
+        this._updateForceDurationDraft(element);
+        return;
+      }
       this._updateEditorDraft(element.dataset.entity, element.value);
     });
 
@@ -3794,6 +3906,10 @@ class SmartEVSEFlowCard extends LitElement {
         ".force-input[data-entity]",
       );
       if (input) {
+        if (input.classList.contains("force-duration-input")) {
+          await this._saveForceDurationInput(input);
+          return;
+        }
         this._updateEditorDraft(input.dataset.entity, input.value);
         await this._saveForceWizardNumber(input.dataset.entity);
         return;
@@ -3816,7 +3932,11 @@ class SmartEVSEFlowCard extends LitElement {
       if (element.classList.contains("force-input")) {
         if ((event as KeyboardEvent).key === "Enter") {
           event.preventDefault();
-          await this._saveForceWizardNumber(entityId);
+          if (element.classList.contains("force-duration-input")) {
+            await this._saveForceDurationInput(element as HTMLInputElement);
+          } else {
+            await this._saveForceWizardNumber(entityId);
+          }
         }
         if ((event as KeyboardEvent).key === "Escape") {
           event.preventDefault();
