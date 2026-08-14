@@ -277,10 +277,14 @@ const settingsUseTitlesOnly =
   !root.querySelector('.wizard-field-helper') &&
   !root.querySelector('.wizard-rule') &&
   !root.querySelector('.setting-detail');
+const settingsTilesShareOneHeight =
+  (root.querySelector('style')?.textContent || '').includes('--wizard-tile-height: 64px') &&
+  (root.querySelector('style')?.textContent || '').includes('min-height: var(--wizard-tile-height)');
 console.log(`${moreInfoEntity === 'schedule.charging' ? 'PASS' : 'FAIL'}: schedule entity opens Home Assistant more-info`);
 console.log(`${scheduleNavigationIsClean ? 'PASS' : 'FAIL'}: wizard pages use only the top back arrow`);
 console.log(`${settingsUseTitlesOnly ? 'PASS' : 'FAIL'}: settings dialogs omit explanatory copy and its layout`);
-if (moreInfoEntity !== 'schedule.charging' || !scheduleNavigationIsClean || !settingsUseTitlesOnly) ok = false;
+console.log(`${settingsTilesShareOneHeight ? 'PASS' : 'FAIL'}: charging-plan and submenu tile headers share one height`);
+if (moreInfoEntity !== 'schedule.charging' || !scheduleNavigationIsClean || !settingsUseTitlesOnly || !settingsTilesShareOneHeight) ok = false;
 
 // Schedule + acceptable price enables both gates and saves the threshold.
 click('[data-action="toggle-schedule-price"]');

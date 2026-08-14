@@ -3,7 +3,7 @@ import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { DESIGN_TOKENS_CSS } from "./shared/design-tokens";
 import { buildGlow, type PulseColors } from "./shared/glow";
 
-const CARD_VERSION = "0.0.42";
+const CARD_VERSION = "0.0.43";
 
 const ACTIVE_GLOW: PulseColors = {
   weak: "rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha))",
@@ -2605,6 +2605,7 @@ class SmartEVSEFlowCard extends LitElement {
         }
 
         .force-wizard-panel {
+          --wizard-tile-height: 64px;
           width: min(430px, calc(100vw - 32px));
         }
 
@@ -2631,7 +2632,7 @@ class SmartEVSEFlowCard extends LitElement {
           display: grid;
           grid-template-columns: minmax(0, 1fr) auto;
           align-items: center;
-          min-height: 64px;
+          min-height: var(--wizard-tile-height);
           width: 100%;
           border: 0;
           border-radius: var(--tile-border-radius);
@@ -2650,7 +2651,7 @@ class SmartEVSEFlowCard extends LitElement {
           align-items: center;
           gap: var(--medium-gap);
           min-width: 0;
-          min-height: 64px;
+          min-height: var(--wizard-tile-height);
           padding: var(--tile-padding);
           border: 0;
           background: transparent;
@@ -2765,6 +2766,7 @@ class SmartEVSEFlowCard extends LitElement {
           appearance: none;
           grid-template-columns: 36px minmax(0, 1fr) 18px;
           width: 100%;
+          min-height: var(--wizard-tile-height);
           border: 0;
           box-shadow: var(--tile-shadow-default);
           color: var(--primary-text-color);
@@ -2794,6 +2796,7 @@ class SmartEVSEFlowCard extends LitElement {
           align-items: center;
           gap: var(--medium-gap);
           width: 100%;
+          min-height: var(--wizard-tile-height);
           padding: var(--tile-padding);
           border: 0;
           border-radius: var(--tile-border-radius);
