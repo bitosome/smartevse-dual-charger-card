@@ -3,7 +3,7 @@ import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { DESIGN_TOKENS_CSS } from "./shared/design-tokens";
 import { buildGlow, type PulseColors } from "./shared/glow";
 
-const CARD_VERSION = "0.0.45";
+const CARD_VERSION = "0.0.46";
 
 const ACTIVE_GLOW: PulseColors = {
   weak: "rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha))",
@@ -3202,36 +3202,14 @@ class SmartEVSEFlowCard extends LitElement {
           position: relative;
           display: grid;
           align-content: start;
-          gap: 5px;
+          gap: var(--tile-padding);
           min-width: 0;
         }
 
         .status-title {
-          padding-right: calc(30px + var(--medium-gap));
           font-size: 16px;
           line-height: 1.18;
           overflow-wrap: anywhere;
-        }
-
-        .status-action {
-          position: absolute;
-          top: 10px;
-          right: 10px;
-          display: grid;
-          place-items: center;
-          width: 30px;
-          height: 30px;
-          border-radius: var(--chip-border-radius);
-          border: 0;
-          background: var(--chip-background-color);
-          color: var(--sdc-text-muted);
-        }
-
-        .status-action ha-icon {
-          --mdc-icon-size: 16px;
-          display: inline-grid;
-          width: 16px;
-          height: 16px;
         }
 
         .status-pills,
@@ -3748,9 +3726,6 @@ class SmartEVSEFlowCard extends LitElement {
                   <div class="status-copy">
                     <div class="status-title">${this._safe(activeTitle)}</div>
                     <div class="status-pills status-pill-groups">${heroRuntimePillsMarkup}${heroPillsMarkup}</div>
-                  </div>
-                  <div class="status-action">
-                    <ha-icon icon="mdi:ev-station"></ha-icon>
                   </div>
                 </button>
               </div>

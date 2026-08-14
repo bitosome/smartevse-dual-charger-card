@@ -192,6 +192,10 @@ const groupsHaveNoVisualContainer =
   !(root.querySelector('style')?.textContent || '').includes(
     'background: color-mix(in srgb, var(--sdc-text-muted) 7%, transparent)',
   );
+const heroTitleSpacingIsClean =
+  (root.querySelector('style')?.textContent || '').includes('gap: var(--tile-padding)') &&
+  !root.querySelector('.status-action') &&
+  !root.querySelector('.status-hero ha-icon[icon="mdi:ev-station"]');
 const pillGroupsStayCompactAndSeparate =
   (root.querySelector('style')?.textContent || '').includes('padding: 10px var(--tile-padding-large)') &&
   (root.querySelector('style')?.textContent || '').includes('.status-pill-group + .status-pill-group') &&
@@ -203,8 +207,9 @@ console.log(`${dutyCountdownIsVisible ? 'PASS' : 'FAIL'}: active charging shows 
 console.log(`${mobilePillsDoNotWrapPrematurely ? 'PASS' : 'FAIL'}: mobile pills use the available row before wrapping`);
 console.log(`${settingsSummaryLivesOnlyInHero ? 'PASS' : 'FAIL'}: available Schedule and Force groups always show OFF without connector-line badges`);
 console.log(`${groupsHaveNoVisualContainer ? 'PASS' : 'FAIL'}: pill groups use spacing without a background container`);
+console.log(`${heroTitleSpacingIsClean ? 'PASS' : 'FAIL'}: hero title has standard spacing and no redundant corner icon`);
 console.log(`${pillGroupsStayCompactAndSeparate ? 'PASS' : 'FAIL'}: hero pills stay compact while groups use a divider`);
-if (!physicalFlowAnimates || !dutyCountdownIsVisible || !mobilePillsDoNotWrapPrematurely || !settingsSummaryLivesOnlyInHero || !groupsHaveNoVisualContainer || !pillGroupsStayCompactAndSeparate) ok = false;
+if (!physicalFlowAnimates || !dutyCountdownIsVisible || !mobilePillsDoNotWrapPrematurely || !settingsSummaryLivesOnlyInHero || !groupsHaveNoVisualContainer || !heroTitleSpacingIsClean || !pillGroupsStayCompactAndSeparate) ok = false;
 controllerAttrs.charge_allowed = originalFlowState.chargeAllowed;
 controllerAttrs.active_smartevse_raw = originalFlowState.activeRaw;
 controllerAttrs.smartevse_1_state = originalFlowState.state;
