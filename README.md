@@ -104,12 +104,12 @@ The card also expects the related control entities configured in `card_flow.yaml
 - Submenu options use the same switch language as the main menu instead of tick indicators.
 - Timer duration and acceptable price are configured directly on the Force charge page.
 - Use the toggle on each main-menu tile to enable or disable that plan.
-- Duty-cycle and Force timer countdowns appear in the hero tile without duplicate badges on the connector lines.
+- The live duty-cycle countdown appears in the hero while a charger is active, and an enabled Force timer shows its live remaining time there instead of only its configured duration.
 - When Schedule and Force charge are both enabled, the hero identifies the active Force plan first and reports the controller's actual gating reason; Schedule remains enabled underneath.
 - Hero pills are a settings summary grouped as Use schedule first and Force charge second; ON/OFF is included directly in each group's primary pill.
 - Pill groups use spacing only, without an additional background container behind the pills.
-- When Use schedule is ON, its group shows the next charge time (or active-now state) and its acceptable-price limit only when that option exists and is enabled.
-- When Force charge is ON, its group shows configured timer and acceptable-price limits only when those options exist and are enabled.
+- When Use schedule is ON, its group shows the next charge time, or both the active-now state and window end time, plus its acceptable-price limit only when that option exists and is enabled.
+- When Force charge is ON, its group shows the live timer countdown and acceptable-price limit only when those options exist and are enabled.
 - Enabled acceptable-price pills use the same live state in both groups: green when the current price meets the limit, gray while it does not or the price is unavailable.
 - In a combined Force timer + acceptable-price plan, the timer pill is gray while price blocks charging and active when the price condition is met.
 - The hero title uses the controller's reported blocking reason, including `Force charge waiting for acceptable price`, so the cause is explicit at a glance.

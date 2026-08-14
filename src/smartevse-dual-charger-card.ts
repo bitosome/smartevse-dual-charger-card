@@ -3,7 +3,7 @@ import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { DESIGN_TOKENS_CSS } from "./shared/design-tokens";
 import { buildGlow, type PulseColors } from "./shared/glow";
 
-const CARD_VERSION = "0.0.38";
+const CARD_VERSION = "0.0.39";
 
 const ACTIVE_GLOW: PulseColors = {
   weak: "rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha))",
@@ -1871,6 +1871,7 @@ class SmartEVSEFlowCard extends LitElement {
         ? this._editorDrafts[this._config.charge_policy_entity]
         : null;
     const policy = this._displayState(this._config.charge_policy_entity, policyDraft ?? rawPolicy);
+    const dutyLabel = this._formatSeconds(this._state(this._config.duty_remaining_entity));
     const timerLabel = this._formatSeconds(this._state(this._config.timer_remaining_entity));
     const scheduleState = this._state(this._config.schedule_entity);
     const scheduleSwitchOn = this._state(this._config.schedule_switch_entity) === "on";
@@ -1982,7 +1983,7 @@ class SmartEVSEFlowCard extends LitElement {
     const scheduleTimingPill = (() => {
       const nextEvent = this._formatDateTime(scheduleNextEvent);
       if (scheduleState === "on") {
-        return "Schedule · active now";
+        return nextEvent === "n/a" ? "Schedule · active now · end unavailable" : `Schedule · active now · ends ${nextEvent}`;
       }
       return nextEvent === "n/a" ? "Schedule · next charge unavailable" : `Schedule · next charge ${nextEvent}`;
     })();
@@ -2007,6 +2008,9 @@ class SmartEVSEFlowCard extends LitElement {
         this._entity(this._config.acceptable_price_entity) &&
         this._entity(this._config.price_entity),
     );
+    const heroRuntimePills = activeRaw && dutyLabel !== "n/a"
+      ? [{ label: `Duty cycle · ${dutyLabel} left`, tone: "neutral" }]
+      : [];
 
     if (scheduleControlAvailable) {
       ensureHeroPillGroup(
@@ -2053,12 +2057,13 @@ class SmartEVSEFlowCard extends LitElement {
     }
     if (forceControlAvailable && forcePlanActive) {
       if (forceTimerAvailable && forceTimerOn) {
+        const timerValue = timerLabel !== "n/a" ? `${timerLabel} left` : this._formatMinutes(forceDuration);
         addHeroPill(
           "force-charge",
           "Force charge",
           "active",
           20,
-          `Timer · ${this._formatMinutes(forceDuration)}`,
+          `Timer · ${timerValue}`,
           forcePriceOn && !priceAccepted ? "neutral" : "active",
           20,
         );
@@ -2094,6 +2099,16 @@ class SmartEVSEFlowCard extends LitElement {
         `,
       )
       .join("");
+    const heroRuntimePillsMarkup = heroRuntimePills.length
+      ? `<div class="status-runtime-pills">
+          ${heroRuntimePills
+            .map(
+              (pill) =>
+                `<span class="status-pill status-runtime-pill tone-${this._safe(pill.tone)}">${this._safe(pill.label)}</span>`,
+            )
+            .join("")}
+        </div>`
+      : "";
     const heroGlowColors: PulseColors | undefined =
       heroVisual === "charging"
         ? {
@@ -3304,6 +3319,13 @@ class SmartEVSEFlowCard extends LitElement {
           min-width: 0;
         }
 
+        .status-runtime-pills {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 4px;
+          min-width: 0;
+        }
+
         .status-pill,
         .status-pill-group-label {
           --status-pill-color: var(--sdc-text-muted);
@@ -3763,6 +3785,13 @@ class SmartEVSEFlowCard extends LitElement {
             grid-template-columns: 1fr;
           }
         }
+
+        @container smartevse-card (max-width: 480px) {
+          .status-pill-group-items {
+            flex-basis: 100%;
+            width: 100%;
+          }
+        }
       </style>
 
       <ha-card style="${this._safe(wledStyleVars)}">
@@ -3781,7 +3810,7 @@ class SmartEVSEFlowCard extends LitElement {
                 >
                   <div class="status-copy">
                     <div class="status-title">${this._safe(activeTitle)}</div>
-                    <div class="status-pills status-pill-groups">${heroPillsMarkup}</div>
+                    <div class="status-pills status-pill-groups">${heroRuntimePillsMarkup}${heroPillsMarkup}</div>
                   </div>
                   <div class="status-action">
                     <ha-icon icon="mdi:ev-station"></ha-icon>

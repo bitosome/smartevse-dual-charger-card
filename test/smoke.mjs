@@ -175,6 +175,11 @@ await new Promise((r) => setTimeout(r, 30));
 const physicalFlowAnimates =
   !!root.querySelector('.flow-svg .pipe-active.tone-charging') &&
   (root.querySelector('style')?.textContent || '').includes('animation: dash 1.8s linear infinite');
+const dutyCountdownIsVisible =
+  root.querySelector('.status-runtime-pill')?.textContent.trim() === 'Duty cycle · 10m 00s left';
+const mobilePillDetailsWrapBelowTheirGroup =
+  (root.querySelector('style')?.textContent || '').includes('@container smartevse-card (max-width: 480px)') &&
+  (root.querySelector('style')?.textContent || '').includes('flex-basis: 100%');
 const initialPlanGroups = [...root.querySelectorAll('.status-pill-group')];
 const settingsSummaryLivesOnlyInHero =
   initialPlanGroups[0]?.querySelector('.status-pill-group-label')?.textContent.trim() === 'Use schedule · OFF' &&
@@ -189,9 +194,11 @@ const groupsHaveNoVisualContainer =
     'background: color-mix(in srgb, var(--sdc-text-muted) 7%, transparent)',
   );
 console.log(`${physicalFlowAnimates ? 'PASS' : 'FAIL'}: physical charging current animates its connector independently of charge_allowed`);
+console.log(`${dutyCountdownIsVisible ? 'PASS' : 'FAIL'}: active charging shows the live duty-cycle countdown in the hero`);
+console.log(`${mobilePillDetailsWrapBelowTheirGroup ? 'PASS' : 'FAIL'}: mobile plan details wrap below their primary pill`);
 console.log(`${settingsSummaryLivesOnlyInHero ? 'PASS' : 'FAIL'}: available Schedule and Force groups always show OFF without connector-line badges`);
 console.log(`${groupsHaveNoVisualContainer ? 'PASS' : 'FAIL'}: pill groups use spacing without a background container`);
-if (!physicalFlowAnimates || !settingsSummaryLivesOnlyInHero || !groupsHaveNoVisualContainer) ok = false;
+if (!physicalFlowAnimates || !dutyCountdownIsVisible || !mobilePillDetailsWrapBelowTheirGroup || !settingsSummaryLivesOnlyInHero || !groupsHaveNoVisualContainer) ok = false;
 controllerAttrs.charge_allowed = originalFlowState.chargeAllowed;
 controllerAttrs.active_smartevse_raw = originalFlowState.activeRaw;
 controllerAttrs.smartevse_1_state = originalFlowState.state;
@@ -311,6 +318,22 @@ const heroShowsCombinedPlan =
   !heroPlanDetails.some((detail) => detail.startsWith('Waiting for'));
 console.log(`${heroShowsCombinedPlan ? 'PASS' : 'FAIL'}: enabled Schedule group shows ON, next charge, and its enabled acceptable-price setting`);
 if (!heroShowsCombinedPlan) ok = false;
+
+states['schedule.charging'].state = 'on';
+states['schedule.charging'].attributes.next_event = '2026-08-07T06:00:00+03:00';
+el.hass = hass;
+await new Promise((r) => setTimeout(r, 30));
+const activeScheduleShowsEnd = [...(root.querySelector('[data-plan-group="use-schedule"]')?.querySelectorAll('.status-pill') || [])]
+  .some((node) => {
+    const text = node.textContent.trim();
+    return text.startsWith('Schedule · active now · ends ') && !text.includes('n/a');
+  });
+console.log(`${activeScheduleShowsEnd ? 'PASS' : 'FAIL'}: an active schedule pill shows when its window ends`);
+if (!activeScheduleShowsEnd) ok = false;
+states['schedule.charging'].state = 'off';
+states['schedule.charging'].attributes.next_event = '2026-08-06T22:00:00+03:00';
+el.hass = hass;
+await new Promise((r) => setTimeout(r, 30));
 
 openForceWizard();
 await new Promise((r) => setTimeout(r, 30));
@@ -471,8 +494,8 @@ const forceTimerStaysInHero =
   scheduleHeroDetails.some((detail) => detail.startsWith('Schedule · next charge ')) &&
   scheduleHeroDetails.includes('Acceptable price · ≤ 0.150 EUR/kWh') &&
   orderedHeroGroups[1]?.querySelector('.status-pill-group-label')?.textContent.trim() === 'Force charge · ON' &&
-  forceHeroDetails.includes('Timer · 0:45') &&
-  orderedHeroGroups[1]?.querySelector('.status-pill.tone-neutral')?.textContent.trim() === 'Timer · 0:45' &&
+  forceHeroDetails.includes('Timer · 5m 00s left') &&
+  orderedHeroGroups[1]?.querySelector('.status-pill.tone-neutral')?.textContent.trim() === 'Timer · 5m 00s left' &&
   forceHeroDetails.includes('Acceptable price · ≤ 0.150 EUR/kWh') &&
   ![...scheduleHeroDetails, ...forceHeroDetails].some((detail) => detail.startsWith('Waiting for')) &&
   orderedHeroGroups.length === 2 &&
@@ -493,7 +516,7 @@ const acceptedForcePrice = root.querySelector(
 )?.textContent.trim() === 'Acceptable price · ≤ 0.150 EUR/kWh';
 const activeForceTimer = root.querySelector(
   '[data-plan-group="force-charge"] .status-pill.tone-active',
-)?.textContent.trim() === 'Timer · 0:45';
+)?.textContent.trim() === 'Timer · 5m 00s left';
 console.log(`${acceptedSchedulePrice && acceptedForcePrice ? 'PASS' : 'FAIL'}: both acceptable-price pills turn green when the live price meets the limit`);
 console.log(`${activeForceTimer ? 'PASS' : 'FAIL'}: combined Force timer returns to active color when its price condition is met`);
 if (!acceptedSchedulePrice || !acceptedForcePrice || !activeForceTimer) ok = false;
