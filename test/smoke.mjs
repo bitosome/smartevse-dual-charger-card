@@ -280,11 +280,15 @@ const settingsUseTitlesOnly =
 const settingsTilesShareOneHeight =
   (root.querySelector('style')?.textContent || '').includes('--wizard-tile-height: 64px') &&
   (root.querySelector('style')?.textContent || '').includes('min-height: var(--wizard-tile-height)');
+const scheduleSubmenuUsesTileIcons =
+  root.querySelector('[data-action="open-more-info"] .wizard-option-icon ha-icon')?.getAttribute('icon') === 'mdi:calendar-clock' &&
+  root.querySelector('[data-action="toggle-schedule-price"] .wizard-option-icon ha-icon')?.getAttribute('icon') === 'mdi:cash-check';
 console.log(`${moreInfoEntity === 'schedule.charging' ? 'PASS' : 'FAIL'}: schedule entity opens Home Assistant more-info`);
 console.log(`${scheduleNavigationIsClean ? 'PASS' : 'FAIL'}: wizard pages use only the top back arrow`);
 console.log(`${settingsUseTitlesOnly ? 'PASS' : 'FAIL'}: settings dialogs omit explanatory copy and its layout`);
 console.log(`${settingsTilesShareOneHeight ? 'PASS' : 'FAIL'}: charging-plan and submenu tile headers share one height`);
-if (moreInfoEntity !== 'schedule.charging' || !scheduleNavigationIsClean || !settingsUseTitlesOnly || !settingsTilesShareOneHeight) ok = false;
+console.log(`${scheduleSubmenuUsesTileIcons ? 'PASS' : 'FAIL'}: schedule submenu tiles use the shared leading icon treatment`);
+if (moreInfoEntity !== 'schedule.charging' || !scheduleNavigationIsClean || !settingsUseTitlesOnly || !settingsTilesShareOneHeight || !scheduleSubmenuUsesTileIcons) ok = false;
 
 // Schedule + acceptable price enables both gates and saves the threshold.
 click('[data-action="toggle-schedule-price"]');
@@ -396,8 +400,12 @@ const forceChargeIsConcise =
   !root.textContent.includes('Charging begins when you confirm this plan') &&
   !root.querySelector('[data-action="apply-force-mode"]') &&
   !root.querySelector('.wizard-actions');
+const forceSubmenuUsesTileIcons =
+  root.querySelector('[data-action="toggle-force-now-timer"] .wizard-option-icon ha-icon')?.getAttribute('icon') === 'mdi:timer-outline' &&
+  root.querySelector('[data-action="toggle-force-now-price"] .wizard-option-icon ha-icon')?.getAttribute('icon') === 'mdi:cash-check';
 console.log(`${forceChargeIsConcise ? 'PASS' : 'FAIL'}: force-charge submenu contains customization controls only`);
-if (!forceChargeIsConcise) ok = false;
+console.log(`${forceSubmenuUsesTileIcons ? 'PASS' : 'FAIL'}: force submenu tiles use the shared leading icon treatment`);
+if (!forceChargeIsConcise || !forceSubmenuUsesTileIcons) ok = false;
 click('[data-action="toggle-force-now-price"]');
 await new Promise((r) => setTimeout(r, 30));
 const priceInput = root.querySelector('.force-input[data-entity="number.price"]');

@@ -3,7 +3,7 @@ import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { DESIGN_TOKENS_CSS } from "./shared/design-tokens";
 import { buildGlow, type PulseColors } from "./shared/glow";
 
-const CARD_VERSION = "0.0.43";
+const CARD_VERSION = "0.0.44";
 
 const ACTIVE_GLOW: PulseColors = {
   weak: "rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha))",
@@ -1403,6 +1403,7 @@ class SmartEVSEFlowCard extends LitElement {
               aria-checked="${this._schedulePriceGate ? "true" : "false"}"
               ${busy ? "disabled" : ""}
             >
+              <span class="wizard-option-icon"><ha-icon icon="mdi:cash-check"></ha-icon></span>
               <span class="wizard-toggle-copy">
                 <strong>Also require an acceptable price</strong>
               </span>
@@ -1434,6 +1435,7 @@ class SmartEVSEFlowCard extends LitElement {
               aria-checked="${this._forceNowTimer ? "true" : "false"}"
               ${!timerAvailable || busy ? "disabled" : ""}
             >
+              <span class="wizard-option-icon"><ha-icon icon="mdi:timer-outline"></ha-icon></span>
               <span class="wizard-toggle-copy">
                 <strong>Stop after a set time</strong>
               </span>
@@ -1459,6 +1461,7 @@ class SmartEVSEFlowCard extends LitElement {
               aria-checked="${this._forceNowPrice ? "true" : "false"}"
               ${!priceAvailable || busy ? "disabled" : ""}
             >
+              <span class="wizard-option-icon"><ha-icon icon="mdi:cash-check"></ha-icon></span>
               <span class="wizard-toggle-copy">
                 <strong>Require an acceptable price</strong>
               </span>
@@ -2792,7 +2795,7 @@ class SmartEVSEFlowCard extends LitElement {
         .wizard-toggle {
           appearance: none;
           display: grid;
-          grid-template-columns: minmax(0, 1fr) auto;
+          grid-template-columns: 36px minmax(0, 1fr) auto;
           align-items: center;
           gap: var(--medium-gap);
           width: 100%;
