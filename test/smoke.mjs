@@ -195,9 +195,10 @@ const mobilePillsDoNotWrapPrematurely =
   !(root.querySelector('style')?.textContent || '').includes('@container smartevse-card (max-width: 480px)');
 const initialPlanGroups = [...root.querySelectorAll('.status-pill-group')];
 const settingsSummaryLivesOnlyInHero =
-  initialPlanGroups[0]?.querySelector('.status-pill-group-label')?.textContent.trim() === 'Use schedule · OFF' &&
+  initialPlanGroups.every((group) => group.querySelector('.status-pill-group-label ha-icon')?.getAttribute('icon') === 'mdi:toggle-switch-off-outline' && group.querySelector('.status-pill-group-label')?.getAttribute('aria-label')?.endsWith(': off')) &&
+  initialPlanGroups[0]?.querySelector('.status-pill-group-label')?.textContent.trim() === 'Use schedule' &&
   !initialPlanGroups[0]?.querySelector('.status-pill') &&
-  initialPlanGroups[1]?.querySelector('.status-pill-group-label')?.textContent.trim() === 'Force charge · OFF' &&
+  initialPlanGroups[1]?.querySelector('.status-pill-group-label')?.textContent.trim() === 'Force charge' &&
   !initialPlanGroups[1]?.querySelector('.status-pill') &&
   !root.querySelector('.flow-line-badges') &&
   !root.querySelector('.flow-line-badge') &&
@@ -219,7 +220,7 @@ const pillGroupsStayCompactAndSeparate =
 console.log(`${physicalFlowAnimates ? 'PASS' : 'FAIL'}: physical charging current animates its connector independently of charge_allowed`);
 console.log(`${dutyCountdownIsVisible ? 'PASS' : 'FAIL'}: active charging shows the live duty-cycle countdown in the hero`);
 console.log(`${mobilePillsDoNotWrapPrematurely ? 'PASS' : 'FAIL'}: mobile pills use the available row before wrapping`);
-console.log(`${settingsSummaryLivesOnlyInHero ? 'PASS' : 'FAIL'}: available Schedule and Force groups always show OFF without connector-line badges`);
+console.log(`${settingsSummaryLivesOnlyInHero ? 'PASS' : 'FAIL'}: available Schedule and Force groups show off icons without connector-line badges`);
 console.log(`${groupsHaveNoVisualContainer ? 'PASS' : 'FAIL'}: pill groups use spacing without a background container`);
 console.log(`${heroTitleSpacingIsClean ? 'PASS' : 'FAIL'}: hero title has standard spacing and no redundant corner icon`);
 console.log(`${pillGroupsStayCompactAndSeparate ? 'PASS' : 'FAIL'}: hero pills stay compact while groups use a divider`);
@@ -353,12 +354,14 @@ const heroPlanDetails = [...(scheduleHeroGroup?.querySelectorAll('.status-pill')
 const schedulePriceIsUnmet = [...(scheduleHeroGroup?.querySelectorAll('.status-pill.tone-neutral') || [])]
   .some((node) => node.textContent.trim() === 'Acceptable price · ≤ 0.150 EUR/kWh');
 const heroShowsCombinedPlan =
-  scheduleHeroGroup?.querySelector('.status-pill-group-label')?.textContent.trim() === 'Use schedule · ON' &&
+  scheduleHeroGroup?.querySelector('.status-pill-group-label ha-icon')?.getAttribute('icon') === 'mdi:toggle-switch' &&
+  !!scheduleHeroGroup?.querySelector('.status-pill ha-icon[icon="mdi:clock-start"]') &&
+  scheduleHeroGroup?.querySelector('.status-pill-group-label')?.textContent.trim() === 'Use schedule' &&
   heroPlanDetails.includes('Acceptable price · ≤ 0.150 EUR/kWh') &&
   schedulePriceIsUnmet &&
-  heroPlanDetails.some((detail) => detail.startsWith('Schedule · next charge ')) &&
+  heroPlanDetails.some((detail) => detail.startsWith('Starts ')) &&
   !heroPlanDetails.some((detail) => detail.startsWith('Waiting for'));
-console.log(`${heroShowsCombinedPlan ? 'PASS' : 'FAIL'}: enabled Schedule group shows ON, next charge, and its enabled acceptable-price setting`);
+console.log(`${heroShowsCombinedPlan ? 'PASS' : 'FAIL'}: enabled Schedule group shows an on icon, next charge, and its enabled acceptable-price setting`);
 if (!heroShowsCombinedPlan) ok = false;
 
 states['schedule.charging'].state = 'on';
@@ -368,7 +371,7 @@ await new Promise((r) => setTimeout(r, 30));
 const activeScheduleShowsEnd = [...(root.querySelector('[data-plan-group="use-schedule"]')?.querySelectorAll('.status-pill') || [])]
   .some((node) => {
     const text = node.textContent.trim();
-    return text.startsWith('Schedule · active now · ends ') && !text.includes('n/a');
+    return text.startsWith('Ends ') && !text.includes('n/a') && node.querySelector('ha-icon')?.getAttribute('icon') === 'mdi:clock-end' && node.getAttribute('aria-label')?.startsWith('Schedule active now.');
   });
 console.log(`${activeScheduleShowsEnd ? 'PASS' : 'FAIL'}: an active schedule pill shows when its window ends`);
 if (!activeScheduleShowsEnd) ok = false;
@@ -460,11 +463,11 @@ const forcePriceIsUnmet = [...(forcePriceGroup?.querySelectorAll('.status-pill.t
   .some((node) => node.textContent.trim() === 'Acceptable price · ≤ 0.150 EUR/kWh');
 const forcePriceHeroIsUnambiguous =
   root.querySelector('.status-title')?.textContent.trim() === 'Force charge waiting for acceptable price' &&
-  forcePriceGroup?.querySelector('.status-pill-group-label')?.textContent.trim() === 'Force charge · ON' &&
+  forcePriceGroup?.querySelector('.status-pill-group-label')?.textContent.trim() === 'Force charge' &&
   forcePriceHeroDetails.includes('Acceptable price · ≤ 0.150 EUR/kWh') &&
   forcePriceIsUnmet &&
-  standingScheduleGroup?.querySelector('.status-pill-group-label')?.textContent.trim() === 'Use schedule · ON' &&
-  standingScheduleDetails.some((detail) => detail.startsWith('Schedule · next charge ')) &&
+  standingScheduleGroup?.querySelector('.status-pill-group-label')?.textContent.trim() === 'Use schedule' &&
+  standingScheduleDetails.some((detail) => detail.startsWith('Starts ')) &&
   !standingScheduleDetails.some((detail) => detail.startsWith('Acceptable price · ')) &&
   ![...forcePriceHeroDetails, ...standingScheduleDetails].some((detail) => detail.startsWith('Waiting for'));
 openForceWizard();
@@ -474,7 +477,7 @@ const scheduleAndForceStayEnabled =
   root.querySelector('[data-action="toggle-charging-plan"][data-mode="now"]')?.getAttribute('aria-checked') === 'true';
 console.log(`${forceConfigSavedWithoutActivation ? 'PASS' : 'FAIL'}: force-charge submenu saves limits without activating the plan`);
 console.log(`${scheduleWasNotDisabled && scheduleRemainsOn && priceRemainsEnabled && forceActivationEnabled && scheduleAndForceStayEnabled ? 'PASS' : 'FAIL'}: only the main toggle enables Force charge and keeps the standing schedule on`);
-console.log(`${forcePriceHeroIsUnambiguous ? 'PASS' : 'FAIL'}: both groups show ON while only Force shows its enabled acceptable-price setting`);
+console.log(`${forcePriceHeroIsUnambiguous ? 'PASS' : 'FAIL'}: both groups show enabled modes while only Force shows its enabled acceptable-price setting`);
 if (!forceConfigSavedWithoutActivation || !scheduleWasNotDisabled || !scheduleRemainsOn || !priceRemainsEnabled || !forceActivationEnabled || !scheduleAndForceStayEnabled || !forcePriceHeroIsUnambiguous) ok = false;
 click('[data-action="close-force-wizard"]');
 
@@ -537,10 +540,10 @@ const orderedHeroGroups = [...root.querySelectorAll('.status-pill-group')];
 const scheduleHeroDetails = [...(orderedHeroGroups[0]?.querySelectorAll('.status-pill') || [])].map((node) => node.textContent.trim());
 const forceHeroDetails = [...(orderedHeroGroups[1]?.querySelectorAll('.status-pill') || [])].map((node) => node.textContent.trim());
 const forceTimerStaysInHero =
-  orderedHeroGroups[0]?.querySelector('.status-pill-group-label')?.textContent.trim() === 'Use schedule · ON' &&
-  scheduleHeroDetails.some((detail) => detail.startsWith('Schedule · next charge ')) &&
+  orderedHeroGroups[0]?.querySelector('.status-pill-group-label')?.textContent.trim() === 'Use schedule' &&
+  scheduleHeroDetails.some((detail) => detail.startsWith('Starts ')) &&
   scheduleHeroDetails.includes('Acceptable price · ≤ 0.150 EUR/kWh') &&
-  orderedHeroGroups[1]?.querySelector('.status-pill-group-label')?.textContent.trim() === 'Force charge · ON' &&
+  orderedHeroGroups[1]?.querySelector('.status-pill-group-label')?.textContent.trim() === 'Force charge' &&
   forceHeroDetails.includes('Timer · 5m 00s left') &&
   orderedHeroGroups[1]?.querySelector('.status-pill.tone-neutral')?.textContent.trim() === 'Timer · 5m 00s left' &&
   forceHeroDetails.includes('Acceptable price · ≤ 0.150 EUR/kWh') &&
@@ -648,10 +651,10 @@ const availableScheduleDetails = [...(root.querySelector('[data-plan-group="use-
 const availableForceDetails = [...(root.querySelector('[data-plan-group="force-charge"]')?.querySelectorAll('.status-pill') || [])]
   .map((node) => node.textContent.trim());
 const unavailableOptionsAreOmitted =
-  availableScheduleDetails.some((detail) => detail.startsWith('Schedule · ')) &&
+  availableScheduleDetails.some((detail) => detail.startsWith('Starts ')) &&
   !availableScheduleDetails.some((detail) => detail.startsWith('Acceptable price · ')) &&
-  root.querySelector('[data-plan-group="use-schedule"] .status-pill-group-label')?.textContent.trim() === 'Use schedule · ON' &&
-  root.querySelector('[data-plan-group="force-charge"] .status-pill-group-label')?.textContent.trim() === 'Force charge · OFF' &&
+  root.querySelector('[data-plan-group="use-schedule"] .status-pill-group-label')?.textContent.trim() === 'Use schedule' &&
+  root.querySelector('[data-plan-group="force-charge"] .status-pill-group-label')?.textContent.trim() === 'Force charge' &&
   availableForceDetails.length === 0;
 console.log(`${unavailableOptionsAreOmitted ? 'PASS' : 'FAIL'}: unavailable optional controls do not create hero pills`);
 if (!unavailableOptionsAreOmitted) ok = false;

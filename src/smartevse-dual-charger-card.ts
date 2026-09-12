@@ -3,7 +3,7 @@ import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { DESIGN_TOKENS_CSS } from "./shared/design-tokens";
 import { buildGlow, type PulseColors } from "./shared/glow";
 
-const CARD_VERSION = "0.0.49";
+const CARD_VERSION = "0.0.50";
 
 const ACTIVE_GLOW: PulseColors = {
   weak: "rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha))",
@@ -1895,7 +1895,7 @@ class SmartEVSEFlowCard extends LitElement {
       label: string;
       tone: string;
       priority: number;
-      pills: Array<{ label: string; tone: string; priority: number }>;
+      pills: Array<{ label: string; tone: string; priority: number; icon?: string; description?: string }>;
     }> = [];
     const ensureHeroPillGroup = (groupId, groupLabel, groupTone, groupPriority) => {
       let group = heroPillGroups.find((candidate) => candidate.id === groupId);
@@ -1919,21 +1919,23 @@ class SmartEVSEFlowCard extends LitElement {
       label,
       tone = "neutral",
       priority = 100,
+      icon = "",
+      description = "",
     ) => {
       if (!label) {
         return;
       }
       const group = ensureHeroPillGroup(groupId, groupLabel, groupTone, groupPriority);
       if (!group.pills.some((pill) => pill.label === label)) {
-        group.pills.push({ label, tone, priority });
+        group.pills.push({ label, tone, priority, icon, description });
       }
     };
     const scheduleTimingPill = (() => {
       const nextEvent = this._formatDateTime(scheduleNextEvent);
       if (scheduleState === "on") {
-        return nextEvent === "n/a" ? "Schedule · active now · end unavailable" : `Schedule · active now · ends ${nextEvent}`;
+        return nextEvent === "n/a" ? "End unavailable" : `Ends ${nextEvent}`;
       }
-      return nextEvent === "n/a" ? "Schedule · next charge unavailable" : `Schedule · next charge ${nextEvent}`;
+      return nextEvent === "n/a" ? "Start unavailable" : `Starts ${nextEvent}`;
     })();
     const scheduleControlAvailable = Boolean(this._entity(this._config.schedule_switch_entity));
     const scheduleEntityAvailable = Boolean(this._entity(this._config.schedule_entity));
@@ -1963,7 +1965,7 @@ class SmartEVSEFlowCard extends LitElement {
     if (scheduleControlAvailable) {
       ensureHeroPillGroup(
         "use-schedule",
-        `Use schedule · ${scheduleSwitchOn ? "ON" : "OFF"}`,
+        "Use schedule",
         scheduleSwitchOn ? "active" : "neutral",
         10,
       );
@@ -1972,12 +1974,14 @@ class SmartEVSEFlowCard extends LitElement {
       if (scheduleEntityAvailable) {
         addHeroPill(
           "use-schedule",
-          "Use schedule · ON",
+          "Use schedule",
           "active",
           10,
           scheduleTimingPill,
           scheduleState === "on" ? "success" : "neutral",
           20,
+          scheduleState === "on" ? "mdi:clock-end" : "mdi:clock-start",
+          `${scheduleState === "on" ? "Schedule active now" : "Next scheduled charge"}. ${scheduleTimingPill}`,
         );
       }
       // The submenu's saved option is authoritative while Force charge is
@@ -1985,7 +1989,7 @@ class SmartEVSEFlowCard extends LitElement {
       if (schedulePriceAvailable && this._schedulePriceGate) {
         addHeroPill(
           "use-schedule",
-          "Use schedule · ON",
+          "Use schedule",
           "active",
           10,
           `Acceptable price · ≤ ${acceptablePriceValue}`,
@@ -1998,7 +2002,7 @@ class SmartEVSEFlowCard extends LitElement {
     if (forceControlAvailable) {
       ensureHeroPillGroup(
         "force-charge",
-        `Force charge · ${forcePlanActive ? "ON" : "OFF"}`,
+        "Force charge",
         forcePlanActive ? "active" : "neutral",
         20,
       );
@@ -2033,13 +2037,13 @@ class SmartEVSEFlowCard extends LitElement {
       .map(
         (group) => `
           <div class="status-pill-group" data-plan-group="${this._safe(group.id)}">
-            <span class="status-pill-group-label tone-${this._safe(group.tone)}">${this._safe(group.label)}</span>
+            <span class="status-pill-group-label tone-${this._safe(group.tone)}" aria-label="${this._safe(group.label)}: ${group.tone === "active" ? "on" : "off"}" title="${this._safe(group.label)}: ${group.tone === "active" ? "on" : "off"}"><ha-icon class="status-pill-icon" icon="mdi:toggle-switch${group.tone === "active" ? "" : "-off-outline"}" aria-hidden="true"></ha-icon>${this._safe(group.label)}</span>
             <span class="status-pill-group-items">
               ${group.pills
                 .sort((left, right) => left.priority - right.priority)
                 .map(
                   (pill) =>
-                    `<span class="status-pill tone-${this._safe(pill.tone)}">${this._safe(pill.label)}</span>`,
+                    `<span class="status-pill tone-${this._safe(pill.tone)}"${pill.description ? ` aria-label="${this._safe(pill.description)}" title="${this._safe(pill.description)}"` : ""}>${pill.icon ? `<ha-icon class="status-pill-icon" icon="${this._safe(pill.icon)}" aria-hidden="true"></ha-icon>` : ""}${this._safe(pill.label)}</span>`,
                 )
                 .join("")}
             </span>
@@ -3248,6 +3252,14 @@ class SmartEVSEFlowCard extends LitElement {
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
+        }
+
+        .status-pill-icon {
+          --mdc-icon-size: 14px;
+          width: 14px;
+          height: 14px;
+          flex: 0 0 14px;
+          margin-right: 4px;
         }
 
         .status-pill-group-label {
