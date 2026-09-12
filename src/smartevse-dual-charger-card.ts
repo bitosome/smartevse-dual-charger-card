@@ -3,7 +3,7 @@ import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { DESIGN_TOKENS_CSS } from "./shared/design-tokens";
 import { buildGlow, type PulseColors } from "./shared/glow";
 
-const CARD_VERSION = "0.0.50";
+const CARD_VERSION = "0.0.51";
 
 const ACTIVE_GLOW: PulseColors = {
   weak: "rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha))",
@@ -1935,7 +1935,7 @@ class SmartEVSEFlowCard extends LitElement {
       if (scheduleState === "on") {
         return nextEvent === "n/a" ? "End unavailable" : `Ends ${nextEvent}`;
       }
-      return nextEvent === "n/a" ? "Start unavailable" : `Starts ${nextEvent}`;
+      return nextEvent === "n/a" ? "Start unavailable" : nextEvent;
     })();
     const scheduleControlAvailable = Boolean(this._entity(this._config.schedule_switch_entity));
     const scheduleEntityAvailable = Boolean(this._entity(this._config.schedule_entity));
@@ -1959,13 +1959,13 @@ class SmartEVSEFlowCard extends LitElement {
         this._entity(this._config.price_entity),
     );
     const heroRuntimePills = activeRaw && dutyLabel !== "n/a"
-      ? [{ label: `Duty cycle · ${dutyLabel} left`, tone: "neutral" }]
+      ? [{ label: `Duty cycle ${dutyLabel}`, tone: "neutral" }]
       : [];
 
     if (scheduleControlAvailable) {
       ensureHeroPillGroup(
         "use-schedule",
-        "Use schedule",
+        "Schedule",
         scheduleSwitchOn ? "active" : "neutral",
         10,
       );
@@ -1974,7 +1974,7 @@ class SmartEVSEFlowCard extends LitElement {
       if (scheduleEntityAvailable) {
         addHeroPill(
           "use-schedule",
-          "Use schedule",
+          "Schedule",
           "active",
           10,
           scheduleTimingPill,
@@ -1989,12 +1989,14 @@ class SmartEVSEFlowCard extends LitElement {
       if (schedulePriceAvailable && this._schedulePriceGate) {
         addHeroPill(
           "use-schedule",
-          "Use schedule",
+          "Schedule",
           "active",
           10,
-          `Acceptable price · ≤ ${acceptablePriceValue}`,
+          `≤ ${acceptablePriceValue}`,
           priceAccepted ? "success" : "neutral",
           30,
+          "mdi:currency-eur",
+          `Acceptable price ≤ ${acceptablePriceValue}`,
         );
       }
     }
@@ -2015,9 +2017,11 @@ class SmartEVSEFlowCard extends LitElement {
           "Force charge",
           "active",
           20,
-          `Timer · ${timerValue}`,
+          timerValue,
           forcePriceOn && !priceAccepted ? "neutral" : "active",
           20,
+          "mdi:timer-outline",
+          `Timer ${timerValue}`,
         );
       }
       if (forcePriceAvailable && forcePriceOn) {
@@ -2026,9 +2030,11 @@ class SmartEVSEFlowCard extends LitElement {
           "Force charge",
           "active",
           20,
-          `Acceptable price · ≤ ${acceptablePriceValue}`,
+          `≤ ${acceptablePriceValue}`,
           priceAccepted ? "success" : "neutral",
           30,
+          "mdi:currency-eur",
+          `Acceptable price ≤ ${acceptablePriceValue}`,
         );
       }
     }
@@ -3241,7 +3247,9 @@ class SmartEVSEFlowCard extends LitElement {
           justify-content: center;
           min-width: 0;
           max-width: 100%;
-          padding: 2px 7px;
+          box-sizing: border-box;
+          height: 26px;
+          padding: 0 7px;
           border: 1px solid color-mix(in srgb, var(--status-pill-color) 30%, transparent);
           border-radius: var(--chip-border-radius);
           background: color-mix(in srgb, var(--status-pill-color) 13%, var(--chip-background-color));
@@ -3255,11 +3263,18 @@ class SmartEVSEFlowCard extends LitElement {
         }
 
         .status-pill-icon {
-          --mdc-icon-size: 14px;
-          width: 14px;
-          height: 14px;
-          flex: 0 0 14px;
+          --mdc-icon-size: 23.4px;
+          width: 23.4px;
+          height: 23.4px;
+          flex: 0 0 23.4px;
           margin-right: 4px;
+        }
+
+        .status-pill-group-label .status-pill-icon {
+          --mdc-icon-size: 34px;
+          width: 34px;
+          height: 34px;
+          flex-basis: 34px;
         }
 
         .status-pill-group-label {
