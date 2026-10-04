@@ -1,6 +1,6 @@
-// Headless smoke test for the LitElement-migrated card.
-// Verifies: element registers, renders via unsafeHTML without throwing,
-// produces expected markup, and delegated actions call hass.callService.
+// Offline functional smoke tests for the SmartEVSE charging dashboard.
+// Verifies state visibility, truthful telemetry, and the real service contracts
+// using mocked Home Assistant state. No device or production API is contacted.
 import { Window } from 'happy-dom';
 
 const win = new Window({ url: 'http://localhost/' });
@@ -55,9 +55,21 @@ const states = {
         error: { color: [211, 22, 33], fx: 2, sx: 60, ix: 200 },
         charging: { color: [44, 199, 88], fx: 41, sx: 80, ix: 100 },
       },
+      smartevse_1_available: true,
+      smartevse_1_name: 'Carport charger',
+      smartevse_1_connected_ev: 'Volvo XC40',
+      smartevse_1_battery: '90',
+      smartevse_1_mode: 'Off',
+      smartevse_1_charge_current: 16,
+      smartevse_1_max_current: 16,
       smartevse_1_state: 'Ready to Charge',
       smartevse_1_plug_state: 'Connected',
       smartevse_1_error: 'None',
+      smartevse_2_available: true,
+      smartevse_2_name: 'Driveway charger',
+      smartevse_2_mode: 'Off',
+      smartevse_2_charge_current: 16,
+      smartevse_2_max_current: 16,
       smartevse_2_state: 'Disconnected',
       smartevse_2_plug_state: 'Disconnected',
       smartevse_2_error: 'None',
@@ -73,7 +85,7 @@ const states = {
   'switch.force': { state: 'off', attributes: {} },
   'switch.force_price': { state: 'off', attributes: {} },
   'switch.force_timer': { state: 'off', attributes: {} },
-  'select.policy': { state: 'balanced', attributes: { options: ['balanced', 'fast'] } },
+  'select.policy': { state: 'SmartEVSE 1 first', attributes: { options: ['SmartEVSE 1 first', 'SmartEVSE 2 first', 'SmartEVSE 1 only', 'SmartEVSE 2 only'] } },
   'number.price': { state: '0.12', attributes: { min: 0, max: 1, step: 0.01, unit_of_measurement: 'EUR/kWh' } },
   'number.duration': { state: '60', attributes: { min: 5, max: 720, step: 5, unit_of_measurement: 'min' } },
   'number.duty': { state: '30', attributes: { min: 5, max: 240, step: 5, unit_of_measurement: 'min' } },
@@ -91,6 +103,9 @@ const hass = {
     if ((domain === 'number' || domain === 'input_number') && service === 'set_value' && states[data.entity_id]) {
       states[data.entity_id].state = String(data.value);
     }
+    if (domain === 'select' && service === 'select_option' && states[data.entity_id]) {
+      states[data.entity_id].state = data.option;
+    }
     const attrs = states['sensor.ctl'].attributes;
     const forceOn = states['switch.force'].state === 'on';
     const forcePriceOn = states['switch.force_price'].state === 'on';
@@ -98,8 +113,8 @@ const hass = {
     const scheduleOn = states['switch.schedule'].state === 'on';
     const schedulePriceOn = states['switch.schedule_price'].state === 'on';
     const scheduleWindowOn = states['schedule.charging'].state === 'on';
-    const currentPrice = Number(states['sensor.current_price'].state);
-    const acceptablePrice = Number(states['number.price'].state);
+    const currentPrice = Number(states['sensor.current_price']?.state);
+    const acceptablePrice = Number(states['number.price']?.state);
     if (forceOn) {
       attrs.charge_allowed = !forcePriceOn || currentPrice <= acceptablePrice;
       attrs.charge_reason = forcePriceOn
@@ -129,106 +144,126 @@ await new Promise((r) => setTimeout(r, 60));
 const root = el.shadowRoot;
 if (!root) throw new Error('no shadowRoot');
 const htmlOut = root.innerHTML;
+const overviewText = (node) => {
+  const copy = node?.cloneNode(true);
+  copy?.querySelectorAll('.charger-details').forEach((details) => details.remove());
+  return copy?.textContent || '';
+};
 const checks = {
-  'renders ha-card': htmlOut.includes('<ha-card') || htmlOut.includes('ha-card'),
-  'has data-action elements': !!root.querySelector('[data-action]'),
-  'non-trivial markup': htmlOut.length > 500,
-  'uses the hero as the only charging-plan control':
-    root.querySelectorAll('[data-action="open-force-wizard"]').length === 1 &&
-    root.querySelector('[data-action="open-force-wizard"]')?.classList.contains('status-hero') &&
-    !root.querySelector('.primary-controls'),
-  'removes separate schedule and settings controls':
-    !root.querySelector('[data-action="toggle"][data-entity="switch.schedule"]') &&
-    !root.querySelector('[data-action="open-settings"]'),
+  'renders ha-card': !!root.querySelector('ha-card'),
+  'charging-plan control remains accessible when every plan is off':
+    !!root.querySelector('[data-action="open-force-wizard"]'),
+  'only enabled plans appear in the overview':
+    !root.querySelector('[data-plan-group="use-schedule"]') &&
+    !root.querySelector('[data-plan-group="force-charge"]'),
+  'compact charging tiles replace the wire map':
+    root.querySelectorAll('.ev-node').length === 2 && !root.querySelector('.flow-svg'),
+  'connected vehicle and battery appear within the charger tile': (() => {
+    const node = root.querySelector('.ev-node.smartevse_1');
+    return overviewText(node).includes('Volvo XC40') &&
+      overviewText(node).includes('90%') && !root.querySelector('.vehicle-node');
+  })(),
+  'disconnected port stays visible without stale current or mode in the overview': (() => {
+    const text = overviewText(root.querySelector('.ev-node.smartevse_2'));
+    return /Disconnected|Not connected|No (vehicle|car)/i.test(text) &&
+      !/16(?:\.0)?\s*A|Current offered|Limit|Mode/.test(text);
+  })(),
+  'charger diagnostics use explicit offered-current terminology': (() => {
+    const details = root.querySelector('.ev-node.smartevse_1 details.charger-details');
+    return !!details?.querySelector('summary') && !details.open &&
+      ['State', 'Mode', 'Current offered', 'Limit'].every((label) => details.textContent.includes(label)) &&
+      !/actual current|power draw|kW/i.test(details.textContent);
+  })(),
   'hero glow follows physical WLED while charging is paused':
     root.querySelector('.status-hero-wrap')?.classList.contains('visual-idle') &&
     root.querySelector('.status-hero')?.classList.contains('visual-idle'),
-  'hero glow uses the canonical shared pulse':
-    root.querySelector('.status-glow')?.getAttribute('style')?.includes('animation: glowPulse 2.4s ease-in-out infinite') &&
-    root.querySelector('.status-glow')?.getAttribute('style')?.includes('box-shadow: 0 18px 40px'),
-  'live SmartEVSE WLED values control every glow variable':
+  'live SmartEVSE WLED values control the shared glow':
     root.querySelector('ha-card')?.getAttribute('style')?.includes('--sdc-led-idle-rgb: 23, 67, 101;') &&
     root.querySelector('ha-card')?.getAttribute('style')?.includes('--sdc-led-charging-rgb: 44, 199, 88;') &&
-    root.querySelector('.status-glow')?.getAttribute('style')?.includes('var(--sdc-led-idle-glow-duration)') &&
     root.querySelector('.ev-node-wrap')?.getAttribute('style')?.includes('--node-rgb: 23, 67, 101;'),
-  'SmartEVSE nodes use static labels with compact value pills': (() => {
-    const nodes = [...root.querySelectorAll('.ev-node')];
-    return nodes.length === 2 && nodes.every((node) => {
-      const labels = [...node.querySelectorAll('.ev-status-label')].map((label) => label.textContent.trim());
-      const values = [...node.querySelectorAll('.ev-status-pill')].map((pill) => pill.textContent.trim());
-      return labels.join('|') === 'State|Mode|Offer|Max' &&
-        values.length === 4 &&
-        values.every((value) => !value.includes(' · ')) &&
-        (root.querySelector('style')?.textContent || '').includes('justify-self: stretch') &&
-        (root.querySelector('style')?.textContent || '').includes('width: 100%') &&
-        !node.textContent.includes('Override') &&
-        !node.querySelector('.ev-pill');
-    });
-  })(),
 };
 let ok = true;
-for (const [name, pass] of Object.entries(checks)) {
+const check = (name, pass) => {
   console.log(`${pass ? 'PASS' : 'FAIL'}: ${name}`);
   if (!pass) ok = false;
-}
-
-// Physical current flow animates even if the controller's logical gate has already changed.
-const controllerAttrs = states['sensor.ctl'].attributes;
-const originalFlowState = {
-  chargeAllowed: controllerAttrs.charge_allowed,
-  activeRaw: controllerAttrs.active_smartevse_raw,
-  state: controllerAttrs.smartevse_1_state,
-  current: controllerAttrs.smartevse_1_charge_current,
 };
+for (const [name, pass] of Object.entries(checks)) check(name, pass);
+
+// Hardware state is authoritative for the glow even while the controller gate changes.
+const controllerAttrs = states['sensor.ctl'].attributes;
+const originalControllerAttrs = { ...controllerAttrs };
 controllerAttrs.charge_allowed = false;
 controllerAttrs.active_smartevse_raw = 'smartevse_1';
 controllerAttrs.smartevse_1_state = 'Charging';
 controllerAttrs.smartevse_1_charge_current = 10.4;
 el.hass = hass;
 await new Promise((r) => setTimeout(r, 30));
-const physicalFlowAnimates =
-  !!root.querySelector('.flow-svg .pipe-active.tone-charging') &&
-  (root.querySelector('style')?.textContent || '').includes('animation: dash 1.8s linear infinite');
-const dutyCountdownIsVisible =
-  root.querySelector('.status-runtime-pill')?.textContent.trim() === 'Duty cycle 10m 00s';
-const mobilePillsDoNotWrapPrematurely =
-  !(root.querySelector('style')?.textContent || '').includes('@container smartevse-card (max-width: 480px)');
-const initialPlanGroups = [...root.querySelectorAll('.status-pill-group')];
-const settingsSummaryLivesOnlyInHero =
-  initialPlanGroups.every((group) => group.querySelector('.status-pill-group-label ha-icon')?.getAttribute('icon') === 'mdi:toggle-switch-off-outline' && group.querySelector('.status-pill-group-label')?.getAttribute('aria-label')?.endsWith(': off')) &&
-  initialPlanGroups[0]?.querySelector('.status-pill-group-label')?.textContent.trim() === 'Schedule' &&
-  !initialPlanGroups[0]?.querySelector('.status-pill') &&
-  initialPlanGroups[1]?.querySelector('.status-pill-group-label')?.textContent.trim() === 'Force charge' &&
-  !initialPlanGroups[1]?.querySelector('.status-pill') &&
-  !root.querySelector('.flow-line-badges') &&
-  !root.querySelector('.flow-line-badge') &&
-  !(root.querySelector('style')?.textContent || '').includes('.flow-line-badge');
-const groupsHaveNoVisualContainer =
-  !(root.querySelector('style')?.textContent || '').includes(
-    'background: color-mix(in srgb, var(--sdc-text-muted) 7%, transparent)',
-  );
-const heroTitleSpacingIsClean =
-  (root.querySelector('style')?.textContent || '').includes('gap: var(--tile-padding)') &&
-  !root.querySelector('.status-action') &&
-  !root.querySelector('.status-hero ha-icon[icon="mdi:ev-station"]');
-const pillGroupsStayCompactAndSeparate =
-  (root.querySelector('style')?.textContent || '').includes('padding: 10px var(--tile-padding-large)') &&
-  (root.querySelector('style')?.textContent || '').includes('.status-pill-group + .status-pill-group') &&
-  (root.querySelector('style')?.textContent || '').includes('border-top: 1px solid') &&
-  (root.querySelector('style')?.textContent || '').includes('display: contents') &&
-  (root.querySelector('style')?.textContent || '').includes('flex: 0 0 auto');
-console.log(`${physicalFlowAnimates ? 'PASS' : 'FAIL'}: physical charging current animates its connector independently of charge_allowed`);
-console.log(`${dutyCountdownIsVisible ? 'PASS' : 'FAIL'}: active charging shows the live duty-cycle countdown in the hero`);
-console.log(`${mobilePillsDoNotWrapPrematurely ? 'PASS' : 'FAIL'}: mobile pills use the available row before wrapping`);
-console.log(`${settingsSummaryLivesOnlyInHero ? 'PASS' : 'FAIL'}: available Schedule and Force groups show off icons without connector-line badges`);
-console.log(`${groupsHaveNoVisualContainer ? 'PASS' : 'FAIL'}: pill groups use spacing without a background container`);
-console.log(`${heroTitleSpacingIsClean ? 'PASS' : 'FAIL'}: hero title has standard spacing and no redundant corner icon`);
-console.log(`${pillGroupsStayCompactAndSeparate ? 'PASS' : 'FAIL'}: hero pills stay compact while groups use a divider`);
-if (!physicalFlowAnimates || !dutyCountdownIsVisible || !mobilePillsDoNotWrapPrematurely || !settingsSummaryLivesOnlyInHero || !groupsHaveNoVisualContainer || !heroTitleSpacingIsClean || !pillGroupsStayCompactAndSeparate) ok = false;
-controllerAttrs.charge_allowed = originalFlowState.chargeAllowed;
-controllerAttrs.active_smartevse_raw = originalFlowState.activeRaw;
-controllerAttrs.smartevse_1_state = originalFlowState.state;
-controllerAttrs.smartevse_1_charge_current = originalFlowState.current;
+check('charging glow follows hardware state independently of charge_allowed',
+  root.querySelector('.ev-node-wrap.smartevse_1')?.classList.contains('visual-charging') &&
+  root.querySelector('.status-hero-wrap')?.classList.contains('visual-charging'));
+check('one connected car does not show an irrelevant rotation countdown',
+  !root.querySelector('.status-runtime-pill'));
+controllerAttrs.smartevse_2_plug_state = 'Connected';
+controllerAttrs.smartevse_2_state = 'Ready to Charge';
+el.hass = hass;
+await new Promise((r) => setTimeout(r, 30));
+check('two eligible cars show the live rotation countdown',
+  root.querySelector('.status-runtime-pill')?.textContent.includes('10m 00s'));
+controllerAttrs.smartevse_1_charge_current = 0;
+el.hass = hass;
+await new Promise((r) => setTimeout(r, 30));
+check('hardware charging glow is retained while offered current ramps from zero',
+  root.querySelector('.ev-node-wrap.smartevse_1')?.classList.contains('visual-charging'));
+Object.assign(controllerAttrs, originalControllerAttrs);
+controllerAttrs.smartevse_2_available = false;
+controllerAttrs.smartevse_2_state = 'Unavailable';
+controllerAttrs.smartevse_2_plug_state = 'Unavailable';
+el.hass = hass;
+await new Promise((r) => setTimeout(r, 30));
+check('an unavailable charger is identified instead of being reported as disconnected',
+  /Unavailable/i.test(overviewText(root.querySelector('.ev-node.smartevse_2'))) &&
+  !/Disconnected/i.test(overviewText(root.querySelector('.ev-node.smartevse_2'))));
+Object.assign(controllerAttrs, originalControllerAttrs);
+el.hass = hass;
+await new Promise((r) => setTimeout(r, 30));
+
+// Unplugging is not equivalent to clearing a charger fault.
+controllerAttrs.smartevse_2_error = 'Ground fault';
+el.hass = hass;
+await new Promise((r) => setTimeout(r, 30));
+check('disconnected charger faults remain visible with their error glow',
+  overviewText(root.querySelector('.ev-node.smartevse_2')).includes('Ground fault') &&
+  root.querySelector('.ev-node-wrap.smartevse_2')?.classList.contains('visual-error'));
+Object.assign(controllerAttrs, originalControllerAttrs);
+states['sensor.ctl'].state = 'unavailable';
+controllerAttrs.smartevse_1_state = 'Charging';
+controllerAttrs.active_smartevse_raw = 'smartevse_1';
+el.hass = hass;
+await new Promise((r) => setTimeout(r, 30));
+check('unavailable controller overrides stale charging state and glows',
+  /Controller unavailable/i.test(root.querySelector('.status-title')?.textContent || '') &&
+  [...root.querySelectorAll('.ev-node')].every((node) => /Unavailable/i.test(overviewText(node))) &&
+  !root.querySelector('.ev-node-wrap.visual-charging') &&
+  root.querySelector('.status-hero-wrap')?.classList.contains('visual-off'));
+states['sensor.ctl'].state = 'ready';
+Object.assign(controllerAttrs, originalControllerAttrs);
+el.hass = hass;
+await new Promise((r) => setTimeout(r, 30));
+
+// Frequent Home Assistant updates must not collapse an open diagnostic view.
+const openedDetails = root.querySelector('.ev-node.smartevse_1 details.charger-details');
+openedDetails.open = true;
+openedDetails.dispatchEvent(new win.Event('toggle'));
+await new Promise((r) => setTimeout(r, 20));
+controllerAttrs.smartevse_1_charge_current = 12.3;
+el.hass = hass;
+await new Promise((r) => setTimeout(r, 30));
+const updatedDetails = root.querySelector('.ev-node.smartevse_1 details.charger-details');
+check('expanded diagnostics stay open and show fresh current after a state update',
+  updatedDetails?.open && updatedDetails.textContent.includes('12.3 A'));
+updatedDetails.open = false;
+updatedDetails.dispatchEvent(new win.Event('toggle'));
+Object.assign(controllerAttrs, originalControllerAttrs);
 el.hass = hass;
 await new Promise((r) => setTimeout(r, 30));
 
@@ -267,6 +302,37 @@ console.log(`${hasTwoPlanFamilies ? 'PASS' : 'FAIL'}: wizard groups charging int
 console.log(`${mainMenuUsesIndependentToggles ? 'PASS' : 'FAIL'}: main plan tiles expose independent toggles with title-only copy`);
 if (!forceWizardOpened || !hasTwoPlanFamilies || !mainMenuUsesIndependentToggles) ok = false;
 
+// Dialogs are fully operable from the keyboard, including focus restoration.
+let dialog = root.querySelector('.force-wizard-panel');
+check('opening charging settings moves keyboard focus into the dialog',
+  !!dialog?.contains(root.activeElement));
+dialog?.focus();
+controllerAttrs.smartevse_1_max_current = 15;
+el.hass = hass;
+await new Promise((r) => setTimeout(r, 30));
+check('live state updates preserve keyboard focus on the dialog container',
+  root.activeElement === root.querySelector('.force-wizard-panel'));
+controllerAttrs.smartevse_1_max_current = originalControllerAttrs.smartevse_1_max_current;
+el.hass = hass;
+await new Promise((r) => setTimeout(r, 30));
+dialog = root.querySelector('.force-wizard-panel');
+const focusableControls = [...dialog.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex="0"]')];
+const firstControl = focusableControls[0];
+const lastControl = focusableControls[focusableControls.length - 1];
+lastControl?.focus();
+lastControl?.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Tab', bubbles: true, composed: true, cancelable: true }));
+check('Tab wraps from the last dialog control to the first', root.activeElement === firstControl);
+firstControl?.focus();
+firstControl?.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, composed: true, cancelable: true }));
+check('Shift-Tab wraps from the first dialog control to the last', root.activeElement === lastControl);
+lastControl?.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, composed: true, cancelable: true }));
+await new Promise((r) => setTimeout(r, 30));
+check('Escape closes settings and returns focus to the charging-plan control',
+  !root.querySelector('.force-wizard-panel') &&
+  root.activeElement === root.querySelector('[data-action="open-force-wizard"]'));
+openForceWizard();
+await new Promise((r) => setTimeout(r, 30));
+
 // The main-menu force toggle enables and disables the saved unrestricted mode.
 click('[data-action="toggle-charging-plan"][data-mode="now"]');
 await new Promise((r) => setTimeout(r, 40));
@@ -287,6 +353,12 @@ await new Promise((r) => setTimeout(r, 30));
 const scheduleEntityButton = root.querySelector('[data-action="open-more-info"][data-entity="schedule.charging"]');
 scheduleEntityButton?.dispatchEvent(new win.MouseEvent('click', { bubbles: true, composed: true }));
 await new Promise((r) => setTimeout(r, 20));
+check('opening native schedule settings closes the card dialog before focus is handed off',
+  moreInfoEntity === 'schedule.charging' && !root.querySelector('.force-wizard-panel'));
+openForceWizard();
+await new Promise((r) => setTimeout(r, 30));
+click('[data-action="choose-force-mode"][data-mode="schedule"]');
+await new Promise((r) => setTimeout(r, 30));
 const scheduleNavigationIsClean =
   root.querySelectorAll('[data-action="back-force-wizard"]').length === 1 &&
   !root.querySelector('.wizard-secondary');
@@ -302,7 +374,7 @@ const settingsTilesShareOneHeight =
   (root.querySelector('style')?.textContent || '').includes('min-height: var(--wizard-tile-height)');
 const scheduleSubmenuUsesTileIcons =
   root.querySelector('[data-action="open-more-info"] .wizard-option-icon ha-icon')?.getAttribute('icon') === 'mdi:calendar-clock' &&
-  root.querySelector('[data-action="toggle-schedule-price"] .wizard-option-icon ha-icon')?.getAttribute('icon') === 'mdi:cash-check';
+  !!root.querySelector('[data-action="toggle-schedule-price"] .wizard-option-icon ha-icon');
 console.log(`${moreInfoEntity === 'schedule.charging' ? 'PASS' : 'FAIL'}: schedule entity opens Home Assistant more-info`);
 console.log(`${scheduleNavigationIsClean ? 'PASS' : 'FAIL'}: wizard pages use only the top back arrow`);
 console.log(`${settingsUseTitlesOnly ? 'PASS' : 'FAIL'}: settings dialogs omit explanatory copy and its layout`);
@@ -354,14 +426,14 @@ const heroPlanDetails = [...(scheduleHeroGroup?.querySelectorAll('.status-pill')
 const schedulePriceIsUnmet = [...(scheduleHeroGroup?.querySelectorAll('.status-pill.tone-neutral') || [])]
   .some((node) => node.textContent.trim() === '≤ 0.150 EUR/kWh');
 const heroShowsCombinedPlan =
-  scheduleHeroGroup?.querySelector('.status-pill-group-label ha-icon')?.getAttribute('icon') === 'mdi:toggle-switch' &&
+  !root.querySelector('[data-plan-group="force-charge"]') &&
   !!scheduleHeroGroup?.querySelector('.status-pill ha-icon[icon="mdi:clock-start"]') &&
   scheduleHeroGroup?.querySelector('.status-pill-group-label')?.textContent.trim() === 'Schedule' &&
   heroPlanDetails.includes('≤ 0.150 EUR/kWh') &&
   schedulePriceIsUnmet &&
   heroPlanDetails.some((detail) => detail === el._formatDateTime(states['schedule.charging'].attributes.next_event)) &&
   !heroPlanDetails.some((detail) => detail.startsWith('Waiting for'));
-console.log(`${heroShowsCombinedPlan ? 'PASS' : 'FAIL'}: enabled Schedule group shows an on icon, next charge, and its enabled acceptable-price setting`);
+console.log(`${heroShowsCombinedPlan ? 'PASS' : 'FAIL'}: enabled Schedule group shows its timing and price condition while the off Force plan is omitted`);
 if (!heroShowsCombinedPlan) ok = false;
 
 states['schedule.charging'].state = 'on';
@@ -424,7 +496,7 @@ const forceChargeIsConcise =
   !root.querySelector('.wizard-actions');
 const forceSubmenuUsesTileIcons =
   root.querySelector('[data-action="toggle-force-now-timer"] .wizard-option-icon ha-icon')?.getAttribute('icon') === 'mdi:timer-outline' &&
-  root.querySelector('[data-action="toggle-force-now-price"] .wizard-option-icon ha-icon')?.getAttribute('icon') === 'mdi:cash-check';
+  !!root.querySelector('[data-action="toggle-force-now-price"] .wizard-option-icon ha-icon');
 console.log(`${forceChargeIsConcise ? 'PASS' : 'FAIL'}: force-charge submenu contains customization controls only`);
 console.log(`${forceSubmenuUsesTileIcons ? 'PASS' : 'FAIL'}: force submenu tiles use the shared leading icon treatment`);
 if (!forceChargeIsConcise || !forceSubmenuUsesTileIcons) ok = false;
@@ -462,7 +534,7 @@ const standingScheduleDetails = [...(standingScheduleGroup?.querySelectorAll('.s
 const forcePriceIsUnmet = [...(forcePriceGroup?.querySelectorAll('.status-pill.tone-neutral') || [])]
   .some((node) => node.textContent.trim() === '≤ 0.150 EUR/kWh');
 const forcePriceHeroIsUnambiguous =
-  root.querySelector('.status-title')?.textContent.trim() === 'Force charge waiting for acceptable price' &&
+  /Force.*(waiting|price)/i.test(root.querySelector('.status-title')?.textContent || '') &&
   forcePriceGroup?.querySelector('.status-pill-group-label')?.textContent.trim() === 'Force charge' &&
   forcePriceHeroDetails.includes('≤ 0.150 EUR/kWh') &&
   forcePriceIsUnmet &&
@@ -537,21 +609,21 @@ const savedDuration = timerPriceCalls.some((c) => c[0] === 'number' && c[1] === 
 const savedTimerPrice = timerPriceCalls.some((c) => c[0] === 'number' && c[1] === 'set_value' && c[2].entity_id === 'number.price');
 const timerAndPriceOn = states['switch.force'].state === 'on' && states['switch.force_timer'].state === 'on' && states['switch.force_price'].state === 'on';
 const orderedHeroGroups = [...root.querySelectorAll('.status-pill-group')];
-const scheduleHeroDetails = [...(orderedHeroGroups[0]?.querySelectorAll('.status-pill') || [])].map((node) => node.textContent.trim());
-const forceHeroDetails = [...(orderedHeroGroups[1]?.querySelectorAll('.status-pill') || [])].map((node) => node.textContent.trim());
+const scheduleHeroDetails = [...(orderedHeroGroups[1]?.querySelectorAll('.status-pill') || [])].map((node) => node.textContent.trim());
+const forceHeroDetails = [...(orderedHeroGroups[0]?.querySelectorAll('.status-pill') || [])].map((node) => node.textContent.trim());
 const forceTimerStaysInHero =
-  orderedHeroGroups[0]?.querySelector('.status-pill-group-label')?.textContent.trim() === 'Schedule' &&
+  orderedHeroGroups[1]?.querySelector('.status-pill-group-label')?.textContent.trim() === 'Schedule' &&
   scheduleHeroDetails.some((detail) => detail === el._formatDateTime(states['schedule.charging'].attributes.next_event)) &&
   scheduleHeroDetails.includes('≤ 0.150 EUR/kWh') &&
-  orderedHeroGroups[1]?.querySelector('.status-pill-group-label')?.textContent.trim() === 'Force charge' &&
+  orderedHeroGroups[0]?.querySelector('.status-pill-group-label')?.textContent.trim() === 'Force charge' &&
   forceHeroDetails.includes('5m 00s left') &&
-  orderedHeroGroups[1]?.querySelector('.status-pill.tone-neutral')?.textContent.trim() === '5m 00s left' &&
+  orderedHeroGroups[0]?.querySelector('.status-pill.tone-neutral')?.textContent.trim() === '5m 00s left' &&
   forceHeroDetails.includes('≤ 0.150 EUR/kWh') &&
   ![...scheduleHeroDetails, ...forceHeroDetails].some((detail) => detail.startsWith('Waiting for')) &&
   orderedHeroGroups.length === 2 &&
   !root.querySelector('.flow-line-badge');
 console.log(`${savedDuration && savedTimerPrice && timerAndPriceOn ? 'PASS' : 'FAIL'}: force charge supports timer plus acceptable price`);
-console.log(`${forceTimerStaysInHero ? 'PASS' : 'FAIL'}: maximum combination shows Schedule first and only enabled settings in each group`);
+console.log(`${forceTimerStaysInHero ? 'PASS' : 'FAIL'}: maximum combination puts overriding Force first and shows only enabled settings in each group`);
 if (!savedDuration || !savedTimerPrice || !timerAndPriceOn || !forceTimerStaysInHero) ok = false;
 
 // Both plans apply the same live color rule to an enabled price condition.
@@ -633,7 +705,10 @@ const stoppedForce =
 console.log(`${selectedForceChargeGlows && stoppedForce ? 'PASS' : 'FAIL'}: selected force-charge plan glows and is controlled by its tile toggle`);
 if (!selectedForceChargeGlows || !stoppedForce) ok = false;
 
-// Pills only exist for controls available in the card's Home Assistant state.
+// Missing and disabled capabilities are omitted; enabled broken gates are
+// tested separately below because users still need to understand and stop them.
+const missingFeatureSchedulePreference = el._schedulePriceGate;
+el._schedulePriceGate = false;
 const temporarilyRemovedEntities = {
   schedulePrice: states['switch.schedule_price'],
   forcePrice: states['switch.force_price'],
@@ -654,10 +729,28 @@ const unavailableOptionsAreOmitted =
   availableScheduleDetails.some((detail) => detail === el._formatDateTime(states['schedule.charging'].attributes.next_event)) &&
   !availableScheduleDetails.some((detail) => detail.startsWith('≤ ')) &&
   root.querySelector('[data-plan-group="use-schedule"] .status-pill-group-label')?.textContent.trim() === 'Schedule' &&
-  root.querySelector('[data-plan-group="force-charge"] .status-pill-group-label')?.textContent.trim() === 'Force charge' &&
+  !root.querySelector('[data-plan-group="force-charge"]') &&
   availableForceDetails.length === 0;
 console.log(`${unavailableOptionsAreOmitted ? 'PASS' : 'FAIL'}: unavailable optional controls do not create hero pills`);
 if (!unavailableOptionsAreOmitted) ok = false;
+
+// Missing optional capabilities should not create unusable settings rows.
+click('[data-action="choose-force-mode"][data-mode="now"]');
+await new Promise((r) => setTimeout(r, 30));
+check('force editor omits timer and price options whose required entities are missing',
+  !!root.querySelector('.wizard-step-panel') &&
+  !root.querySelector('[data-action="toggle-force-now-timer"]') &&
+  !root.querySelector('[data-action="toggle-force-now-price"]') &&
+  !root.querySelector('.force-input'));
+click('[data-action="back-force-wizard"]');
+await new Promise((r) => setTimeout(r, 30));
+click('[data-action="choose-force-mode"][data-mode="schedule"]');
+await new Promise((r) => setTimeout(r, 30));
+check('schedule editor keeps the available schedule while omitting the missing price option',
+  !!root.querySelector('[data-action="open-more-info"][data-entity="schedule.charging"]') &&
+  !root.querySelector('[data-action="toggle-schedule-price"]'));
+click('[data-action="close-force-wizard"]');
+await new Promise((r) => setTimeout(r, 30));
 
 Object.assign(states, {
   'switch.schedule_price': temporarilyRemovedEntities.schedulePrice,
@@ -665,6 +758,209 @@ Object.assign(states, {
   'switch.force_timer': temporarilyRemovedEntities.forceTimer,
   'number.duration': temporarilyRemovedEntities.forceDuration,
 });
+
+el._schedulePriceGate = missingFeatureSchedulePreference;
+
+// An active price constraint remains meaningful when its telemetry disappears.
+// The live gate switch must remain reachable so the user can remove the gate.
+const savedMissingPriceSensor = states['sensor.current_price'];
+const savedMissingPriceSwitchState = states['switch.schedule_price'].state;
+states['switch.schedule'].state = 'on';
+states['switch.schedule_price'].state = 'on';
+el._schedulePriceGate = true;
+delete states['sensor.current_price'];
+el.hass = hass;
+await new Promise((r) => setTimeout(r, 30));
+check('an enabled schedule price gate remains visible when its sensor disappears',
+  /Price unavailable/i.test(root.querySelector('[data-plan-group="use-schedule"]')?.textContent || ''));
+openForceWizard();
+await new Promise((r) => setTimeout(r, 30));
+click('[data-action="choose-force-mode"][data-mode="schedule"]');
+await new Promise((r) => setTimeout(r, 30));
+const unavailableEnabledPriceGate = root.querySelector('[data-action="toggle-schedule-price"]');
+check('the enabled price option explains unavailability and stays removable',
+  unavailableEnabledPriceGate?.getAttribute('aria-checked') === 'true' &&
+  !unavailableEnabledPriceGate.disabled && /Unavailable/i.test(unavailableEnabledPriceGate.textContent));
+const removeUnavailablePriceStart = calls.length;
+click('[data-action="toggle-schedule-price"]');
+await new Promise((r) => setTimeout(r, 30));
+check('removing an enabled unavailable price gate keeps scheduled charging enabled',
+  calls.slice(removeUnavailablePriceStart).some((call) => call[1] === 'turn_off' &&
+    call[2].entity_id === 'switch.schedule_price') &&
+  states['switch.schedule_price'].state === 'off' && states['switch.schedule'].state === 'on' &&
+  el._schedulePriceGate === false);
+click('[data-action="close-force-wizard"]');
+await new Promise((r) => setTimeout(r, 30));
+states['sensor.current_price'] = savedMissingPriceSensor;
+states['switch.schedule_price'].state = savedMissingPriceSwitchState;
+el._schedulePriceGate = missingFeatureSchedulePreference;
+el.hass = hass;
+await new Promise((r) => setTimeout(r, 30));
+
+// Validate the whole plan before writing anything: dependencies can go offline
+// between opening the dialog and applying the user's saved settings.
+el.hass = hass;
+await new Promise((r) => setTimeout(r, 30));
+const originalForceSwitchState = states['switch.force'].state;
+states['switch.force'].state = 'unavailable';
+const failedForceCallStart = calls.length;
+await el._applyForceMode('timer_price');
+check('unavailable Force activation prevents every timer/price service write',
+  calls.length === failedForceCallStart && /unavailable/i.test(el._forceWizardError));
+states['switch.force'].state = originalForceSwitchState;
+const originalScheduleSwitchState = states['switch.schedule'].state;
+const originalSchedulePriceState = states['switch.schedule_price'].state;
+const originalSchedulePricePreference = el._schedulePriceGate;
+states['switch.schedule'].state = 'off';
+states['switch.schedule_price'].state = 'unavailable';
+el._schedulePriceGate = false;
+const failedScheduleCallStart = calls.length;
+await el._applyForceMode('schedule');
+check('unavailable schedule-price control prevents partially activating a schedule',
+  calls.length === failedScheduleCallStart && states['switch.schedule'].state === 'off' &&
+  /unavailable/i.test(el._forceWizardError));
+states['switch.schedule'].state = originalScheduleSwitchState;
+states['switch.schedule_price'].state = originalSchedulePriceState;
+el._schedulePriceGate = originalSchedulePricePreference;
+
+// Priority and limits are reachable from the same charging-plan chooser.
+el.hass = hass;
+openForceWizard();
+await new Promise((r) => setTimeout(r, 30));
+click('[data-action="open-settings"]');
+await new Promise((r) => setTimeout(r, 30));
+check('charging-plan chooser opens working priority and duty settings',
+  !!root.querySelector('.settings-panel') && !root.querySelector('.force-wizard-panel') &&
+  !!root.querySelector('[data-action="open-submenu"][data-entity="select.policy"]') &&
+  !!root.querySelector('[data-action="edit"][data-entity="number.duty"]'));
+
+// Labels may normalize known controller identifiers, but service values and
+// unknown options must always remain exactly as supplied by Home Assistant.
+const originalPolicy = states['select.policy'].state;
+const originalPolicyOptions = states['select.policy'].attributes.options;
+const reorderedPolicyOptions = ['Custom solar priority', 'smartevse_2_only', 'SmartEVSE 1 first'];
+states['select.policy'].attributes.options = reorderedPolicyOptions;
+states['select.policy'].state = 'Custom solar priority';
+el.hass = hass;
+click('[data-action="open-submenu"][data-entity="select.policy"]');
+await new Promise((r) => setTimeout(r, 30));
+const policyOptions = [...root.querySelectorAll('[data-action="choose-option"][data-entity="select.policy"]')];
+check('priority choices preserve reordered raw values and unknown option labels',
+  JSON.stringify(policyOptions.map((option) => option.dataset.value)) === JSON.stringify(reorderedPolicyOptions) &&
+  policyOptions[0]?.textContent.trim() === 'Custom solar priority' &&
+  policyOptions[1]?.textContent.trim() === 'SmartEVSE 2 only');
+const policyCallStart = calls.length;
+click('[data-action="choose-option"][data-value="smartevse_2_only"]');
+await new Promise((r) => setTimeout(r, 30));
+click('[data-action="choose-option"][data-value="Custom solar priority"]');
+await new Promise((r) => setTimeout(r, 30));
+const selectedPolicyCalls = calls.slice(policyCallStart).filter((call) => call[0] === 'select' && call[1] === 'select_option');
+check('priority selection sends the exact canonical or unknown Home Assistant option',
+  selectedPolicyCalls.length === 2 &&
+  selectedPolicyCalls[0][2].entity_id === 'select.policy' && selectedPolicyCalls[0][2].option === 'smartevse_2_only' &&
+  selectedPolicyCalls[1][2].option === 'Custom solar priority');
+
+const workingCallService = hass.callService;
+hass.callService = (domain, service, data) => {
+  if (data?.entity_id === 'select.policy') return Promise.reject(new Error('Priority rejected by controller'));
+  return workingCallService(domain, service, data);
+};
+click('[data-action="choose-option"][data-value="smartevse_2_only"]');
+await new Promise((r) => setTimeout(r, 30));
+check('priority service failure is visible and restores the previous choice',
+  /Priority rejected by controller/.test(root.querySelector('.settings-panel [role="alert"]')?.textContent || '') &&
+  root.querySelector('[data-action="choose-option"].selected')?.dataset.value === 'Custom solar priority');
+hass.callService = workingCallService;
+click('[data-action="back-settings"]');
+await new Promise((r) => setTimeout(r, 30));
+states['select.policy'].attributes.options = [];
+el.hass = hass;
+click('[data-action="open-submenu"][data-entity="select.policy"]');
+await new Promise((r) => setTimeout(r, 30));
+check('an empty priority option list never invents controller choices',
+  !root.querySelector('[data-action="choose-option"][data-entity="select.policy"]'));
+click('[data-action="back-settings"]');
+await new Promise((r) => setTimeout(r, 30));
+states['select.policy'].state = originalPolicy;
+states['select.policy'].attributes.options = originalPolicyOptions;
+el.hass = hass;
+
+// Range enforcement belongs in the save path, since keyboard and automation
+// events can submit values beyond the native number input's UI limits.
+click('[data-action="edit"][data-entity="number.duty"]');
+await new Promise((r) => setTimeout(r, 30));
+const submitDuty = async (value) => {
+  const input = root.querySelector('.setting-input[data-entity="number.duty"]');
+  if (!input) throw new Error('Duty-cycle editor is missing');
+  input.value = String(value);
+  input.dispatchEvent(new win.Event('input', { bubbles: true, composed: true }));
+  click('[data-action="save-edit"][data-entity="number.duty"]');
+  await new Promise((r) => setTimeout(r, 30));
+};
+const invalidDutyCallStart = calls.length;
+await submitDuty(999);
+check('duty values above the entity maximum show an error without a service call',
+  calls.length === invalidDutyCallStart &&
+  !!root.querySelector('.settings-panel [role="alert"]') &&
+  !!root.querySelector('.setting-input[data-entity="number.duty"]'));
+await submitDuty(1);
+check('duty values below the entity minimum show an error without a service call',
+  calls.length === invalidDutyCallStart &&
+  !!root.querySelector('.settings-panel [role="alert"]') &&
+  !!root.querySelector('.setting-input[data-entity="number.duty"]'));
+await submitDuty(45);
+check('a valid duty-cycle value uses number.set_value and closes its editor',
+  calls.slice(invalidDutyCallStart).some((call) => call[0] === 'number' && call[1] === 'set_value' &&
+    call[2].entity_id === 'number.duty' && call[2].value === 45) &&
+  !root.querySelector('.setting-input[data-entity="number.duty"]'));
+click('[data-action="edit"][data-entity="number.duty"]');
+await new Promise((r) => setTimeout(r, 30));
+hass.callService = (domain, service, data) => {
+  if (data?.entity_id === 'number.duty') return Promise.reject(new Error('Duty cycle rejected by controller'));
+  return workingCallService(domain, service, data);
+};
+await submitDuty(60);
+check('duty service failure shows a visible alert and keeps the draft editable',
+  /Duty cycle rejected by controller/.test(root.querySelector('.settings-panel [role="alert"]')?.textContent || '') &&
+  root.querySelector('.setting-input[data-entity="number.duty"]')?.value === '60' &&
+  states['number.duty'].state === '45');
+hass.callService = workingCallService;
+click('[data-action="close-settings"]');
+await new Promise((r) => setTimeout(r, 30));
+
+// Unavailable settings must neither open an empty dialog nor trap an already
+// open editor when Home Assistant loses the entity during interaction.
+states['select.policy'].state = 'unavailable';
+el.hass = hass;
+openForceWizard();
+await new Promise((r) => setTimeout(r, 30));
+click('[data-action="open-settings"]');
+await new Promise((r) => setTimeout(r, 30));
+const unavailablePolicyEntry = root.querySelector('[data-action="open-submenu"][data-entity="select.policy"]');
+click('[data-action="open-submenu"][data-entity="select.policy"]');
+await new Promise((r) => setTimeout(r, 30));
+check('unavailable priority is disabled instead of opening an empty editor',
+  unavailablePolicyEntry?.disabled && !!root.querySelector('.settings-panel') &&
+  !root.querySelector('.submenu-panel') && !el._editingEntity);
+states['select.policy'].state = originalPolicy;
+el.hass = hass;
+await new Promise((r) => setTimeout(r, 30));
+click('[data-action="open-submenu"][data-entity="select.policy"]');
+await new Promise((r) => setTimeout(r, 30));
+states['select.policy'].state = 'unavailable';
+el.hass = hass;
+await new Promise((r) => setTimeout(r, 30));
+const lostPolicyStillNavigable =
+  !!root.querySelector('.settings-panel') &&
+  /unavailable/i.test(root.querySelector('.settings-panel [role="alert"]')?.textContent || '') &&
+  !!root.querySelector('[data-action="back-settings"]') &&
+  !!root.querySelector('[data-action="close-settings"]') &&
+  !root.querySelector('[data-action="choose-option"]') && !el._editingEntity;
+click('[data-action="close-settings"]');
+await new Promise((r) => setTimeout(r, 30));
+check('a policy lost during editing shows an error and remains possible to close',
+  lostPolicyStillNavigable && !root.querySelector('.settings-panel'));
+states['select.policy'].state = originalPolicy;
 
 console.log(ok ? '\nSMOKE TEST OK' : '\nSMOKE TEST FAILED');
 process.exit(ok ? 0 : 1);

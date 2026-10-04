@@ -1,14 +1,22 @@
 import { LitElement, html } from "lit";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
+import { OVERVIEW_CSS } from "./styles/overview";
 import { DESIGN_TOKENS_CSS } from "./shared/design-tokens";
 import { buildGlow, type PulseColors } from "./shared/glow";
 
-const CARD_VERSION = "0.0.51";
+const CARD_VERSION = "0.0.52";
 
 const ACTIVE_GLOW: PulseColors = {
   weak: "rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha))",
   strong: "rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-strong-alpha))",
 };
+
+interface UiFocusSnapshot {
+  key: string;
+  selectionStart?: number;
+  selectionEnd?: number;
+  selectionDirection?: "forward" | "backward" | "none";
+}
 
 interface HassEntity {
   state: string;
@@ -53,6 +61,7 @@ class SmartEVSEFlowCard extends LitElement {
   private _editingEntity: string | null = null;
   private _editorDrafts: Record<string, string> = {};
   private _settingsModalOpen = false;
+  private _settingsError = "";
   private _settingsSubmenuEntity: string | null = null;
   private _forceWizardOpen = false;
   private _forceWizardStep: "choose" | "schedule" | "now" = "choose";
@@ -63,6 +72,14 @@ class SmartEVSEFlowCard extends LitElement {
   private _forceWizardBusy = false;
   private _forceWizardError = "";
   private _lastRenderKey = "";
+  // unsafeHTML replaces the subtree: preserve user-owned UI state explicitly.
+  private _detailsOpen = new Map<string, boolean>();
+  private _pendingUiFocus: UiFocusSnapshot | null = null;
+  private _busyUiFocus: UiFocusSnapshot | null = null;
+  private _dialogReturnFocus: UiFocusSnapshot | null = null;
+  private _renderedDialogKey = "";
+  private _dialogHadFocus = false;
+
 
   static getStubConfig() {
     return {
@@ -103,7 +120,9 @@ class SmartEVSEFlowCard extends LitElement {
       this._syncPlanPreferencesFromEntities();
     }
     if (this._editingEntity) {
-      return;
+      if (this._isAvailable(this._editingEntity)) return;
+      this._editingEntity = null;
+      this._settingsError = "This setting is unavailable. Check its connection and try again.";
     }
     const renderKey = this._buildRenderKey();
     if (renderKey === this._lastRenderKey) {
@@ -114,11 +133,16 @@ class SmartEVSEFlowCard extends LitElement {
   }
 
   getCardSize() {
-    return 12;
+    return 6;
   }
 
   _entity(entityId) {
     return entityId ? this._hass?.states?.[entityId] ?? null : null;
+  }
+
+  _isAvailable(entityId) {
+    const state = this._entity(entityId)?.state;
+    return Boolean(state && !["unknown", "unavailable"].includes(state.toLowerCase()));
   }
 
   _state(entityId) {
@@ -279,14 +303,11 @@ class SmartEVSEFlowCard extends LitElement {
     if (canonical[normalized]) {
       return canonical[normalized];
     }
-    if (index >= 0 && index < labels.length) {
-      return labels[index];
-    }
     return String(option ?? "");
   }
 
   _chargePolicyOptionItems(options = []) {
-    const rawOptions = Array.isArray(options) && options.length ? options : this._chargePolicyLabels();
+    const rawOptions = Array.isArray(options) ? options : [];
     return rawOptions.map((option, index) => ({
       value: option,
       label: this._chargePolicyLabelForOption(option, index),
@@ -346,6 +367,8 @@ class SmartEVSEFlowCard extends LitElement {
       "charge_policy",
       "mains_peak",
       "wled_visuals",
+      "smartevse_1_available",
+      "smartevse_1_name",
       "smartevse_1_connected_ev",
       "smartevse_1_battery",
       "smartevse_1_state",
@@ -355,6 +378,8 @@ class SmartEVSEFlowCard extends LitElement {
       "smartevse_1_max_current",
       "smartevse_1_error",
       "smartevse_1_session_complete",
+      "smartevse_2_available",
+      "smartevse_2_name",
       "smartevse_2_connected_ev",
       "smartevse_2_battery",
       "smartevse_2_state",
@@ -457,45 +482,6 @@ class SmartEVSEFlowCard extends LitElement {
     return Math.max(0, Math.min(100, Math.round(numeric)));
   }
 
-  _batteryTone(percent) {
-    if (!Number.isFinite(percent)) {
-      return "unknown";
-    }
-    if (percent <= 20) {
-      return "low";
-    }
-    if (percent <= 55) {
-      return "mid";
-    }
-    return "high";
-  }
-
-  _vehicleBatteryMarkup(rawValue) {
-    const percent = this._batteryPercent(rawValue);
-    if (percent === null) {
-      return `
-        <div class="vehicle-battery vehicle-battery-unknown">
-          <div class="vehicle-battery-shell">
-            <div class="vehicle-battery-track"></div>
-            <div class="vehicle-battery-value">n/a</div>
-          </div>
-        </div>
-      `;
-    }
-    const tone = this._batteryTone(percent);
-    return `
-      <div class="vehicle-battery vehicle-battery-${this._safe(tone)}">
-        <div class="vehicle-battery-shell">
-          <div class="vehicle-battery-cap"></div>
-          <div class="vehicle-battery-track"></div>
-          <div class="vehicle-battery-level" style="width: ${percent}%"></div>
-          <div class="vehicle-battery-gloss"></div>
-          <div class="vehicle-battery-value">${this._safe(`${percent}%`)}</div>
-        </div>
-      </div>
-    `;
-  }
-
   _homeAssistantDateTimeFormatOptions() {
     const locale = this._hass?.locale;
     const timeFormat = String(locale?.time_format || "").toLowerCase();
@@ -523,17 +509,6 @@ class SmartEVSEFlowCard extends LitElement {
     }
     const { locale, options } = this._homeAssistantDateTimeFormatOptions();
     return new Intl.DateTimeFormat(locale, options).format(date);
-  }
-
-  _homeConnectorPath(side) {
-    if (side === "left") {
-      return "M 320 0 L 320 40 C 320 50 312 58 302 58 L 173 58 C 163 58 155 66 155 76 L 155 110";
-    }
-    return "M 320 0 L 320 40 C 320 50 328 58 338 58 L 467 58 C 477 58 485 66 485 76 L 485 110";
-  }
-
-  _vehicleConnectorPath() {
-    return "M 60 0 L 60 56";
   }
 
   _wledVisuals(attrs) {
@@ -622,7 +597,10 @@ class SmartEVSEFlowCard extends LitElement {
   }
 
   _evData(attrs, key, fallbackName) {
-    const connected = attrs[`${key}_plug_state`] === "Connected";
+    const controllerAvailable = !["unknown", "unavailable"].includes(this._state(this._config.controller_entity));
+    const available = controllerAvailable && attrs[`${key}_available`] !== false &&
+      !["unknown", "unavailable"].includes(String(attrs[`${key}_state`] || "").toLowerCase());
+    const connected = available && attrs[`${key}_plug_state`] === "Connected";
     const state = String(attrs[`${key}_state`] ?? "").trim();
     const mode = String(attrs[`${key}_mode`] ?? "").trim();
     const chargeCurrent = Number(attrs[`${key}_charge_current`] ?? 0);
@@ -634,17 +612,19 @@ class SmartEVSEFlowCard extends LitElement {
     const connectedEvName = String(attrs[`${key}_connected_ev`] ?? "").trim();
     const battery = String(attrs[`${key}_battery`] ?? "").trim();
     const hasError = error && !["NONE", "None", "unknown", "unavailable"].includes(error);
-    const isCharging = state === "Charging" && chargeCurrent > 0.1;
+    const isCharging = available && connected && state === "Charging";
     // Match the integration's physical WLED state exactly. WLED switches to its
     // charging visual as soon as SmartEVSE reports Charging, even while current
     // is still ramping up from zero.
-    const visual = !connected ? "off" : hasError ? "error" : state === "Charging" ? "charging" : "idle";
+    const visual = !available ? "off" : hasError ? "error" : !connected ? "off" : isCharging ? "charging" : "idle";
 
     let tone = "idle";
-    if (!connected) {
-      tone = "unplugged";
+    if (!available) {
+      tone = "unavailable";
     } else if (hasError) {
       tone = "error";
+    } else if (!connected) {
+      tone = "unplugged";
     } else if (isCharging) {
       tone = "charging";
     } else if (active) {
@@ -656,6 +636,7 @@ class SmartEVSEFlowCard extends LitElement {
     return {
       key,
       smartevseName,
+      available,
       connectedEvName,
       connected,
       state: state || "Idle",
@@ -701,7 +682,7 @@ class SmartEVSEFlowCard extends LitElement {
 
   _editorMeta(entityId) {
     const entity = this._entity(entityId);
-    if (!entity) {
+    if (!entity || !this._isAvailable(entityId)) {
       return { supported: false };
     }
     const [domain] = entityId.split(".");
@@ -759,6 +740,8 @@ class SmartEVSEFlowCard extends LitElement {
   }
 
   _openEditor(entityId) {
+    if (!this._editorMeta(entityId).supported) return;
+    this._settingsError = "";
     this._editingEntity = entityId;
     if (!this._editorDrafts) {
       this._editorDrafts = {};
@@ -773,6 +756,9 @@ class SmartEVSEFlowCard extends LitElement {
   }
 
   _openSettingsSubmenu(entityId) {
+    const meta = this._editorMeta(entityId);
+    if (!meta.supported || meta.kind !== "select") return;
+    this._settingsError = "";
     this._settingsSubmenuEntity = entityId;
     this._editingEntity = entityId;
     if (!this._editorDrafts) {
@@ -839,7 +825,9 @@ class SmartEVSEFlowCard extends LitElement {
       serviceData.option = rawValue;
     } else if (meta.kind === "number") {
       const parsed = Number.parseFloat(rawValue);
-      if (!Number.isFinite(parsed)) {
+      if (!Number.isFinite(parsed) || (meta.min !== null && parsed < meta.min) || (meta.max !== null && parsed > meta.max)) {
+        this._settingsError = `Enter a value between ${meta.min ?? "−∞"} and ${meta.max ?? "∞"}${meta.unit ? ` ${meta.unit}` : ""}.`;
+        this._render();
         return;
       }
       serviceData.value = parsed;
@@ -850,7 +838,14 @@ class SmartEVSEFlowCard extends LitElement {
     } else {
       return;
     }
-    await this._hass.callService(meta.serviceDomain, meta.service, serviceData);
+    this._settingsError = "";
+    try {
+      await this._hass.callService(meta.serviceDomain, meta.service, serviceData);
+    } catch (error) {
+      this._settingsError = error instanceof Error ? error.message : "Unable to save this setting.";
+      this._render();
+      return;
+    }
     this._editingEntity = null;
     if (this._settingsSubmenuEntity === entityId) {
       this._settingsSubmenuEntity = null;
@@ -863,9 +858,10 @@ class SmartEVSEFlowCard extends LitElement {
     this._updateEditorDraft(entityId, value);
     this._render();
     const meta = this._editorMeta(entityId);
-    if (!meta.supported || meta.kind !== "select") {
+    if (!meta.supported || meta.kind !== "select" || !meta.options.includes(value)) {
       return;
     }
+    this._settingsError = "";
     try {
       await this._hass.callService(meta.serviceDomain, meta.service, {
         entity_id: entityId,
@@ -873,14 +869,15 @@ class SmartEVSEFlowCard extends LitElement {
       });
     } catch (error) {
       this._updateEditorDraft(entityId, previousValue);
+      this._settingsError = error instanceof Error ? error.message : "Unable to save this setting.";
       this._render();
-      throw error;
     }
   }
 
   _openSettingsModal() {
     this._forceWizardOpen = false;
     this._settingsModalOpen = true;
+    this._settingsError = "";
     this._settingsSubmenuEntity = null;
     this._editorDrafts = {};
     this._render();
@@ -1103,7 +1100,7 @@ class SmartEVSEFlowCard extends LitElement {
   }
 
   async _setSwitchState(entityId, enabled) {
-    if (!entityId || !this._entity(entityId)) {
+    if (!["on", "off"].includes(this._state(entityId))) {
       throw new Error("A required charging-control switch is unavailable.");
     }
     const isOn = this._state(entityId) === "on";
@@ -1160,6 +1157,18 @@ class SmartEVSEFlowCard extends LitElement {
     this._forceWizardError = "";
     this._render();
     try {
+      const needsPrice = mode === "price" || mode === "timer_price" || (mode === "schedule" && this._schedulePriceGate);
+      const needsTimer = mode === "timer" || mode === "timer_price";
+      const required = mode === "schedule"
+        ? [this._config.schedule_switch_entity, this._config.schedule_entity, ...(this._entity(this._schedulePriceEntity()) ? [this._schedulePriceEntity()] : [])]
+        : [this._forceModeEntity(mode), ...(this._supportsIndependentPlans() ? [this._config.force_charge_entity] : [])];
+      if (needsPrice) required.push(this._config.price_entity, this._config.acceptable_price_entity,
+        mode === "schedule" ? this._schedulePriceEntity() : this._config.force_price_entity);
+      if (needsTimer) required.push(this._config.force_timer_entity, this._config.force_charge_duration_entity);
+      required.push(this._config.controller_entity);
+      if (required.some(entity => !this._isAvailable(entity))) {
+        throw new Error("A required charging control is unavailable. Check the connection before enabling this plan.");
+      }
       if (mode === "schedule") {
         const scheduleEntity = this._config.schedule_switch_entity;
         const schedulePriceEntity = this._schedulePriceEntity();
@@ -1269,6 +1278,7 @@ class SmartEVSEFlowCard extends LitElement {
             <button class="modal-close" data-action="close-settings" type="button">Close</button>
           </div>
           ${settingsControls}
+          ${this._settingsError ? `<div class="wizard-error" role="alert">${this._safe(this._settingsError)}</div>` : ""}
         </div>
       </div>
     `;
@@ -1377,15 +1387,17 @@ class SmartEVSEFlowCard extends LitElement {
           icon: "mdi:calendar-clock",
           title: "Use a schedule",
           enabled: scheduleEnabled,
-          available: Boolean(
-            this._entity(this._config.schedule_switch_entity) && this._entity(this._config.schedule_entity),
-          ),
+          available: Boolean(this._entity(this._config.schedule_switch_entity)),
+          canToggle: this._isAvailable(this._config.schedule_switch_entity) &&
+            (scheduleEnabled || this._isAvailable(this._config.schedule_entity)),
         },
         {
           mode: "now",
           icon: "mdi:lightning-bolt",
           title: "Force charge",
           enabled: forceEnabled,
+          canToggle: this._isAvailable(this._config.force_charge_entity) ||
+            (!this._supportsIndependentPlans() && [this._config.force_timer_entity, this._config.force_price_entity].some(id => this._isAvailable(id))),
           available: Boolean(
             this._entity(this._config.force_charge_entity) ||
               this._entity(this._config.force_timer_entity) ||
@@ -1405,6 +1417,7 @@ class SmartEVSEFlowCard extends LitElement {
             </div>
             <div class="wizard-options">
               ${choices
+                .filter(choice => choice.available || choice.enabled)
                 .map((choice) => {
                   const glowStyle = buildGlow(ACTIVE_GLOW, "pulse", choice.enabled).style;
                   return `
@@ -1421,6 +1434,7 @@ class SmartEVSEFlowCard extends LitElement {
                           <span class="wizard-option-icon"><ha-icon icon="${this._safe(choice.icon)}"></ha-icon></span>
                           <span class="wizard-option-copy">
                             <span class="wizard-option-title">${this._safe(choice.title)}</span>
+                            ${!choice.canToggle ? `<span class="control-unavailable">Unavailable</span>` : ""}
                           </span>
                           <ha-icon class="wizard-option-next" icon="mdi:chevron-right"></ha-icon>
                         </button>
@@ -1431,8 +1445,8 @@ class SmartEVSEFlowCard extends LitElement {
                           type="button"
                           role="switch"
                           aria-checked="${choice.enabled ? "true" : "false"}"
-                          aria-label="Turn ${this._safe(choice.title.toLowerCase())} ${choice.enabled ? "off" : "on"}"
-                          ${!choice.available || busy ? "disabled" : ""}
+                          aria-label="${this._safe(choice.title)}"
+                          ${!choice.canToggle || (!choice.enabled && !this._isAvailable(this._config.controller_entity)) || busy ? "disabled" : ""}
                         >
                           <span class="wizard-plan-toggle-thumb"></span>
                         </button>
@@ -1442,6 +1456,7 @@ class SmartEVSEFlowCard extends LitElement {
                 })
                 .join("")}
             </div>
+            ${this._entity(this._config.charge_policy_entity) || this._entity(this._config.duty_cycle_entity) ? `<button class="advanced-settings" data-action="open-settings" type="button">Charger priority &amp; limits<ha-icon icon="mdi:chevron-right" aria-hidden="true"></ha-icon></button>` : ""}
             ${error}
           </div>
         </div>
@@ -1461,6 +1476,9 @@ class SmartEVSEFlowCard extends LitElement {
         this._entity(this._config.acceptable_price_entity) &&
         this._entity(this._config.price_entity),
     );
+    const timerReady = this._isAvailable(this._config.force_timer_entity) && this._isAvailable(this._config.force_charge_duration_entity);
+    const priceReady = this._isAvailable(isSchedule ? this._schedulePriceEntity() : this._config.force_price_entity) &&
+      this._isAvailable(this._config.acceptable_price_entity) && this._isAvailable(this._config.price_entity);
     const title = isSchedule ? "Scheduled charging" : "Force charge";
     const field = isSchedule
       ? `
@@ -1477,18 +1495,19 @@ class SmartEVSEFlowCard extends LitElement {
             </span>
             <ha-icon class="wizard-option-next" icon="mdi:chevron-right"></ha-icon>
           </button>
-          <div class="wizard-expandable ${this._schedulePriceGate ? "expanded" : ""}">
+          ${priceAvailable || this._schedulePriceGate ? `<div class="wizard-expandable ${this._schedulePriceGate ? "expanded" : ""}">
             <button
               class="wizard-toggle ${this._schedulePriceGate ? "selected" : ""}"
               data-action="toggle-schedule-price"
               type="button"
               role="switch"
               aria-checked="${this._schedulePriceGate ? "true" : "false"}"
-              ${busy ? "disabled" : ""}
+              ${busy || (!priceReady && !this._schedulePriceGate) || (this._isSchedulePlanActive() && !this._isAvailable(this._schedulePriceEntity())) ? "disabled" : ""}
             >
-              <span class="wizard-option-icon"><ha-icon icon="mdi:cash-check"></ha-icon></span>
+              <span class="wizard-option-icon"><ha-icon icon="mdi:currency-eur"></ha-icon></span>
               <span class="wizard-toggle-copy">
                 <strong>Also require an acceptable price</strong>
+                ${!priceReady ? `<span class="control-unavailable">Unavailable</span>` : ""}
               </span>
               <span class="wizard-toggle-state ${this._schedulePriceGate ? "selected" : ""}" aria-hidden="true">
                 <span class="wizard-toggle-state-thumb"></span>
@@ -1506,21 +1525,22 @@ class SmartEVSEFlowCard extends LitElement {
                 `
                 : ""
             }
-          </div>
+          </div>` : ""}
         `
       : `
-          <div class="wizard-expandable ${this._forceNowTimer ? "expanded" : ""}">
+          ${timerAvailable || this._forceNowTimer ? `<div class="wizard-expandable ${this._forceNowTimer ? "expanded" : ""}">
             <button
               class="wizard-toggle ${this._forceNowTimer ? "selected" : ""}"
               data-action="toggle-force-now-timer"
               type="button"
               role="switch"
               aria-checked="${this._forceNowTimer ? "true" : "false"}"
-              ${!timerAvailable || busy ? "disabled" : ""}
+              ${(!timerReady && !this._forceNowTimer) || busy || (this._isForcePlanActive() && !this._isAvailable(this._config.force_timer_entity)) ? "disabled" : ""}
             >
               <span class="wizard-option-icon"><ha-icon icon="mdi:timer-outline"></ha-icon></span>
               <span class="wizard-toggle-copy">
                 <strong>Stop after a set time</strong>
+                ${!timerReady ? `<span class="control-unavailable">Unavailable</span>` : ""}
               </span>
               <span class="wizard-toggle-state ${this._forceNowTimer ? "selected" : ""}" aria-hidden="true">
                 <span class="wizard-toggle-state-thumb"></span>
@@ -1533,19 +1553,20 @@ class SmartEVSEFlowCard extends LitElement {
                   )}</div>`
                 : ""
             }
-          </div>
-          <div class="wizard-expandable ${this._forceNowPrice ? "expanded" : ""}">
+          </div>` : ""}
+          ${priceAvailable || this._forceNowPrice ? `<div class="wizard-expandable ${this._forceNowPrice ? "expanded" : ""}">
             <button
               class="wizard-toggle ${this._forceNowPrice ? "selected" : ""}"
               data-action="toggle-force-now-price"
               type="button"
               role="switch"
               aria-checked="${this._forceNowPrice ? "true" : "false"}"
-              ${!priceAvailable || busy ? "disabled" : ""}
+              ${(!priceReady && !this._forceNowPrice) || busy || (this._isForcePlanActive() && !this._isAvailable(this._config.force_price_entity)) ? "disabled" : ""}
             >
-              <span class="wizard-option-icon"><ha-icon icon="mdi:cash-check"></ha-icon></span>
+              <span class="wizard-option-icon"><ha-icon icon="mdi:currency-eur"></ha-icon></span>
               <span class="wizard-toggle-copy">
                 <strong>Require an acceptable price</strong>
+                ${!priceReady ? `<span class="control-unavailable">Unavailable</span>` : ""}
               </span>
               <span class="wizard-toggle-state ${this._forceNowPrice ? "selected" : ""}" aria-hidden="true">
                 <span class="wizard-toggle-state-thumb"></span>
@@ -1559,7 +1580,7 @@ class SmartEVSEFlowCard extends LitElement {
                   )}</div>`
                 : ""
             }
-          </div>
+          </div>` : ""}
         `;
 
     return `
@@ -1584,16 +1605,13 @@ class SmartEVSEFlowCard extends LitElement {
 
   _settingsSubmenuModal(entityId) {
     const meta = this._editorMeta(entityId);
-    if (!meta.supported) {
-      return "";
-    }
     const entity = this._entity(entityId);
     const name = entity?.attributes?.friendly_name || "Setting";
     const isChargePolicy = entityId === this._config.charge_policy_entity;
     const title = isChargePolicy ? "Charge Policy" : name;
     const draft = this._editorDraft(entityId);
     const content =
-      meta.kind === "select"
+      !meta.supported ? `<p class="overview-note">This setting is unavailable.</p>` : meta.kind === "select"
         ? `
           <div class="modal-options">
             ${meta.optionItems
@@ -1634,13 +1652,14 @@ class SmartEVSEFlowCard extends LitElement {
             <button class="modal-close" data-action="close-settings" type="button">Close</button>
           </div>
           ${content}
+          ${this._settingsError ? `<div class="wizard-error" role="alert">${this._safe(this._settingsError)}</div>` : ""}
         </div>
       </div>
     `;
   }
 
   _settingTile({ entityId, icon, label, value, presentation = "inline" }) {
-    if (!entityId) {
+    if (!entityId || !this._entity(entityId)) {
       return "";
     }
     const meta = this._editorMeta(entityId);
@@ -1648,11 +1667,11 @@ class SmartEVSEFlowCard extends LitElement {
     if (!isEditing) {
       const action = presentation === "submenu" ? "open-submenu" : "edit";
       return `
-        <button class="setting-tile" data-action="${this._safe(action)}" data-entity="${this._safe(entityId)}" type="button">
+        <button class="setting-tile" data-action="${this._safe(action)}" data-entity="${this._safe(entityId)}" type="button" ${!meta.supported ? "disabled" : ""}>
           <div class="setting-icon"><ha-icon icon="${this._safe(icon)}"></ha-icon></div>
           <div class="setting-copy">
             <div class="setting-label">${this._safe(label)}</div>
-            <div class="setting-value">${this._safe(value)}</div>
+            <div class="setting-value">${meta.supported ? this._safe(value) : "Unavailable"}</div>
           </div>
         </button>
       `;
@@ -1712,72 +1731,42 @@ class SmartEVSEFlowCard extends LitElement {
   }
 
   _evNode(ev) {
-    const stateTone = ev.hasError ? "error" : ev.isCharging ? "success" : ev.active ? "active" : "neutral";
-    const modeTone = String(ev.mode).toLowerCase() === "smart" ? "active" : "neutral";
-    const offerTone = ev.chargeCurrent > 0.1 ? "success" : "neutral";
-    const detailRows = [
-      { title: "State", value: ev.state, tone: stateTone },
-      { title: "Mode", value: ev.mode, tone: modeTone },
-      { title: "Offer", value: this._formatCurrent(ev.chargeCurrent), tone: offerTone },
-      { title: "Max", value: this._formatCurrent(ev.maxCurrent), tone: "neutral" },
-    ]
-      .map(
-        (detail) => `
-          <span class="ev-status-label">${this._safe(detail.title)}</span>
-          <span class="status-pill ev-status-pill tone-${this._safe(detail.tone)}">${this._safe(detail.value)}</span>
-        `,
-      )
-      .join("");
-    const smartevseTitle = ev.smartevseName || (ev.key === "smartevse_1" ? "SmartEVSE 1" : "SmartEVSE 2");
-    const vehicleTitle =
-      ev.connectedEvName && ev.connectedEvName.toLowerCase() !== "unknown" ? ev.connectedEvName : "?";
-    const vehicleBattery =
-      ev.connectedEvName && ev.connectedEvName.toLowerCase() !== "unknown" ? ev.battery || "n/a" : "n/a";
-    const vehicleBatteryMarkup = this._vehicleBatteryMarkup(vehicleBattery);
-    const vehicleConnectorPath = this._vehicleConnectorPath();
-    const vehicleNode = ev.connected
-      ? `
-        <div class="vehicle-link-wrap">
-          <svg class="vehicle-link" viewBox="0 0 120 56" preserveAspectRatio="none" aria-hidden="true">
-            <path class="pipe-base vehicle-pipe-base" d="${vehicleConnectorPath}"></path>
-            <path class="pipe-active tone-${this._safe(ev.tone)} vehicle-pipe-active" d="${vehicleConnectorPath}"></path>
-          </svg>
-        </div>
-        <div class="vehicle-node-wrap tone-${this._safe(ev.tone)}">
-          <div class="glow-under vehicle-glow" aria-hidden="true">
-            <div class="glow-overlay"></div>
-          </div>
-          <section class="vehicle-node tone-${this._safe(ev.tone)}">
-            <div class="vehicle-title">${this._safe(vehicleTitle)}</div>
-            ${vehicleBatteryMarkup}
-            ${ev.sessionComplete ? `<div class="vehicle-complete-badge">Done</div>` : ""}
-          </section>
-        </div>
-      `
-      : "";
-    const visuals = this._wledVisuals(this._entity(this._config.controller_entity)?.attributes || {});
-    const nodeStyle = this._wledNodeStyle(visuals, ev.visual);
+    const knownVehicle = ev.connectedEvName && !["unknown", "unavailable", "none", "?", "n/a"].includes(ev.connectedEvName.toLowerCase());
+    const vehicleTitle = knownVehicle ? ev.connectedEvName : "Vehicle connected";
+    const battery = knownVehicle ? this._batteryPercent(ev.battery) : null;
+    const status = !ev.available ? "Unavailable" : ev.hasError ? "Charger error" : !ev.connected ? "No vehicle connected"
+      : ev.isCharging ? "Charging" : ev.sessionComplete ? "Session complete" : ev.active ? "Ready to charge" : "Connected · waiting";
+    const visual = this._wledVisuals(this._entity(this._config.controller_entity)?.attributes || {});
+    const diagnostics = ev.available && ev.connected ? `
+      <details class="charger-details" data-charger="${this._safe(ev.key)}">
+        <summary>Charger details<ha-icon icon="mdi:chevron-down" aria-hidden="true"></ha-icon></summary>
+        <dl>
+          <div><dt>State</dt><dd>${this._safe(ev.state)}</dd></div>
+          <div><dt>Mode</dt><dd>${this._safe(ev.mode)}</dd></div>
+          <div><dt>Current offered</dt><dd>${this._safe(this._formatCurrent(ev.chargeCurrent))}</dd></div>
+          <div><dt>Limit</dt><dd>${this._safe(this._formatCurrent(ev.maxCurrent))}</dd></div>
+        </dl>
+      </details>` : "";
     return `
-      <div class="smartevse-stack">
-        <div
-          class="ev-node-wrap ${this._safe(ev.key)} tone-${this._safe(ev.tone)} visual-${this._safe(ev.visual)}"
-          style="${this._safe(nodeStyle)}"
-        >
-          <div class="glow-under ev-glow" aria-hidden="true">
-            <div class="glow-overlay"></div>
-          </div>
-          <section class="ev-node ${this._safe(ev.key)} tone-${this._safe(ev.tone)} visual-${this._safe(ev.visual)}">
-            <div class="ev-node-head">
-              <div class="ev-node-badges">
-                <div class="ev-label-text">${this._safe(smartevseTitle)}</div>
-              </div>
+      <div class="ev-node-wrap ${this._safe(ev.key)} tone-${this._safe(ev.tone)} visual-${this._safe(ev.visual)}"
+        style="${this._safe(this._wledNodeStyle(visual, ev.visual))}">
+        <div class="glow-under ev-glow" aria-hidden="true"><div class="glow-overlay"></div></div>
+        <section class="ev-node ${this._safe(ev.key)} tone-${this._safe(ev.tone)} visual-${this._safe(ev.visual)} ${!ev.connected ? "compact" : ""}"
+          aria-label="${this._safe(ev.smartevseName)}">
+          <div class="charger-heading">
+            <span class="charger-icon"><ha-icon icon="mdi:ev-station" aria-hidden="true"></ha-icon></span>
+            <div class="charger-copy">
+              <div class="charger-name">${this._safe(ev.smartevseName)}</div>
+              ${ev.connected ? `<div class="vehicle-name">${this._safe(vehicleTitle)}</div>` : ""}
+              <div class="charger-status"><span class="state-dot" aria-hidden="true"></span>${this._safe(status)}</div>
             </div>
-            <div class="ev-status-details">${detailRows}</div>
-          </section>
-        </div>
-        ${vehicleNode}
-      </div>
-    `;
+            ${ev.connected && battery !== null ? `<div class="battery-value">${this._safe(battery)}<span>%</span></div>` : ""}
+          </div>
+          ${ev.connected && battery !== null ? `<div class="battery-track" role="meter" aria-label="${this._safe(vehicleTitle)} battery" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${battery}"><span style="width:${battery}%"></span></div>` : ""}
+          ${ev.hasError ? `<p class="charger-message" role="status">${this._safe(ev.error)}</p>` : !ev.available ? `<p class="charger-message">Status cannot be read. Check the charger connection.</p>` : ""}
+          ${diagnostics}
+        </section>
+      </div>`;
   }
 
   _render() {
@@ -1808,7 +1797,6 @@ class SmartEVSEFlowCard extends LitElement {
     const chargeAllowed = Boolean(attrs.charge_allowed);
     const price = this._numberState(this._config.price_entity);
     const acceptablePrice = this._numberState(this._config.acceptable_price_entity);
-    const priceValue = price === null ? "n/a" : `${price.toFixed(3)} ${this._currency}`;
     const chargeReason = String(attrs.charge_reason ?? "").trim().toLowerCase();
 
     const rawPolicy = this._state(this._config.charge_policy_entity) || this._pretty(attrs.charge_policy);
@@ -1827,23 +1815,11 @@ class SmartEVSEFlowCard extends LitElement {
     const forcePriceOn = this._state(this._config.force_price_entity) === "on";
     const forceTimerOn = this._state(this._config.force_timer_entity) === "on";
     const forceDuration = this._numberState(this._config.force_charge_duration_entity);
-    const mainsPeak = Number(attrs.mains_peak);
     const ev1 = rawEv1;
     const ev2 = rawEv2;
     const reportedActiveEv = activeRaw === "smartevse_1" ? ev1 : activeRaw === "smartevse_2" ? ev2 : null;
     const flowingEv = ev1.isCharging ? ev1 : ev2.isCharging ? ev2 : null;
-    const activeEv = reportedActiveEv || flowingEv;
-    const flowLeft = flowingEv?.key === "smartevse_1";
-    const flowRight = flowingEv?.key === "smartevse_2";
-    const flowTone = flowingEv
-      ? "charging"
-      : activeEv
-      ? activeEv.isCharging
-        ? "charging"
-        : activeEv.hasError
-          ? "error"
-          : "active"
-      : "idle";
+    const activeEv = flowingEv || (reportedActiveEv?.available && reportedActiveEv.connected ? reportedActiveEv : null);
     // The hero represents the physical WLED device, so derive its glow from the
     // same per-SmartEVSE visuals instead of controller gating such as schedule,
     // price, or charge_allowed. Error wins, then charging, then connected/idle.
@@ -1858,9 +1834,21 @@ class SmartEVSEFlowCard extends LitElement {
     const priceAccepted = price !== null && acceptablePrice !== null ? price <= acceptablePrice : false;
     const hasControllerError = controllerError && !["NONE", "None", "unknown", "unavailable"].includes(controllerError);
     const acceptablePriceValue = acceptablePrice !== null ? `${acceptablePrice.toFixed(3)} ${this._currency}` : "n/a";
+    const priceLimitLabel = acceptablePrice === null ? "Price limit unavailable" : price === null
+      ? `≤ ${acceptablePriceValue} · price unavailable` : `≤ ${acceptablePriceValue}`;
     const forcePlanActive = this._isForcePlanActive();
     const gatingTitle = (() => {
       switch (chargeReason) {
+        case "all_connected_evs_complete":
+          return "All charging sessions complete";
+        case "smartevse_api_unavailable":
+          return "Charger connection unavailable";
+        case "smartevse_1_only_waiting_for_selected_ev":
+        case "smartevse_2_only_waiting_for_selected_ev":
+          return "Waiting for the selected vehicle";
+        case "smartevse_1_only_session_complete":
+        case "smartevse_2_only_session_complete":
+          return "Selected vehicle’s session complete";
         case "waiting_for_acceptable_price":
           return forcePlanActive
             ? "Force charge waiting for acceptable price"
@@ -1879,13 +1867,15 @@ class SmartEVSEFlowCard extends LitElement {
           return "";
       }
     })();
-    const activeTitle = hasControllerError
+    const activeTitle = ["unavailable", "unknown"].includes(controller.state)
+      ? "Controller unavailable"
+      : hasControllerError
       ? "Controller error"
       : gatingTitle
         ? gatingTitle
         : activeEv
         ? activeEv.isCharging
-          ? `Charging ${activeEv.smartevseName}`
+          ? `Charging ${activeEv.connectedEvName && activeEv.connectedEvName.toLowerCase() !== "unknown" ? activeEv.connectedEvName : activeEv.smartevseName}`
           : `${activeEv.smartevseName} selected`
         : chargeAllowed
           ? "Waiting for an eligible EV"
@@ -1939,30 +1929,17 @@ class SmartEVSEFlowCard extends LitElement {
     })();
     const scheduleControlAvailable = Boolean(this._entity(this._config.schedule_switch_entity));
     const scheduleEntityAvailable = Boolean(this._entity(this._config.schedule_entity));
-    const schedulePriceAvailable = Boolean(
-      this._entity(this._schedulePriceEntity()) &&
-        this._entity(this._config.acceptable_price_entity) &&
-        this._entity(this._config.price_entity),
-    );
     const forceControlAvailable = Boolean(
       this._entity(this._config.force_charge_entity) ||
         this._entity(this._config.force_timer_entity) ||
         this._entity(this._config.force_price_entity),
     );
-    const forceTimerAvailable = Boolean(
-      this._entity(this._config.force_timer_entity) &&
-        this._entity(this._config.force_charge_duration_entity),
-    );
-    const forcePriceAvailable = Boolean(
-      this._entity(this._config.force_price_entity) &&
-        this._entity(this._config.acceptable_price_entity) &&
-        this._entity(this._config.price_entity),
-    );
-    const heroRuntimePills = activeRaw && dutyLabel !== "n/a"
-      ? [{ label: `Duty cycle ${dutyLabel}`, tone: "neutral" }]
+    const rotationPolicy = String(attrs.charge_policy || this._state(this._config.charge_policy_entity)).toLowerCase();
+    const heroRuntimePills = activeEv?.isCharging && [ev1, ev2].every(ev => ev.available && ev.connected && !ev.sessionComplete && !ev.hasError) && rotationPolicy.includes("first") && dutyLabel !== "n/a"
+      ? [{ label: `Switch charger in ${dutyLabel}`, tone: "neutral" }]
       : [];
 
-    if (scheduleControlAvailable) {
+    if (scheduleControlAvailable && scheduleSwitchOn) {
       ensureHeroPillGroup(
         "use-schedule",
         "Schedule",
@@ -1986,13 +1963,13 @@ class SmartEVSEFlowCard extends LitElement {
       }
       // The submenu's saved option is authoritative while Force charge is
       // overriding the schedule; the raw entity may temporarily remain stale.
-      if (schedulePriceAvailable && this._schedulePriceGate) {
+      if (this._schedulePriceGate) {
         addHeroPill(
           "use-schedule",
           "Schedule",
           "active",
           10,
-          `≤ ${acceptablePriceValue}`,
+          priceLimitLabel,
           priceAccepted ? "success" : "neutral",
           30,
           "mdi:currency-eur",
@@ -2001,7 +1978,7 @@ class SmartEVSEFlowCard extends LitElement {
       }
     }
 
-    if (forceControlAvailable) {
+    if (forceControlAvailable && forcePlanActive) {
       ensureHeroPillGroup(
         "force-charge",
         "Force charge",
@@ -2010,8 +1987,8 @@ class SmartEVSEFlowCard extends LitElement {
       );
     }
     if (forceControlAvailable && forcePlanActive) {
-      if (forceTimerAvailable && forceTimerOn) {
-        const timerValue = timerLabel !== "n/a" ? `${timerLabel} left` : this._formatMinutes(forceDuration);
+      if (forceTimerOn) {
+        const timerValue = timerLabel !== "n/a" ? `${timerLabel} left` : forceDuration === null ? "Timer unavailable" : this._formatMinutes(forceDuration);
         addHeroPill(
           "force-charge",
           "Force charge",
@@ -2024,13 +2001,13 @@ class SmartEVSEFlowCard extends LitElement {
           `Timer ${timerValue}`,
         );
       }
-      if (forcePriceAvailable && forcePriceOn) {
+      if (forcePriceOn) {
         addHeroPill(
           "force-charge",
           "Force charge",
           "active",
           20,
-          `≤ ${acceptablePriceValue}`,
+          priceLimitLabel,
           priceAccepted ? "success" : "neutral",
           30,
           "mdi:currency-eur",
@@ -2039,11 +2016,12 @@ class SmartEVSEFlowCard extends LitElement {
       }
     }
     const heroPillsMarkup = heroPillGroups
-      .sort((left, right) => left.priority - right.priority)
+      .sort((left, right) => left.id === "force-charge" ? -1 : right.id === "force-charge" ? 1 : left.priority - right.priority)
       .map(
         (group) => `
           <div class="status-pill-group" data-plan-group="${this._safe(group.id)}">
-            <span class="status-pill-group-label tone-${this._safe(group.tone)}" aria-label="${this._safe(group.label)}: ${group.tone === "active" ? "on" : "off"}" title="${this._safe(group.label)}: ${group.tone === "active" ? "on" : "off"}"><ha-icon class="status-pill-icon" icon="mdi:toggle-switch${group.tone === "active" ? "" : "-off-outline"}" aria-hidden="true"></ha-icon>${this._safe(group.label)}</span>
+            <span class="status-pill-group-label tone-${this._safe(group.tone)}" aria-label="${this._safe(group.label)} enabled" title="${this._safe(group.label)} enabled"><ha-icon class="status-pill-icon" icon="mdi:toggle-switch" aria-hidden="true"></ha-icon>${this._safe(group.label)}</span>
+            ${group.id === "use-schedule" && forcePlanActive ? `<span class="plan-note">Resumes after force charge</span>` : ""}
             <span class="status-pill-group-items">
               ${group.pills
                 .sort((left, right) => left.priority - right.priority)
@@ -2085,16 +2063,11 @@ class SmartEVSEFlowCard extends LitElement {
     const heroGlowStyle = heroGlow
       ? `${heroGlow} animation-name: var(--sdc-led-${heroVisual}-glow-animation); animation-duration: var(--sdc-led-${heroVisual}-glow-duration);`
       : "";
-    const leftConnectorPath = this._homeConnectorPath("left");
-    const rightConnectorPath = this._homeConnectorPath("right");
 
     const markup = `
       <style>
         ${DESIGN_TOKENS_CSS}
         :host {
-          container-name: smartevse-card;
-          container-type: inline-size;
-          --connector-stroke: 4px;
           --sdc-settings-panel-width: min(390px, calc(100vw - 32px));
           --panel-shadow-color: rgba(0,0,0,0.50);
           --pulse-weak: rgba(0,0,0,0.10);
@@ -2152,6 +2125,7 @@ class SmartEVSEFlowCard extends LitElement {
         }
 
         ha-card {
+          display: block;
           overflow: visible;
           position: relative;
           border-radius: var(--ha-card-border-radius, 16px);
@@ -2186,7 +2160,6 @@ class SmartEVSEFlowCard extends LitElement {
         .control-tile-wrap,
         .status-hero-wrap,
         .ev-node-wrap,
-        .vehicle-node-wrap,
         .wizard-option-wrap {
           position: relative;
           width: 100%;
@@ -2198,7 +2171,6 @@ class SmartEVSEFlowCard extends LitElement {
         .control-tile-wrap .glow-under,
         .status-hero-wrap .glow-under,
         .ev-node-wrap .glow-under,
-        .vehicle-node-wrap .glow-under,
         .wizard-option-wrap .glow-under {
           position: absolute;
           inset: 0;
@@ -2212,7 +2184,6 @@ class SmartEVSEFlowCard extends LitElement {
         .control-tile-wrap .glow-overlay,
         .status-hero-wrap .glow-overlay,
         .ev-node-wrap .glow-overlay,
-        .vehicle-node-wrap .glow-overlay,
         .wizard-option-wrap .glow-overlay {
           position: absolute;
           inset: -10px -14px -18px -14px;
@@ -2682,6 +2653,11 @@ class SmartEVSEFlowCard extends LitElement {
 
         .modal-option-check {
           --mdc-icon-size: 18px;
+          display: block;
+          width: var(--mdc-icon-size);
+          height: var(--mdc-icon-size);
+          min-width: var(--mdc-icon-size);
+          justify-self: end;
           color: inherit;
         }
 
@@ -3059,61 +3035,6 @@ class SmartEVSEFlowCard extends LitElement {
           overflow: visible;
         }
 
-        .flow-svg {
-          display: block;
-          width: 100%;
-          height: 104px;
-          pointer-events: none;
-          overflow: visible;
-        }
-
-        .pipe-base {
-          fill: none;
-          stroke: rgba(148, 163, 184, 0.24);
-          stroke-width: var(--connector-stroke);
-          stroke-linecap: round;
-          vector-effect: non-scaling-stroke;
-        }
-
-        .pipe-active {
-          fill: none;
-          stroke-width: var(--connector-stroke);
-          stroke-linecap: round;
-          vector-effect: non-scaling-stroke;
-          stroke-dasharray: 22 18;
-          animation: dash 1.8s linear infinite;
-          filter: drop-shadow(0 0 8px rgba(var(--sdc-led-charging-rgb, 102, 187, 106), var(--sdc-led-charging-strong-alpha, 0.30)));
-        }
-
-        .pipe-active.tone-charging {
-          stroke: rgb(var(--sdc-led-charging-rgb, 102, 187, 106));
-          filter: drop-shadow(0 0 12px rgba(var(--sdc-led-charging-rgb, 102, 187, 106), var(--sdc-led-charging-strong-alpha, 0.30)));
-        }
-
-        .pipe-active.tone-active {
-          stroke: rgb(var(--sdc-led-idle-rgb, 66, 165, 245));
-          filter: drop-shadow(0 0 12px rgba(var(--sdc-led-idle-rgb, 66, 165, 245), var(--sdc-led-idle-strong-alpha, 0.30)));
-        }
-
-        .pipe-active.tone-error {
-          stroke: rgb(var(--sdc-led-error-rgb, 229, 57, 53));
-          filter: drop-shadow(0 0 12px rgba(var(--sdc-led-error-rgb, 229, 57, 53), var(--sdc-led-error-strong-alpha, 0.30)));
-        }
-
-        .pipe-active.tone-complete,
-        .pipe-active.tone-idle,
-        .pipe-active.tone-unplugged {
-          stroke: transparent;
-          animation: none;
-          filter: none;
-        }
-
-        @keyframes dash {
-          to {
-            stroke-dashoffset: -160;
-          }
-        }
-
         .house-node {
           position: relative;
           z-index: 1;
@@ -3329,13 +3250,6 @@ class SmartEVSEFlowCard extends LitElement {
           color: var(--sdc-text-muted);
         }
 
-        .flow-map {
-          position: relative;
-          z-index: 2;
-          margin: 0 0 0;
-          pointer-events: none;
-        }
-
         .ev-row {
           position: relative;
           z-index: 3;
@@ -3344,12 +3258,6 @@ class SmartEVSEFlowCard extends LitElement {
           gap: var(--large-gap);
           align-items: stretch;
           margin-top: -4px;
-        }
-
-        .smartevse-stack {
-          display: grid;
-          gap: var(--large-gap);
-          align-content: start;
         }
 
         .ev-node {
@@ -3365,268 +3273,6 @@ class SmartEVSEFlowCard extends LitElement {
           background-clip: padding-box;
           --control-button-border-radius: var(--tile-border-radius);
           transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
-        }
-
-        .ev-node-head {
-          display: flex;
-          align-items: flex-start;
-          justify-content: flex-start;
-          gap: 6px;
-          margin-bottom: 4px;
-        }
-
-        .ev-node-badges {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          min-width: 0;
-          flex-wrap: wrap;
-        }
-
-        .ev-label-text {
-          font-size: var(--sdc-font-value);
-          text-transform: none;
-          color: var(--primary-text-color);
-          line-height: 1.05;
-          white-space: nowrap;
-        }
-
-        .ev-status-details {
-          display: grid;
-          grid-template-columns: max-content minmax(0, 1fr);
-          align-items: center;
-          column-gap: var(--medium-gap);
-          row-gap: 4px;
-          min-width: 0;
-        }
-
-        .ev-status-label {
-          color: var(--sdc-text-muted);
-          font-size: var(--sdc-font-tiny);
-          font-weight: var(--sdc-weight-strong);
-          letter-spacing: var(--sdc-letter-label);
-          line-height: 1;
-          text-transform: uppercase;
-        }
-
-        .ev-status-pill {
-          justify-self: stretch;
-          width: 100%;
-        }
-
-        .vehicle-node {
-          display: grid;
-          justify-items: center;
-          gap: var(--medium-gap);
-          border-radius: var(--tile-border-radius);
-          padding: var(--tile-padding-large);
-          border: 0;
-          background: var(--sdc-surface-control);
-          box-shadow: var(--tile-shadow-default);
-          text-align: center;
-          overflow: hidden;
-          clip-path: inset(0 round var(--tile-border-radius));
-          background-clip: padding-box;
-          --control-button-border-radius: var(--tile-border-radius);
-          transition: box-shadow 0.12s ease, filter 0.12s ease;
-        }
-
-        .vehicle-link-wrap {
-          height: 42px;
-          display: flex;
-          align-items: stretch;
-          justify-content: center;
-          margin: -8px 0 -8px;
-        }
-
-        .vehicle-link {
-          width: 100%;
-          max-width: 120px;
-          height: 100%;
-          overflow: visible;
-        }
-
-        .vehicle-pipe-base {
-          opacity: 0.9;
-        }
-
-        .vehicle-battery {
-          justify-self: center;
-          width: 132px;
-          max-width: calc(100% - 8px);
-        }
-
-        .vehicle-title {
-          max-width: 100%;
-          color: var(--primary-text-color);
-          font-size: var(--sdc-font-body);
-          font-weight: var(--sdc-weight-strong);
-          letter-spacing: var(--sdc-letter-title);
-          line-height: 1.15;
-          overflow-wrap: anywhere;
-        }
-
-        .vehicle-battery-shell {
-          position: relative;
-          width: 100%;
-          aspect-ratio: 65 / 18;
-          border: 0;
-          background: var(--chip-background-color);
-          overflow: visible;
-          box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.24);
-        }
-
-        .vehicle-battery-cap {
-          position: absolute;
-          top: 50%;
-          right: -3px;
-          width: 3px;
-          height: 8px;
-          transform: translateY(-50%);
-          border-radius: 0 1px 1px 0;
-          background: rgba(148, 163, 184, 0.42);
-        }
-
-        .vehicle-battery-track,
-        .vehicle-battery-level,
-        .vehicle-battery-value {
-          position: absolute;
-          inset: 0;
-        }
-
-        .vehicle-battery-track {
-          inset: 2px;
-          background: rgba(148, 163, 184, 0.08);
-        }
-
-        .vehicle-battery-level {
-          inset: 2px auto 2px 2px;
-          width: 0;
-          border-radius: 1px;
-          transition: width 240ms ease;
-        }
-
-        .vehicle-battery-value {
-          display: grid;
-          place-items: center;
-          font-size: var(--sdc-font-value);
-          font-weight: var(--sdc-weight-strong);
-          color: #e2e8f0;
-          text-shadow: 0 1px 2px rgba(2, 6, 23, 0.55);
-          pointer-events: none;
-        }
-
-        .vehicle-battery-high .vehicle-battery-level {
-          background: rgba(67, 160, 71, 0.82);
-          box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06);
-        }
-
-        .vehicle-battery-mid .vehicle-battery-level {
-          background: rgba(251, 192, 45, 0.86);
-          box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06);
-        }
-
-        .vehicle-battery-low .vehicle-battery-level {
-          background: rgba(229, 57, 53, 0.86);
-          box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06);
-        }
-
-        .vehicle-battery-unknown .vehicle-battery-shell {
-          border-style: dashed;
-        }
-
-        .vehicle-battery-unknown .vehicle-battery-value {
-          color: var(--sdc-text-muted);
-        }
-
-        .vehicle-complete-badge {
-          display: inline-block;
-          margin-top: var(--medium-gap);
-          padding: 2px 8px;
-          border-radius: var(--chip-border-radius);
-          font-size: var(--sdc-font-detail);
-          font-weight: var(--sdc-weight-strong);
-          text-transform: uppercase;
-          letter-spacing: var(--sdc-letter-label);
-          border: 0;
-          background: var(--chip-background-color);
-          color: var(--primary-text-color);
-        }
-
-        .vehicle-node.tone-complete {
-          --pulse-weak: rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha));
-          --pulse-strong: rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-strong-alpha));
-          box-shadow: var(--tile-shadow-active);
-        }
-
-        .vehicle-node-wrap.tone-complete .glow-under {
-          --pulse-weak: rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha));
-          --pulse-strong: rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-strong-alpha));
-          opacity: 1;
-          box-shadow: 0 18px 40px var(--pulse-strong), 0 6px 18px var(--pulse-weak);
-        }
-
-        .ev-node.tone-charging {
-          color: var(--primary-text-color);
-        }
-
-        .ev-node.tone-active {
-          color: var(--primary-text-color);
-        }
-
-        .ev-node.tone-idle {
-          color: var(--primary-text-color);
-        }
-
-        .ev-node.tone-complete {
-          color: var(--primary-text-color);
-        }
-
-        .ev-node.tone-unplugged {
-          color: var(--sdc-text-muted);
-        }
-
-        .ev-node.tone-error {
-          color: var(--primary-text-color);
-        }
-
-        .ev-node.tone-charging {
-          --pulse-weak: rgba(var(--sdc-led-charging-rgb), var(--sdc-led-charging-weak-alpha));
-          --pulse-strong: rgba(var(--sdc-led-charging-rgb), var(--sdc-led-charging-strong-alpha));
-          box-shadow: var(--tile-shadow-active);
-        }
-
-        .ev-node.tone-active {
-          --pulse-weak: rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha));
-          --pulse-strong: rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-strong-alpha));
-          box-shadow: var(--tile-shadow-active);
-        }
-
-        .ev-node.tone-complete,
-        .ev-node.tone-unplugged {
-          background: var(--sdc-surface-control);
-        }
-
-        .ev-node.visual-idle {
-          --pulse-weak: rgba(var(--node-rgb), var(--node-weak-alpha));
-          --pulse-strong: rgba(var(--node-rgb), var(--node-strong-alpha));
-          box-shadow: var(--tile-shadow-active);
-        }
-
-        .ev-node.visual-charging {
-          --pulse-weak: rgba(var(--node-rgb), var(--node-weak-alpha));
-          --pulse-strong: rgba(var(--node-rgb), var(--node-strong-alpha));
-          box-shadow: var(--tile-shadow-active);
-        }
-
-        .ev-node.visual-error {
-          --pulse-weak: rgba(var(--node-rgb), var(--node-weak-alpha));
-          --pulse-strong: rgba(var(--node-rgb), var(--node-strong-alpha));
-          box-shadow: var(--tile-shadow-active);
-        }
-
-        .ev-node.visual-off {
-          box-shadow: var(--tile-shadow-default);
         }
 
         .ev-node-wrap.visual-idle .glow-under {
@@ -3659,20 +3305,7 @@ class SmartEVSEFlowCard extends LitElement {
           100% { box-shadow: 0 10px 20px var(--pulse-weak); }
         }
 
-        @container smartevse-card (max-width: 840px) {
-          .flow-svg {
-            height: 64px;
-          }
-
-          .ev-row {
-            gap: 8px;
-          }
-
-          .settings-panel .setting-controls {
-            grid-template-columns: 1fr;
-          }
-        }
-
+        ${OVERVIEW_CSS}
       </style>
 
       <ha-card style="${this._safe(wledStyleVars)}">
@@ -3687,24 +3320,17 @@ class SmartEVSEFlowCard extends LitElement {
                   class="status-hero visual-${this._safe(heroVisual)}"
                   data-action="open-force-wizard"
                   type="button"
-                  aria-label="Open charging plan"
+                  aria-label="Edit charging plan"
                 >
+                  <div class="overview-heading"><span>EV charging</span><span class="edit-plan">Edit plan<ha-icon icon="mdi:chevron-right" aria-hidden="true"></ha-icon></span></div>
                   <div class="status-copy">
                     <div class="status-title">${this._safe(activeTitle)}</div>
-                    <div class="status-pills status-pill-groups">${heroRuntimePillsMarkup}${heroPillsMarkup}</div>
+                    ${hasControllerError ? `<p class="overview-note">${this._safe(controllerError)}</p>` : ""}
+                    ${heroPillsMarkup || heroRuntimePillsMarkup ? `<div class="status-pills status-pill-groups">${heroPillsMarkup}${heroRuntimePillsMarkup}</div>` : `<p class="overview-note">No charging plan enabled</p>`}
                   </div>
                 </button>
               </div>
             </section>
-
-            <div class="flow-map">
-              <svg class="flow-svg" viewBox="0 0 640 112" preserveAspectRatio="none">
-                <path class="pipe-base" d="${leftConnectorPath}"></path>
-                <path class="pipe-base" d="${rightConnectorPath}"></path>
-                ${flowLeft ? `<path class="pipe-active tone-${this._safe(flowTone)}" d="${leftConnectorPath}"></path>` : ""}
-                ${flowRight ? `<path class="pipe-active tone-${this._safe(flowTone)}" d="${rightConnectorPath}"></path>` : ""}
-              </svg>
-            </div>
 
             <div class="ev-row">
               ${this._evNode(ev1)}
@@ -3713,11 +3339,159 @@ class SmartEVSEFlowCard extends LitElement {
           </div>
 
           ${this._forceWizardModal()}
+          ${this._settingsModal(this._settingsControls({ policy, dutyCycleMinutes: this._numberState(this._config.duty_cycle_entity) }))}
         </div>
       </ha-card>
     `;
 
     return html`${unsafeHTML(markup)}`;
+  }
+
+  _detailsKey(element: HTMLDetailsElement) {
+    const explicit = element.dataset.key || element.dataset.charger || element.dataset.evse || element.dataset.entity || element.id;
+    if (explicit) return explicit;
+    const charger = element.closest<HTMLElement>(".ev-node-wrap");
+    const chargerKey = charger?.dataset.key || charger?.dataset.charger ||
+      Array.from(charger?.classList || []).find((name) => /^smartevse_[12]$/.test(name));
+    if (chargerKey) return chargerKey;
+    return `details-${Array.from(this.renderRoot.querySelectorAll("details")).indexOf(element)}`;
+  }
+
+  _uiFocusKey(element: HTMLElement) {
+    const data = ["action", "entity", "mode", "durationPart", "value"]
+      .map((name) => `${name}:${element.dataset[name] || ""}`).join("|");
+    const detail = element.closest<HTMLDetailsElement>("details");
+    return [element.localName, element.id, element.getAttribute("name") || "", data,
+      detail ? this._detailsKey(detail) : ""].join("|");
+  }
+
+  _captureUiFocus(): UiFocusSnapshot | null {
+    const element = (this.renderRoot as ShadowRoot).activeElement as HTMLElement | null;
+    if (!element || element.matches('[role="dialog"], .modal-title')) return null;
+    const snapshot: UiFocusSnapshot = { key: this._uiFocusKey(element) };
+    if (element.matches("input, textarea")) {
+      const input = element as HTMLInputElement | HTMLTextAreaElement;
+      // Number inputs do not expose a selection range; text inputs do.
+      try {
+        if (input.selectionStart !== null && input.selectionEnd !== null) {
+          snapshot.selectionStart = input.selectionStart;
+          snapshot.selectionEnd = input.selectionEnd;
+          snapshot.selectionDirection = input.selectionDirection || "none";
+        }
+      } catch { /* Unsupported input types retain focus without a caret range. */ }
+    }
+    return snapshot;
+  }
+
+  _findUiFocus(snapshot: UiFocusSnapshot | null): HTMLElement | null {
+    if (!snapshot) return null;
+    return Array.from(this.renderRoot.querySelectorAll<HTMLElement>(
+      "button, input, select, textarea, a[href], summary, [tabindex]",
+    )).find((element) => this._uiFocusKey(element) === snapshot.key) || null;
+  }
+
+  _restoreUiFocus(snapshot: UiFocusSnapshot | null) {
+    const element = this._findUiFocus(snapshot);
+    if (!element || element.matches(":disabled") || element.closest("[inert], [hidden]")) return false;
+    element.focus({ preventScroll: true });
+    if (snapshot?.selectionStart !== undefined && snapshot.selectionEnd !== undefined &&
+        element.matches("input, textarea")) {
+      try {
+        (element as HTMLInputElement | HTMLTextAreaElement).setSelectionRange(snapshot.selectionStart, snapshot.selectionEnd, snapshot.selectionDirection);
+      } catch { /* Number inputs and other unsupported types have no caret API. */ }
+    }
+    return (this.renderRoot as ShadowRoot).activeElement === element;
+  }
+
+  willUpdate() {
+    this.renderRoot.querySelectorAll<HTMLDetailsElement>("details").forEach((element) => {
+      this._detailsOpen.set(this._detailsKey(element), element.open);
+    });
+    const focus = this._captureUiFocus();
+    const active = (this.renderRoot as ShadowRoot).activeElement;
+    this._dialogHadFocus = Boolean(active?.matches('[role="dialog"]'));
+    this._pendingUiFocus = focus || (active?.matches('[role="dialog"]') ? this._busyUiFocus : null);
+    if (!this._renderedDialogKey && (this._forceWizardOpen || this._settingsModalOpen)) {
+      this._dialogReturnFocus = focus;
+    }
+  }
+
+  updated() {
+    this.renderRoot.querySelectorAll<HTMLDetailsElement>("details").forEach((element) => {
+      const key = this._detailsKey(element);
+      if (this._detailsOpen.has(key)) element.open = this._detailsOpen.get(key)!;
+    });
+    const dialog = this.renderRoot.querySelector<HTMLElement>('.dialog-panel[role="dialog"]');
+    const dialogKey = dialog?.getAttribute("aria-label") || "";
+    const previousDialogKey = this._renderedDialogKey;
+    this._renderedDialogKey = dialogKey;
+    const overview = this.renderRoot.querySelector<HTMLElement>(".flow-stage");
+    if (overview) overview.inert = Boolean(dialog);
+    if (dialog) {
+      dialog.tabIndex = -1;
+      dialog.setAttribute("aria-busy", this._forceWizardBusy ? "true" : "false");
+      if (dialogKey !== previousDialogKey) {
+        this._busyUiFocus = null;
+        dialog.focus({ preventScroll: true });
+      } else if (this._pendingUiFocus) {
+        if (this._restoreUiFocus(this._pendingUiFocus)) {
+          this._busyUiFocus = null;
+        } else {
+          this._busyUiFocus = this._forceWizardBusy ? this._pendingUiFocus : null;
+          dialog.focus({ preventScroll: true });
+        }
+      } else if (this._dialogHadFocus) {
+        dialog.focus({ preventScroll: true });
+      }
+    } else if (previousDialogKey) {
+      this._busyUiFocus = null;
+      if (!this._restoreUiFocus(this._dialogReturnFocus)) {
+        this.renderRoot.querySelector<HTMLElement>('[data-action="open-force-wizard"]')?.focus({ preventScroll: true });
+      }
+      this._dialogReturnFocus = null;
+    } else {
+      this._restoreUiFocus(this._pendingUiFocus);
+    }
+    this._pendingUiFocus = null;
+  }
+
+  _handleDialogKeydown(event: KeyboardEvent) {
+    const dialog = this.renderRoot.querySelector<HTMLElement>('.dialog-panel[role="dialog"]');
+    if (!dialog) return false;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      if (this._forceWizardOpen) {
+        if (this._forceWizardStep === "choose") this._closeForceWizard();
+        else this._backForceWizard();
+      } else if (this._settingsSubmenuEntity) {
+        this._closeSettingsSubmenu();
+      } else {
+        this._closeSettingsModal();
+      }
+      return true;
+    }
+    if (event.key !== "Tab") return false;
+    const controls = Array.from(dialog.querySelectorAll<HTMLElement>(
+      'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], summary, [tabindex]:not([tabindex="-1"])',
+    )).filter((element) => {
+      if (element.matches(":disabled") || element.closest("[hidden], [inert]")) return false;
+      for (let node: HTMLElement | null = element; node && node !== dialog; node = node.parentElement) {
+        const style = getComputedStyle(node);
+        if (style.display === "none" || style.visibility === "hidden") return false;
+      }
+      return true;
+    });
+    const active = (this.renderRoot as ShadowRoot).activeElement as HTMLElement | null;
+    const index = controls.indexOf(active!);
+    if (!controls.length || index < 0 || (event.shiftKey ? index === 0 : index === controls.length - 1)) {
+      event.preventDefault();
+      event.stopPropagation();
+      (event.shiftKey ? controls[controls.length - 1] : controls[0])?.focus({ preventScroll: true });
+      if (!controls.length) dialog.focus({ preventScroll: true });
+      return true;
+    }
+    return false;
   }
 
   firstUpdated() {
@@ -3740,7 +3514,7 @@ class SmartEVSEFlowCard extends LitElement {
         return;
       }
       const element = target?.closest<HTMLElement>("[data-action]");
-      if (!element) {
+      if (!element || element.matches(":disabled")) {
         return;
       }
       event.preventDefault();
@@ -3794,6 +3568,11 @@ class SmartEVSEFlowCard extends LitElement {
         return;
       }
       if (action === "open-more-info") {
+        // Hand focus to Home Assistant only after our own modal and trap close.
+        if (this._forceWizardBusy) return;
+        if (this._forceWizardOpen) this._closeForceWizard();
+        if (this._settingsModalOpen) this._closeSettingsModal();
+        await this.updateComplete;
         this.dispatchEvent(
           new CustomEvent("hass-more-info", {
             detail: { entityId: entity },
@@ -3863,6 +3642,7 @@ class SmartEVSEFlowCard extends LitElement {
     });
 
     root.addEventListener("keydown", async (event: Event) => {
+      if (this._handleDialogKeydown(event as KeyboardEvent)) return;
       const element = (event.target as HTMLElement | null)?.closest<HTMLElement>(
         ".setting-input[data-entity], .setting-select[data-entity]",
       );

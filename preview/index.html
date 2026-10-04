@@ -7,11 +7,13 @@
     <style>
       :root {
         color-scheme: dark;
-        --primary-text-color: #f3f4f6;
-        --secondary-text-color: #9ca3af;
+        --primary-text-color: #cdd3ef;
+        --primary-color: #c5a4f4;
+        --ha-card-border-radius: 18px;
+        --secondary-text-color: #aeb6d5;
         --error-color: #cbd5e1;
-        --card-background-color: #171717;
-        --ha-card-background: #171717;
+        --card-background-color: #242638;
+        --ha-card-background: #242638;
       }
 
       * {
@@ -47,9 +49,13 @@
         padding: 18px;
       }
 
+      .preview-heading { margin: 14px 0 26px; }
+      .eyebrow { font-size: 11px; letter-spacing: .12em; color: var(--primary-color); font-weight: 600; }
+      .preview-heading h1 { font-size: 28px; font-weight: 600; letter-spacing: -.025em; margin: 8px 0; }
+      .preview-heading p { color: var(--secondary-text-color); font-size: 13px; }
       .toolbar {
         display: grid;
-        grid-template-columns: 1fr auto auto;
+        grid-template-columns: 1fr auto;
         gap: 12px;
         align-items: center;
         margin-bottom: 16px;
@@ -63,7 +69,7 @@
 
       .surface {
         display: grid;
-        grid-template-columns: minmax(320px, auto) minmax(260px, 340px);
+        grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);
         gap: 18px;
         align-items: start;
       }
@@ -77,7 +83,7 @@
       .panel {
         border-radius: 18px;
         border: 1px solid rgba(148, 163, 184, 0.18);
-        background: rgba(23, 23, 23, 0.84);
+        background: rgba(36, 38, 56, 0.84);
         padding: 14px;
         backdrop-filter: blur(10px);
       }
@@ -131,22 +137,6 @@
         display: block;
       }
 
-      ha-icon {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        width: 1em;
-        height: 1em;
-        line-height: 1;
-      }
-
-      ha-icon svg {
-        display: block;
-        width: 1em;
-        height: 1em;
-        fill: currentColor;
-      }
-
       @media (max-width: 980px) {
         .toolbar {
           grid-template-columns: 1fr;
@@ -160,12 +150,16 @@
   </head>
   <body>
     <div class="app">
+      <header class="preview-heading"><span class="eyebrow">SMART HOME · EV CHARGING</span><h1>Charging, at a glance.</h1><p>Interactive preview · sample data · no connection to your chargers</p></header>
       <div class="toolbar">
         <div class="toolbar-group panel">
-          <select id="scenario" class="control select">
+          <select id="scenario" class="control select" aria-label="Preview scenario">
             <option value="all_pills">All pill combinations</option>
+            <option value="session_complete" selected>Scheduled · session complete</option>
+            <option value="unavailable">Charger unavailable</option>
+            <option value="long_name">Long vehicle name</option>
             <option value="schedule_waiting">Schedule Waiting</option>
-            <option value="charging_left" selected>Charging Left</option>
+            <option value="charging_left">Charging Left</option>
             <option value="charging_right">Charging Right</option>
             <option value="price_waiting">Force Price + Schedule</option>
             <option value="timer_active">Timer Active</option>
@@ -176,6 +170,7 @@
           </select>
         </div>
         <div class="toolbar-group panel">
+          <button class="control" data-width="320">Small phone</button>
           <button class="control active" data-width="390">Mobile</button>
           <button class="control" data-width="680">Tablet</button>
           <button class="control" data-width="960">Wide</button>
@@ -198,10 +193,10 @@
           <h1>Preview Notes</h1>
           <div class="hint">
             This page renders the real custom card with mock Home Assistant state.
-            The hero tile opens one wizard with Schedule and Force charge paths.
+            Select a state and try Edit plan or Charger details. Only enabled plans appear in the overview.
             Both paths support an acceptable-price limit, and Force charge can
             combine that limit with a timer.
-            Use the time-format selector to test Home Assistant locale formatting.
+            Controls call a mock Home Assistant service and update this preview. The live installation is unchanged.
           </div>
 
           <h2 style="margin-top: 14px;">Interaction Log</h2>
@@ -309,15 +304,29 @@
                 "mdi:swap-horizontal-bold": "M8,10V13H14V18H8V21L2,15.5L8,10M22,8.5L16,3V6H10V11H16V14L22,8.5Z",
                 "mdi:tune-variant": "M8 13C6.14 13 4.59 14.28 4.14 16H2V18H4.14C4.59 19.72 6.14 21 8 21S11.41 19.72 11.86 18H22V16H11.86C11.41 14.28 9.86 13 8 13M8 19C6.9 19 6 18.1 6 17C6 15.9 6.9 15 8 15S10 15.9 10 17C10 18.1 9.1 19 8 19M19.86 6C19.41 4.28 17.86 3 16 3S12.59 4.28 12.14 6H2V8H12.14C12.59 9.72 14.14 11 16 11S19.41 9.72 19.86 8H22V6H19.86M16 9C14.9 9 14 8.1 14 7C14 5.9 14.9 5 16 5S18 5.9 18 7C18 8.1 17.1 9 16 9Z",
                 "mdi:chevron-left": "M15.41,7.41L14,6L8,12L14,18L15.41,16.59L10.83,12L15.41,7.41Z",
+                "mdi:chevron-down": "M7.41,8.59L12,13.17L16.59,8.59L18,10L12,16L6,10L7.41,8.59Z",
                 "mdi:chevron-right": "M8.59,16.59L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.59Z",
                 "mdi:check-circle": "M12,2C17.52,2 22,6.48 22,12S17.52,22 12,22 2,17.52 2,12 6.48,2 12,2M11,17L18,10L16.59,8.59L11,14.17L7.91,11.09L6.5,12.5L11,17Z",
                 "mdi:circle-outline": "M12,2C17.52,2 22,6.48 22,12S17.52,22 12,22 2,17.52 2,12 6.48,2 12,2M12,4C7.58,4 4,7.58 4,12S7.58,20 12,20 20,16.42 20,12 16.42,4 12,4Z",
                 "mdi:information-outline": "M11,17H13V11H11V17M12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22A10,10 0 0,1 2,12A10,10 0 0,1 12,2M12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20A8,8 0 0,0 20,12A8,8 0 0,0 12,4M11,7H13V9H11V7Z",
               };
               const path = map[icon];
-              this.innerHTML = path
+              // HA icons own their sizing inside a shadow root. Document CSS
+              // cannot reach icons rendered inside the card's shadow root.
+              const root = this.shadowRoot || this.attachShadow({ mode: "open" });
+              root.innerHTML = `<style>
+                :host {
+                  display: inline-flex;
+                  align-items: center;
+                  justify-content: center;
+                  width: var(--mdc-icon-size, 24px);
+                  height: var(--mdc-icon-size, 24px);
+                  line-height: 1;
+                }
+                svg { display: block; width: 100%; height: 100%; fill: currentColor; }
+              </style>` + (path
                 ? `<svg viewBox="0 0 24 24" aria-hidden="true" style="width:100%;height:100%;fill:currentColor"><path d="${path}"></path></svg>`
-                : `<svg viewBox="0 0 24 24" aria-hidden="true" style="width:100%;height:100%;fill:currentColor"><circle cx="12" cy="12" r="4"></circle></svg>`;
+                : `<svg viewBox="0 0 24 24" aria-hidden="true" style="width:100%;height:100%;fill:currentColor"><circle cx="12" cy="12" r="4"></circle></svg>`);
               this.title = icon;
             }
           },
@@ -721,6 +730,17 @@
         },
       };
 
+      scenarios.session_complete = deepClone(scenarios.schedule_waiting);
+      Object.assign(scenarios.session_complete[controllerEntity].attributes, {
+        smartevse_1_battery: "90%", smartevse_1_session_complete: true,
+      });
+      scenarios.unavailable = deepClone(scenarios.schedule_waiting);
+      Object.assign(scenarios.unavailable[controllerEntity].attributes, {
+        smartevse_2_available: false, smartevse_2_state: "Unavailable",
+      });
+      scenarios.long_name = deepClone(scenarios.charging_left);
+      scenarios.long_name[controllerEntity].attributes.smartevse_1_connected_ev = "Volvo XC40 Recharge · Extended Range";
+
       const iconToggles = new Set([
         "switch.smartevse_dual_charger_charge_with_schedule",
         "switch.smartevse_dual_charger_schedule_acceptable_price",
@@ -766,7 +786,7 @@
           const plugKey = `${key}_plug_state`;
           if (!(connectedKey in attrs)) {
             attrs[connectedKey] =
-              attrs[plugKey] === "Connected" ? String(attrs[nameKey] || "?") : "unknown";
+              attrs[plugKey] === "Connected" ? (key === "smartevse_1" ? "Volvo XC40" : "Volvo EX30") : "unknown";
           }
           if (!(batteryKey in attrs)) {
             attrs[batteryKey] = "n/a";

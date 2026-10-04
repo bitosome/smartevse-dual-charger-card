@@ -2,23 +2,21 @@
 
 Standalone Lovelace card for the SmartEVSE Dual Charger Home Assistant integration.
 
-Version: `0.0.49`
+Version: `0.0.52`
 
 This repository contains only the frontend card and local preview assets.
 
 ## Features
 
-- Visual power-flow layout with Home at the top and two SmartEVSE devices below it.
-- Animated flow line to the active SmartEVSE using the same charging/idle/error color vocabulary as the integration WLED visuals.
-- Per-SmartEVSE state cards with static State, Mode, Offer, and Max labels paired with compact value pills, plus detected battery level.
-- SmartEVSE value pills fill the available value column so wider nodes remain visually balanced.
-- Optional EV battery node below each SmartEVSE when the integration reports a connected EV.
-- The hero tile is the single Charging Plan control for all schedule and force-charge behavior.
-- Hero glow always mirrors the physical WLED state: off when disconnected, blue while connected/idle, green while charging, and red on a SmartEVSE error.
-- Guided two-path wizard for scheduled charging or charging now, with optional timer and acceptable-price limits that can be combined.
-- Power-flow branches originate directly beneath the hero tile.
-- Charge policy labels are always based on `SmartEVSE 1` and `SmartEVSE 2`, not vehicle names.
-- Local preview page with several mock charging scenarios for UI iteration.
+- Clear charging-state headline with an explicit **Edit plan** action.
+- Only enabled Schedule/Force plans and active timer/price constraints in the overview. Enabled plan names use accented pills with on-switch icons, alongside quieter timer/price/time pills. The icon describes the plan setting even while charging waits for time or price. Force appears first while overriding the standing schedule.
+- One tile per charger, combining vehicle name, battery percentage/bar and charging or session status. Disconnected ports stay compact; unavailable and faulted chargers are identified explicitly.
+- Expandable **Charger details** for State, Mode, Current offered and Limit. Offered current is the charger pilot setting, not measured current or power consumption.
+- Space Hub shared surfaces, radii, theme colors and underglow helpers. Glow colors and effects follow the controller's physical WLED configuration.
+- Responsive layout: stacked charger tiles on narrow cards, two columns on wider cards.
+- Two-path charging-plan editor with schedule, immediate charging, timer and acceptable-price controls. Unsupported options are omitted; temporarily unavailable controls are identified and guarded.
+- Keyboard focus management, Escape/back navigation, visible focus, touch-sized controls and reduced-motion support. Expanded details survive live state updates.
+- Local interactive preview backed by mocked Home Assistant services.
 
 ## Install
 
@@ -85,7 +83,7 @@ The card is built around:
 The controller-state sensor should expose attributes for:
 
 - active SmartEVSE and controller reason
-- per-SmartEVSE state, mode, plug state, current, max current, and error
+- per-SmartEVSE availability, state, mode, plug state, offered current, max current, and error
 - per-SmartEVSE connected EV name and battery level
 - session completion state
 - WLED-derived visual state
@@ -94,35 +92,18 @@ The card also expects the related control entities configured in `card_flow.yaml
 
 ## Interaction Model
 
-- Tap the hero tile to configure all charging behavior.
-- Tap the schedule entity inside the schedule page to edit it through Home Assistant’s native schedule dialog.
-- Scheduled charging can run with or without a price limit. With the price requirement enabled, both the schedule window and acceptable-price condition must be satisfied.
-- Force charge supports unrestricted charging, timer only, acceptable price only, or timer plus acceptable price.
-- Force charge temporarily overrides scheduled charging without disabling its switch, so the saved schedule resumes when Force charge ends.
-- SmartEVSE Dual Charger integration `0.0.8.6` or newer is required for independent Force and Schedule acceptable-price options.
-- Schedule and Force charge have independent main-menu toggles, while their saved timer and acceptable-price options remain visible and persist when disabled.
-- Schedule and Force charge submenus only customize their saved options; numeric changes save automatically and activation stays on the main menu.
-- Charging-plan and settings dialogs show titles and controls without explanatory helper copy.
-- Main charging-plan tiles and Schedule/Force submenu tile headers share one unified height.
-- Schedule and Force submenu option tiles use the same leading icon treatment as the main charging-plan tiles.
-- Submenu options use the same switch language as the main menu instead of tick indicators.
-- Timer duration and acceptable price are configured directly on the Force charge page.
-- Force timer duration is entered as separate Hours and Minutes values while remaining stored in Home Assistant as total minutes.
-- Use the toggle on each main-menu tile to enable or disable that plan.
-- The live duty-cycle countdown appears in the hero while a charger is active, and an enabled Force timer shows its live remaining time there instead of only its configured duration.
-- When Schedule and Force charge are both enabled, the hero identifies the active Force plan first and reports the controller's actual gating reason; Schedule remains enabled underneath.
-- Hero pills are a settings summary grouped as Use schedule first and Force charge second; ON/OFF is included directly in each group's primary pill.
-- Hero pills remain compact and use all available tile width before wrapping, while preserving the standard inner padding.
-- The hero leaves standard tile spacing below its title and omits the redundant top-right icon.
-- Schedule and Force charge groups are separated with spacing and a subtle divider, without an additional background container behind the pills.
-- When Use schedule is ON, its group shows the next charge time, or both the active-now state and window end time, plus its acceptable-price limit only when that option exists and is enabled.
-- When Force charge is ON, its group shows the live timer countdown and acceptable-price limit only when those options exist and are enabled.
-- Enabled acceptable-price pills use the same live state in both groups: green when the current price meets the limit, gray while it does not or the price is unavailable.
-- In a combined Force timer + acceptable-price plan, the timer pill is gray while price blocks charging and active when the price condition is met.
-- The hero title uses the controller's reported blocking reason, including `Force charge waiting for acceptable price`, so the cause is explicit at a glance.
-- Runtime controller reasons remain represented by the hero title instead of being mixed into the settings pills.
-- While Force charge overrides Schedule, the Schedule group follows its saved submenu options and ignores transient stale switch state from the controller.
-- Hero details use individual semantic pills for every active plan, option, constraint, and controller state, allowing combinations to remain visible without compressed sentences.
+- Tap **Edit plan** (or the hero tile) to configure charging. Available plans remain configurable when off; only enabled plans appear on the dashboard.
+- Use each plan's main-menu switch to enable or stop it. Open its row to change saved options. Numeric edits save on change/Enter, not every keystroke.
+- Scheduled charging supports an optional acceptable-price limit. Both time and price conditions must then be satisfied.
+- Force charge supports unrestricted charging, timer only, price only, or timer plus price. It overrides the standing schedule without disabling it; Schedule resumes when Force ends.
+- Integration `0.0.8.6` or newer supports independent Schedule and Force price options. Legacy integrations retain their shared-price behavior.
+- The schedule row opens Home Assistant's native schedule dialog, closing the card's own dialog first.
+- **Charger priority & limits** in the plan editor opens the configured charge-policy and duty-cycle controls. Policy labels use fixed SmartEVSE numbers.
+- The rotation countdown appears only when two eligible cars are connected and the selected priority policy rotates them. Enabled Force timers show their remaining time.
+- Enabled price constraints turn green when the current price meets the limit. In a combined timer/price plan, the timer is muted while price blocks charging.
+- Disconnected chargers show no stale current, mode or battery. Unavailable hardware cannot be mistaken for an unplugged car; faults remain visible even when disconnected.
+- Battery percentages are shown only for known vehicles with valid battery data. Session completion is reported from the integration, not inferred from battery percentage.
+- **Charger details** is collapsed initially and preserves its open state across live updates. Current offered is diagnostic information, never a consumption measurement.
 
 ## Naming Rules
 
@@ -160,10 +141,12 @@ Rules when implementing or changing UI (these mirror `space-hub-card`, so every 
 3. **Glow layers render below tile surfaces**: each tile's glow (`.glow-under`) uses `z-index: 0` and the tile surface uses `z-index: 1`, with the tile group container (e.g. `.controls`, `.ev-row`) as a **single stacking context** so a glow never paints over a neighbouring tile. Individual tile wrappers must not create their own stacking context.
 4. **Use the semantic status palette** (`--status-*`) for state colors.
 
-The animated SmartEVSE flow is the deliberate exception: its glow colors,
+SmartEVSE WLED visuals are the deliberate exception: its glow colors,
 effect state, speed, and intensity come from the controller entity's live
 `wled_visuals` attributes so the card stays aligned with the integration-managed
 WLED installation.
+
+The responsive overview styles live in `src/styles/overview.ts`; shared token/glow files remain canonical vendored primitives. The entire overview uses one stacking context so glows remain below sibling surfaces.
 
 Development:
 
