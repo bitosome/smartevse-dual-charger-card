@@ -962,5 +962,31 @@ check('a policy lost during editing shows an error and remains possible to close
   lostPolicyStillNavigable && !root.querySelector('.settings-panel'));
 states['select.policy'].state = originalPolicy;
 
+// Shared integration ledger is the authoritative source, including live updates.
+const sampleRecord = { id: 'session-1', started_at: '2026-10-24T01:00:00Z', ended_at: null,
+  currency: 'EUR', cost: 4.28, energy_kwh: 19.3, priced_kwh: 19.3, unpriced_kwh: 0,
+  status: 'charging', partial: false, issues: [], vehicle: 'Test EV' };
+states['sensor.ctl'].attributes.charging_costs = { version: 1, history_limit: 100,
+  chargers: { smartevse_1: {session: sampleRecord, history: [sampleRecord]}, smartevse_2: {session: null, history: []} } };
+el.hass = hass;
+await new Promise(r=>setTimeout(r,30));
+check('session estimate appears underneath the battery reading',
+  /4[.,]28/.test(root.querySelector('.smartevse_1 .charger-totals .session-cost')?.textContent || ''));
+click('.smartevse_1 .session-cost');await new Promise(r=>setTimeout(r,30));
+check('cost shortcut opens per-charger history in settings',
+  !!root.querySelector('.settings-panel .cost-history') && root.querySelectorAll('.cost-charger').length === 2);
+check('history shows energy and honest empty state',
+  /19.30 kWh/.test(root.textContent) && /No charging sessions recorded yet/.test(root.textContent));
+sampleRecord.cost = -1.25;sampleRecord.partial=true;sampleRecord.issues=['price_unavailable'];sampleRecord.unpriced_kwh=.3;
+el.hass=hass;await new Promise(r=>setTimeout(r,30));
+check('updated negative costs and missing-price warnings render',
+  /1[.,]25/.test(root.querySelector('.session-cost')?.textContent || '') &&
+  /Partial estimate/.test(root.textContent) && /prices were unavailable/.test(root.textContent));
+sampleRecord.vehicle='<img src=x onerror=alert(1)>';
+el.hass=hass;await new Promise(r=>setTimeout(r,30));
+check('history vehicle labels are escaped', !root.querySelector('.cost-history img'));
+click('[data-action="close-settings"]');await new Promise(r=>setTimeout(r,30));
+check('history shortcut closes without triggering a charger command', !root.querySelector('.settings-panel'));
+
 console.log(ok ? '\nSMOKE TEST OK' : '\nSMOKE TEST FAILED');
 process.exit(ok ? 0 : 1);

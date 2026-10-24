@@ -16,6 +16,11 @@
         --ha-card-background: #242638;
       }
 
+      :root[data-theme="light"] {
+        color-scheme: light; --primary-text-color: #242638; --secondary-text-color: #555c70;
+        --primary-color: #8054b4; --card-background-color: #f3f1f8; --ha-card-background: #f3f1f8;
+      }
+      :root[data-theme="light"] body { background: #eef0f5; }
       * {
         box-sizing: border-box;
       }
@@ -333,6 +338,7 @@
         );
       }
     </script>
+    <script>document.documentElement.dataset.theme = new URLSearchParams(location.search).get('theme') || 'dark';</script>
     <script src="../dist/smartevse-dual-charger-card.js"></script>
     <script>
       const controllerEntity = "sensor.smartevse_dual_charger_controller_state";
@@ -778,6 +784,13 @@
         if (!snapshot["switch.smartevse_dual_charger_schedule_acceptable_price"]) {
           snapshot["switch.smartevse_dual_charger_schedule_acceptable_price"] = entity("off");
         }
+        // Synthetic session history; never fetch production or send device commands.
+        const session = {id:'demo-session',started_at:'2026-10-24T01:00:00Z',ended_at:'2026-10-24T04:10:00Z',
+          currency:'EUR',cost:4.28,energy_kwh:19.3,priced_kwh:19.3,unpriced_kwh:0,
+          status:'complete',partial:false,issues:[],vehicle:'Volvo XC40'};
+        attrs.charging_costs = {version:1,history_limit:100,chargers:{
+          smartevse_1:{session,history:[session,{...session,id:'older-session',started_at:'2026-10-22T00:30:00Z',ended_at:'2026-10-22T03:00:00Z',cost:3.14,energy_kwh:16.7,priced_kwh:16.4,unpriced_kwh:.3,partial:true,issues:['price_unavailable']}]},
+          smartevse_2:{session:null,history:[]}}};
         attrs.wled_visuals = deepClone(controllerWledVisuals);
         for (const key of ["smartevse_1", "smartevse_2"]) {
           const nameKey = `${key}_name`;

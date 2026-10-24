@@ -4,7 +4,7 @@ import { OVERVIEW_CSS } from "./styles/overview";
 import { DESIGN_TOKENS_CSS } from "./shared/design-tokens";
 import { buildGlow, type PulseColors } from "./shared/glow";
 
-const CARD_VERSION = "0.0.52";
+const CARD_VERSION = "0.0.53";
 
 const ACTIVE_GLOW: PulseColors = {
   weak: "rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha))",
@@ -367,6 +367,7 @@ class SmartEVSEFlowCard extends LitElement {
       "charge_policy",
       "mains_peak",
       "wled_visuals",
+      "charging_costs",
       "smartevse_1_available",
       "smartevse_1_name",
       "smartevse_1_connected_ev",
@@ -1269,15 +1270,16 @@ class SmartEVSEFlowCard extends LitElement {
     }
     return `
       <div class="settings-backdrop">
-        <div class="dialog-panel settings-panel" role="dialog" aria-modal="true" aria-label="Policy and limits">
+        <div class="dialog-panel settings-panel" role="dialog" aria-modal="true" aria-label="Charger settings">
           <div class="modal-head">
             <div>
               <div class="modal-kicker">Controls</div>
-              <div class="modal-title">Policy & limits</div>
+              <div class="modal-title">Charger settings</div>
             </div>
             <button class="modal-close" data-action="close-settings" type="button">Close</button>
           </div>
           ${settingsControls}
+          ${this._chargingHistory()}
           ${this._settingsError ? `<div class="wizard-error" role="alert">${this._safe(this._settingsError)}</div>` : ""}
         </div>
       </div>
@@ -1456,7 +1458,7 @@ class SmartEVSEFlowCard extends LitElement {
                 })
                 .join("")}
             </div>
-            ${this._entity(this._config.charge_policy_entity) || this._entity(this._config.duty_cycle_entity) ? `<button class="advanced-settings" data-action="open-settings" type="button">Charger priority &amp; limits<ha-icon icon="mdi:chevron-right" aria-hidden="true"></ha-icon></button>` : ""}
+            ${this._entity(this._config.charge_policy_entity) || this._entity(this._config.duty_cycle_entity) || this._costData() ? `<button class="advanced-settings" data-action="open-settings" type="button">Settings &amp; charging history<ha-icon icon="mdi:chevron-right" aria-hidden="true"></ha-icon></button>` : ""}
             ${error}
           </div>
         </div>
@@ -1730,7 +1732,59 @@ class SmartEVSEFlowCard extends LitElement {
     `;
   }
 
+  _costData() {
+    return this._entity(this._config.controller_entity)?.attributes?.charging_costs;
+  }
+
+  _costAmount(record) {
+    if (!record || !record.currency || typeof record.cost !== "number" || !Number.isFinite(record.cost)
+      || (record.energy_kwh > 0 && !(record.priced_kwh > 0))) return "Unavailable";
+    try {
+      return new Intl.NumberFormat(this._hass?.locale?.language || undefined, {
+        style: "currency", currency: record.currency, minimumFractionDigits: 2, maximumFractionDigits: 2,
+      }).format(record.cost);
+    } catch { return "Unavailable"; }
+  }
+
+  _costTime(value) {
+    const date = new Date(value);
+    return Number.isFinite(date.getTime()) ? date.toLocaleString(this._hass?.locale?.language || undefined,
+      { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "Time unavailable";
+  }
+
+  _chargingHistory() {
+    const ledger = this._costData();
+    if (!ledger) return `<p class="cost-note">Charging history requires the updated SmartEVSE integration.</p>`;
+    const attrs = this._entity(this._config.controller_entity)?.attributes || {};
+    const issues = {
+      restart_or_telemetry_gap: "Some time was not observed, including while Home Assistant was offline.",
+      shared_meter_ambiguous: "The shared meter could not be assigned to one charger.",
+      charger_unavailable: "Charger status was unavailable for part of this session.",
+      power_unavailable: "Power readings were unavailable for part of this session.",
+      price_unavailable: "Electricity prices were unavailable for part of this session.",
+      currency_changed: "The tariff currency changed during this session.",
+      clock_changed: "A clock change interrupted accounting.",
+      start_not_observed: "Charging was already in progress when tracking started.",
+    };
+    return `<section class="cost-history" aria-label="Charging history">
+      <h3>Charging history</h3>
+      ${ledger.error ? `<p role="alert" class="wizard-error">${this._safe(ledger.error)}</p>` : ""}
+      <p class="cost-note">Estimated from measured power and Real Electricity Price at the time of charging. Shared across all users; latest ${this._safe(ledger.history_limit || 100)} sessions per charger.</p>
+      ${["smartevse_1", "smartevse_2"].map(key => {
+        const records = ledger.chargers?.[key]?.history;
+        return `<details class="cost-charger" data-charger="cost-${key}"><summary><ha-icon icon="mdi:ev-station" aria-hidden="true"></ha-icon>${this._safe(attrs[key + "_name"] || key.replace("smartevse_", "SmartEVSE "))}<span>${Array.isArray(records) ? records.length : 0}</span><ha-icon icon="mdi:chevron-down" aria-hidden="true"></ha-icon></summary>
+        ${Array.isArray(records) && records.length ? records.map(r => `<details class="cost-record" data-charger="cost-${this._safe(r.id)}">
+          <summary><span class="cost-record-copy"><strong>${this._safe(this._costTime(r.started_at))}</strong><small>${this._safe(r.vehicle && r.vehicle !== "unknown" ? r.vehicle : "Vehicle")} · ${this._safe(Number(r.energy_kwh || 0).toFixed(2))} kWh</small></span><span class="cost-record-value"><strong>≈ ${this._safe(this._costAmount(r))}</strong><small>${r.partial ? "Partial estimate" : this._safe(({charging:"Charging", paused:"Paused", complete:"Complete", finished:"Finished", unavailable:"Connection lost"})[r.status] || "Recorded")}</small></span></summary>
+          <div class="cost-record-details">${r.ended_at ? `<p>Ended ${this._safe(this._costTime(r.ended_at))}</p>` : ""}
+          ${r.priced_kwh > 0 ? `<p>Average ${this._safe(this._costAmount({...r, cost:r.cost/r.priced_kwh}))}/kWh</p>` : ""}
+          ${r.unpriced_kwh > 0 ? `<p>${this._safe(Number(r.unpriced_kwh).toFixed(3))} kWh without a price</p>` : ""}
+          ${(Array.isArray(r.issues) ? r.issues : []).map(i=>`<p>${this._safe(issues[i] || "Some measurements are missing.")}</p>`).join("")}</div>
+        </details>`).join("") : `<p class="cost-note">No charging sessions recorded yet. Tracking starts with the next charge; earlier sessions are not reconstructed.</p>`}</details>`;
+      }).join("")}</section>`;
+  }
+
   _evNode(ev) {
+    const record = this._costData()?.chargers?.[ev.key]?.session;
     const knownVehicle = ev.connectedEvName && !["unknown", "unavailable", "none", "?", "n/a"].includes(ev.connectedEvName.toLowerCase());
     const vehicleTitle = knownVehicle ? ev.connectedEvName : "Vehicle connected";
     const battery = knownVehicle ? this._batteryPercent(ev.battery) : null;
@@ -1760,7 +1814,10 @@ class SmartEVSEFlowCard extends LitElement {
               ${ev.connected ? `<div class="vehicle-name">${this._safe(vehicleTitle)}</div>` : ""}
               <div class="charger-status"><span class="state-dot" aria-hidden="true"></span>${this._safe(status)}</div>
             </div>
-            ${ev.connected && battery !== null ? `<div class="battery-value">${this._safe(battery)}<span>%</span></div>` : ""}
+            <div class="charger-totals">
+              ${ev.connected && battery !== null ? `<div class="battery-value">${this._safe(battery)}<span>%</span></div>` : ""}
+              ${record ? `<button class="session-cost" data-action="open-settings" aria-label="${this._safe(ev.smartevseName)} charging cost history"><strong>≈ ${this._safe(this._costAmount(record))}</strong><small>${this._costData()?.error ? "History not saved" : record.partial ? "Partial estimate" : ev.connected && record.status !== "finished" ? "Session estimate" : "Last session"}</small></button>` : ev.connected && this._costData() ? `<span class="session-cost empty"><small>No cost recorded yet</small></span>` : ""}
+            </div>
           </div>
           ${ev.connected && battery !== null ? `<div class="battery-track" role="meter" aria-label="${this._safe(vehicleTitle)} battery" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${battery}"><span style="width:${battery}%"></span></div>` : ""}
           ${ev.hasError ? `<p class="charger-message" role="status">${this._safe(ev.error)}</p>` : !ev.available ? `<p class="charger-message">Status cannot be read. Check the charger connection.</p>` : ""}

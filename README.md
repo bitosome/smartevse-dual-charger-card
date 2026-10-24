@@ -156,3 +156,14 @@ npm run build      # bundles src/ -> dist/smartevse-dual-charger-card.js
 npm test           # headless smoke test (happy-dom)
 npm run typecheck  # tsc --noEmit
 ```
+
+### Session costs
+
+With SmartEVSE Dual Charger integration 0.0.8.7+, each charger tile displays its
+session cost below the battery percentage. Tap the cost or open **Edit plan →
+Settings & charging history** to see records grouped by charger. Expand a record
+for the energy-weighted average rate and missing-data details. All amounts are
+estimates from the integration's measured-power accounting and Real Electricity
+Price tariff; the card never calculates or persists authoritative costs locally.
+A partial estimate is only the known subtotal. The last session remains visible
+after unplugging, and no pre-installation costs are invented.

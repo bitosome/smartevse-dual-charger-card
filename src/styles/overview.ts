@@ -70,6 +70,27 @@ export const OVERVIEW_CSS = `
   .tone-error .charger-status { color: var(--status-alert-color); }
   .tone-unavailable .charger-status { color: var(--status-warn-color); }
   .visual-charging .charger-icon { color: var(--status-success-color); }
+  .charger-totals { display: grid; gap: 5px; text-align: right; flex: 0 0 auto; max-width: 38%; }
+  .session-cost { display: grid; gap: 3px; padding: 6px 0; min-height: 44px; border: 0; background: none; color: var(--primary-text-color); text-align: right; font: inherit; cursor: pointer; }
+  .session-cost strong { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  .session-cost small { font-size: 10px; line-height: 1.3; color: var(--secondary-text-color); }
+  .session-cost.empty { cursor: default; }
+  .cost-history { border-top: var(--sdc-border-faint); margin-top: 16px; padding-top: 8px; }
+  .cost-history h3 { font-size: 15px; margin: 12px 0 6px; }
+  .cost-note, .cost-record-details { font-size: 12px; color: var(--secondary-text-color); line-height: 1.5; }
+  .cost-charger { margin: 10px 0; padding: 0 10px; background: var(--chip-background-color); border-radius: var(--tile-border-radius); }
+  .cost-charger > summary { display: flex; align-items: center; gap: 8px; min-height: 48px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .cost-charger > summary span { margin-left: auto; color: var(--secondary-text-color); }
+  .cost-charger ha-icon { --mdc-icon-size: 20px; width: 20px; height: 20px; flex: 0 0 20px; }
+  .cost-charger summary, .cost-record summary { list-style: none; }
+  .cost-charger summary::-webkit-details-marker { display: none; }
+  .cost-record { border-top: var(--sdc-border-faint); }
+  .cost-record summary { display: flex; justify-content: space-between; gap: 12px; padding: 12px 0; min-height: 44px; cursor: pointer; }
+  .cost-record-copy, .cost-record-value { display: grid; gap: 5px; min-width: 0; overflow-wrap: anywhere; }
+  .cost-record strong { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .cost-record small { font-size: 11px; color: var(--secondary-text-color); }
+  .cost-record-value { text-align: right; }
+  .cost-record-details p { margin: 4px 0 10px; }
   .battery-value { font-size: 28px; font-weight: 600; line-height: 1; letter-spacing: -.045em; font-variant-numeric: tabular-nums; }
   .battery-value span { font-size: 13px; color: var(--secondary-text-color); margin-left: 2px; letter-spacing: 0; }
   .battery-track { height: 5px; border-radius: 99px; background: color-mix(in srgb, var(--secondary-text-color) 15%, transparent); margin-top: 18px; overflow: hidden; }
