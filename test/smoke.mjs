@@ -168,12 +168,8 @@ const checks = {
     return /Disconnected|Not connected|No (vehicle|car)/i.test(text) &&
       !/16(?:\.0)?\s*A|Current offered|Limit|Mode/.test(text);
   })(),
-  'charger diagnostics use explicit offered-current terminology': (() => {
-    const details = root.querySelector('.ev-node.smartevse_1 details.charger-details');
-    return !!details?.querySelector('summary') && !details.open &&
-      ['State', 'Mode', 'Current offered', 'Limit'].every((label) => details.textContent.includes(label)) &&
-      !/actual current|power draw|kW/i.test(details.textContent);
-  })(),
+  'charger diagnostics open on demand without expanding the dashboard':
+    !!root.querySelector('.ev-node.smartevse_1 button.charger-details') && !root.querySelector('.charger-diagnostics'),
   'hero glow follows physical WLED while charging is paused':
     root.querySelector('.status-hero-wrap')?.classList.contains('visual-idle') &&
     root.querySelector('.status-hero')?.classList.contains('visual-idle'),
@@ -250,19 +246,24 @@ Object.assign(controllerAttrs, originalControllerAttrs);
 el.hass = hass;
 await new Promise((r) => setTimeout(r, 30));
 
-// Frequent Home Assistant updates must not collapse an open diagnostic view.
-const openedDetails = root.querySelector('.ev-node.smartevse_1 details.charger-details');
-openedDetails.open = true;
-openedDetails.dispatchEvent(new win.Event('toggle'));
-await new Promise((r) => setTimeout(r, 20));
+// Diagnostics are a native modal and retain fresh telemetry without shifting cards.
+const detailsTrigger = root.querySelector('.ev-node.smartevse_1 button.charger-details');
+detailsTrigger.focus();
+detailsTrigger.click();
+await new Promise((r) => setTimeout(r, 30));
+const nativeDetails = root.querySelector('dialog');
+check('charger diagnostics use the shared native dialog and explicit offered-current terminology',
+  nativeDetails?.open && ['State', 'Mode', 'Current offered', 'Limit'].every(label => nativeDetails.textContent.includes(label)) &&
+  !/actual current|power draw|kW/i.test(nativeDetails.textContent));
 controllerAttrs.smartevse_1_charge_current = 12.3;
 el.hass = hass;
 await new Promise((r) => setTimeout(r, 30));
-const updatedDetails = root.querySelector('.ev-node.smartevse_1 details.charger-details');
-check('expanded diagnostics stay open and show fresh current after a state update',
-  updatedDetails?.open && updatedDetails.textContent.includes('12.3 A'));
-updatedDetails.open = false;
-updatedDetails.dispatchEvent(new win.Event('toggle'));
+check('diagnostics retain their native dialog and show fresh current after a state update',
+  root.querySelector('dialog') === nativeDetails && nativeDetails.open && nativeDetails.textContent.includes('12.3 A'));
+root.querySelector('[data-action="close-charger-details"]').click();
+await new Promise((r) => setTimeout(r, 30));
+check('closing diagnostics returns focus to the correct charger',
+  !root.querySelector('dialog') && root.activeElement?.dataset.charger === 'smartevse_1');
 Object.assign(controllerAttrs, originalControllerAttrs);
 el.hass = hass;
 await new Promise((r) => setTimeout(r, 30));
@@ -270,6 +271,7 @@ await new Promise((r) => setTimeout(r, 30));
 // All charging behavior is configured through one two-path wizard.
 const openForceWizard = () => {
   const trigger = root.querySelector('[data-action="open-force-wizard"]');
+  trigger?.focus();
   trigger?.dispatchEvent(new win.MouseEvent('click', { bubbles: true, composed: true }));
 };
 const click = (selector) => {
@@ -927,6 +929,18 @@ check('duty service failure shows a visible alert and keeps the draft editable',
 hass.callService = workingCallService;
 click('[data-action="close-settings"]');
 await new Promise((r) => setTimeout(r, 30));
+check('X protects an unsaved rejected draft with a discard confirmation',
+  !!root.querySelector('[data-action="discard-dialog"]') &&
+  !!root.querySelector('[aria-label="Close discard confirmation"] ha-icon[icon="mdi:close"]'));
+click('[data-action="cancel-discard"]');
+await new Promise((r) => setTimeout(r, 30));
+check('keeping the draft restores the typed value',
+  root.querySelector('.setting-input[data-entity="number.duty"]')?.value === '60');
+click('[data-action="close-settings"]');
+await new Promise((r) => setTimeout(r, 30));
+click('[data-action="discard-dialog"]');
+await new Promise((r) => setTimeout(r, 30));
+check('discarding the local draft closes without sending another command', !root.querySelector('dialog'));
 
 // Unavailable settings must neither open an empty dialog nor trap an already
 // open editor when Home Assistant loses the entity during interaction.
@@ -987,6 +1001,33 @@ el.hass=hass;await new Promise(r=>setTimeout(r,30));
 check('history vehicle labels are escaped', !root.querySelector('.cost-history img'));
 click('[data-action="close-settings"]');await new Promise(r=>setTimeout(r,30));
 check('history shortcut closes without triggering a charger command', !root.querySelector('.settings-panel'));
+
+// A slow request can be dismissed without cancelling it or enabling duplicates.
+openForceWizard();
+await new Promise(r => setTimeout(r, 30));
+let resolveNumberWrite;
+let pendingWrites = 0;
+hass.callService = () => { pendingWrites++; return new Promise(resolve => { resolveNumberWrite = resolve; }); };
+el._editorDrafts['number.price'] = '0.21';
+const pendingSave = el._saveForceWizardNumber('number.price');
+await new Promise(r => setTimeout(r, 30));
+click('[data-action="close-force-wizard"]');
+await new Promise(r => setTimeout(r, 30));
+check('a pending charging request remains visible after X dismisses its dialog',
+  !root.querySelector('dialog') && /Updating charging plan/.test(root.textContent) && el._forceWizardBusy);
+openForceWizard();
+await new Promise(r => setTimeout(r, 30));
+await el._saveForceWizardNumber('number.price');
+check('reopening a pending plan does not enable another write',
+  pendingWrites === 1 && el._forceWizardBusy && root.querySelector('[data-action="toggle-charging-plan"]')?.disabled);
+click('[data-action="close-force-wizard"]');
+await new Promise(r => setTimeout(r, 30));
+resolveNumberWrite();
+await pendingSave;
+await new Promise(r => setTimeout(r, 30));
+check('a dismissed request completes without reopening the modal',
+  !root.querySelector('dialog') && !el._forceWizardBusy && !/Updating charging plan/.test(root.textContent));
+hass.callService = workingCallService;
 
 console.log(ok ? '\nSMOKE TEST OK' : '\nSMOKE TEST FAILED');
 process.exit(ok ? 0 : 1);

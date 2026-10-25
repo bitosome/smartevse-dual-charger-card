@@ -16,7 +16,7 @@ export const OVERVIEW_CSS = `
     gap: var(--large-gap);
   }
   .house-node, .ev-row { z-index: auto; }
-  .status-hero { padding: 18px; min-height: 0; clip-path: none; overflow: visible; }
+  .status-hero { padding: 16px; min-height: 0; clip-path: none; overflow: visible; }
   .status-hero.visual-idle, .status-hero.visual-charging, .status-hero.visual-error,
   .ev-node { box-shadow: var(--tile-shadow-default); }
   .overview-heading {
@@ -54,10 +54,10 @@ export const OVERVIEW_CSS = `
   }
   .status-runtime-pills { margin: 0; }
   .ev-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--large-gap); margin: 0; align-items: start; }
-  .ev-node { padding: 18px 18px 0; clip-path: none; overflow: visible; }
+  .ev-node { padding: 16px 16px 0; clip-path: none; overflow: visible; }
   .charger-heading { display: flex; align-items: center; gap: var(--large-gap); min-width: 0; }
   .charger-icon {
-    width: 42px; height: 42px; flex: 0 0 42px; display: grid; place-items: center;
+    width: 44px; height: 44px; flex: 0 0 44px; display: grid; place-items: center;
     border-radius: var(--tile-border-radius); background: var(--chip-background-color); color: var(--secondary-text-color);
   }
   .charger-icon ha-icon { --mdc-icon-size: 24px; height: 24px; width: 24px; }
@@ -98,19 +98,15 @@ export const OVERVIEW_CSS = `
   .charger-message { font-size: 12px; line-height: 1.5; margin: var(--large-gap) 0 0; color: var(--secondary-text-color); overflow-wrap: anywhere; }
   .compact { padding-bottom: 18px; }
   .compact .charger-status { margin-top: 3px; }
-  .charger-details { margin-top: var(--medium-gap); font-size: 12px; }
-  .charger-details summary { display: flex; justify-content: space-between; align-items: center; min-height: 44px; color: var(--secondary-text-color); cursor: pointer; list-style: none; }
-  .charger-details summary::-webkit-details-marker { display: none; }
-  .charger-details summary ha-icon { --mdc-icon-size: 16px; width: 16px; height: 16px; }
-  .charger-details[open] summary ha-icon { transform: rotate(180deg); }
-  .charger-details dl { border-top: var(--sdc-border-faint); margin: 0; padding: var(--large-gap) 0 16px; display: grid; gap: 10px; }
-  .charger-details dl div { display: flex; justify-content: space-between; gap: var(--large-gap); }
-  .charger-details dt { color: var(--secondary-text-color); }
-  .charger-details dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+  .charger-details { display: flex; justify-content: space-between; align-items: center; width: 100%; min-height: 44px; margin-top: var(--medium-gap); padding: 0; border: 0; background: none; font: inherit; font-size: 12px; color: var(--secondary-text-color); cursor: pointer; }
+  .charger-details ha-icon { --mdc-icon-size: 20px; width: 20px; height: 20px; }
+  .charger-diagnostics { margin: 0; display: grid; gap: 12px; font-size: 13px; line-height: 1.5; }
+  .charger-diagnostics div { display: flex; justify-content: space-between; gap: 16px; }
+  .charger-diagnostics dt { color: var(--secondary-text-color); }
+  .charger-diagnostics dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
   .advanced-settings { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 44px; border: 0; background: transparent; color: var(--secondary-text-color); font: inherit; font-size: 13px; margin-top: var(--large-gap); cursor: pointer; }
   .advanced-settings ha-icon { --mdc-icon-size: 18px; width: 18px; height: 18px; }
-  .modal-back, .modal-close { min-width: 44px; min-height: 44px; }
-  .modal-title { font-size: 19px; line-height: 1.35; }
+  .modal-title { font-size: 18px; font-weight: 650; line-height: 1.35; }
   .wizard-option-title, .wizard-toggle-copy { font-size: 14px; }
   .wizard-plan-toggle, .wizard-plan-toggle.selected { width: 44px; height: 44px; background: transparent; }
   .wizard-plan-toggle::before { content: ""; position: absolute; top: 11px; left: 3px; width: 38px; height: 22px; border-radius: 99px; background: color-mix(in srgb, var(--secondary-text-color) 34%, transparent); }

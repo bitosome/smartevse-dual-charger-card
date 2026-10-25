@@ -1,5 +1,4 @@
-// AUTO-SYNCED from space-hub-card/src/shared/design-tokens.ts — DO NOT EDIT.
-// Run space-hub-card/scripts/sync-design-tokens.sh to update.
+// VENDORED from bitosome/space-hub-card design 1.0.0. See DESIGN_PROVENANCE.json.
 import { css, CSSResultGroup, unsafeCSS } from 'lit';
 
 /**
@@ -10,7 +9,6 @@ import { css, CSSResultGroup, unsafeCSS } from 'lit';
  *   - space-hub-card            (reference)
  *   - real-electricity-price-card
  *   - smartevse-dual-charger-card
- *   - current-monitor-card
  *
  * It is intentionally framework-agnostic: `DESIGN_TOKENS_CSS` is a plain CSS
  * string (usable by vanilla `customElements` cards that build a <style> tag),
@@ -36,6 +34,7 @@ export const DESIGN_TOKENS_CSS = `
     --switch-on-color: var(--switch-on-yellow, #ffc107);
     --switch-smart-on-color: var(--switch-on-green, #00c853);
     --switch-lock-unlocked-color: var(--switch-unlocked-red, #e53935);
+    --lock-spinner-color: var(--primary-text-color, #ffffff);
     --switch-chip-bg: var(--chip-background-color, rgba(0,0,0,0.06));
     --switch-icon-size: 28px;
     --ac-chip-bg-off: rgba(158,158,158,0.95);
