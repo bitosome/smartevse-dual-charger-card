@@ -1029,5 +1029,95 @@ check('a dismissed request completes without reopening the modal',
   !root.querySelector('dialog') && !el._forceWizardBusy && !/Updating charging plan/.test(root.textContent));
 hass.callService = workingCallService;
 
+// Multi-command plans retain the exact request through close/reopen and stale telemetry.
+for (const id of ['switch.force', 'switch.force_price', 'switch.force_timer', 'switch.schedule_price']) states[id].state = 'off';
+states['switch.schedule'].state = 'on';
+el._forcePlanEnabled = false;
+el.hass = hass;
+openForceWizard(); await el.updateComplete;
+let releasePlanPrice;
+const delayedPlanCalls = [];
+hass.callService = (domain, service, data) => {
+  delayedPlanCalls.push([domain, service, data]);
+  if (data.entity_id === 'number.price') return new Promise(resolve => {
+    releasePlanPrice = async () => { await workingCallService(domain, service, data); resolve(); };
+  });
+  return workingCallService(domain, service, data);
+};
+const scheduleApply = el._toggleSchedulePriceGate(); await el.updateComplete;
+el._closeActiveDialog(); await el.updateComplete;
+openForceWizard(); el.hass = hass; await el.updateComplete;
+check('reopening a pending schedule preserves the requested price gate despite old telemetry', el._schedulePriceGate);
+await releasePlanPrice(); await scheduleApply; await el.updateComplete;
+check('the pending schedule completes with its requested price gate enabled',
+  states['switch.schedule_price'].state === 'on' && delayedPlanCalls.some(call => call[1] === 'turn_on' && call[2].entity_id === 'switch.schedule_price'));
+
+el._editorDrafts['number.price'] = '0.23';
+el._editorDrafts['number.duration'] = '95';
+const combinedStart = delayedPlanCalls.length;
+const combinedApply = el._applyForceMode('timer_price'); await el.updateComplete;
+el._closeActiveDialog(); await el.updateComplete;
+openForceWizard(); await el.updateComplete;
+el._openSettingsModal(); await el.updateComplete;
+// Config and local drafts may change independently while an old request awaits its first write.
+const previousConfig = el._config;
+el._config = { ...previousConfig, force_charge_duration_entity: 'number.changed_duration' };
+el._editorDrafts['number.duration'] = '15';
+await releasePlanPrice(); await combinedApply; await el.updateComplete;
+check('multi-step apply uses the captured duration and target entity after navigation or config changes',
+  delayedPlanCalls.slice(combinedStart).some(call => call[2].entity_id === 'number.duration' && call[2].value === 95) &&
+  !delayedPlanCalls.slice(combinedStart).some(call => call[2].entity_id === 'number.changed_duration'));
+el._config = previousConfig;
+hass.callService = workingCallService;
+el._closeActiveDialog(); await el.updateComplete;
+
+// Settings share the command lock and never let an old response close a later dialog.
+el._openSettingsModal(); el._openEditor('number.duty');
+el._updateEditorDraft('number.duty', '45'); await el.updateComplete;
+let releaseDuty;
+let dutyWrites = 0;
+hass.callService = (domain, service, data) => {
+  dutyWrites++;
+  return new Promise(resolve => { releaseDuty = async () => { await workingCallService(domain, service, data); resolve(); }; });
+};
+const dutyApply = el._saveEditor('number.duty'); await el.updateComplete;
+await el._saveEditor('number.duty');
+check('pending settings disable editing and prevent duplicate submissions',
+  dutyWrites === 1 && root.querySelector('[data-action="save-edit"]')?.disabled && root.querySelector('.setting-input')?.disabled);
+el._requestDialogClose(); await el.updateComplete;
+check('closing a sent setting shows pending status without pretending it is an unsaved draft',
+  !root.querySelector('dialog') && /Saving settings/.test(root.textContent));
+el._openSettingsModal(); el._openEditor('number.duty'); await el.updateComplete;
+check('reopening settings cannot start a competing editor while a write is pending',
+  !el._editingEntity && root.querySelector('[data-action="edit"][data-entity="number.duty"]')?.disabled);
+await releaseDuty(); await dutyApply; await el.updateComplete;
+check('old settings completion leaves the newly opened settings view available',
+  !!root.querySelector('.settings-panel') && !el._settingsBusy && !root.querySelector('[data-action="edit"][data-entity="number.duty"]')?.disabled);
+
+el._openEditor('number.duty'); el._updateEditorDraft('number.duty', '60'); await el.updateComplete;
+let rejectDuty;
+hass.callService = () => new Promise((resolve, reject) => { rejectDuty = reject; });
+const failedDuty = el._saveEditor('number.duty'); await el.updateComplete;
+el._requestDialogClose(); await el.updateComplete;
+rejectDuty(new Error('Setting rejected after dismissal')); await failedDuty; await el.updateComplete;
+check('a dismissed settings request keeps its eventual error visible on the card',
+  !root.querySelector('dialog') && /Setting rejected after dismissal/.test(root.querySelector('[role="alert"]')?.textContent || ''));
+hass.callService = workingCallService;
+
+// Rejected optimistic select choices must not survive a changed dialog session.
+el._openSettingsModal(); el._openSettingsSubmenu('select.policy'); await el.updateComplete;
+const storedPolicy = states['select.policy'].state;
+const rejectedPolicy = states['select.policy'].attributes.options.find(value => value !== storedPolicy);
+let rejectPolicy;
+hass.callService = () => new Promise((resolve, reject) => { rejectPolicy = reject; });
+const failedPolicy = el._chooseEditorOption('select.policy', rejectedPolicy); await el.updateComplete;
+el._requestDialogClose(); await el.updateComplete;
+el._openSettingsModal(); await el.updateComplete;
+rejectPolicy(new Error('Delayed policy rejection')); await failedPolicy; await el.updateComplete;
+el._openSettingsSubmenu('select.policy'); await el.updateComplete;
+check('a rejected choice is reconciled with Home Assistant after closing and reopening settings',
+  root.querySelector('[data-action="choose-option"].selected')?.dataset.value === storedPolicy);
+hass.callService = workingCallService;
+
 console.log(ok ? '\nSMOKE TEST OK' : '\nSMOKE TEST FAILED');
 process.exit(ok ? 0 : 1);

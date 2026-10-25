@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.0.55 — 2026-10-25
+
+- Keep an in-flight charging plan immutable when its dialog is dismissed, reopened or replaced by settings. Stale telemetry cannot clear a requested price gate, and later commands retain the original price, duration and target entities.
+- Share pending protection across charging and settings: prevent duplicate or competing writes, retain pending/error feedback after dismissal, and keep late responses from closing a newer settings view.
+- Add slow-service regressions for schedule price gates, combined timer/price plans, configuration changes, settings reopening and rejected writes.
+
+Validation: typecheck/build and 99 offline smoke cases; no physical charger commands were sent.
+
 ## 0.0.54 — 2026-10-25
 
 - Adopt the shared Space Hub presentation primitives, token synchronization and source/hash provenance.

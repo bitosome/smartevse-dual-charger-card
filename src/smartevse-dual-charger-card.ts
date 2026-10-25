@@ -4,7 +4,7 @@ import { CARD_CSS } from "./styles/card";
 import { familyStyles, dialogStyles, showFamilyDialog, closeFamilyDialog, disposeFamilyDialog } from "./shared/card-primitives";
 import { buildGlow, type PulseColors } from "./shared/glow";
 
-const CARD_VERSION = "0.0.54";
+const CARD_VERSION = "0.0.55";
 
 const ACTIVE_GLOW: PulseColors = {
   weak: "rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha))",
@@ -62,6 +62,9 @@ class SmartEVSEFlowCard extends LitElement {
   private _editorDrafts: Record<string, string> = {};
   private _settingsModalOpen = false;
   private _settingsError = "";
+  private _settingsBusy = false;
+  private _settingsSession = 0;
+  private get _writePending() { return this._settingsBusy || this._forceWizardBusy; }
   private _settingsSubmenuEntity: string | null = null;
   private _forceWizardOpen = false;
   private _forceWizardStep: "choose" | "schedule" | "now" = "choose";
@@ -126,7 +129,7 @@ class SmartEVSEFlowCard extends LitElement {
 
   set hass(hass: HomeAssistant) {
     this._hass = hass;
-    if (!this._forceWizardBusy && (!this._forceWizardOpen || this._forceWizardStep === "choose")) {
+    if (!this._writePending && (!this._forceWizardOpen || this._forceWizardStep === "choose")) {
       this._syncPlanPreferencesFromEntities();
     }
     if (this._editingEntity) {
@@ -751,6 +754,8 @@ class SmartEVSEFlowCard extends LitElement {
   }
 
   _openEditor(entityId) {
+    if (this._writePending) return;
+    this._settingsSession++;
     if (!this._editorMeta(entityId).supported) return;
     this._settingsError = "";
     this._editingEntity = entityId;
@@ -762,11 +767,14 @@ class SmartEVSEFlowCard extends LitElement {
   }
 
   _closeEditor() {
+    this._settingsSession++;
     this._editingEntity = null;
     this._render();
   }
 
   _openSettingsSubmenu(entityId) {
+    if (this._writePending) return;
+    this._settingsSession++;
     const meta = this._editorMeta(entityId);
     if (!meta.supported || meta.kind !== "select") return;
     this._settingsError = "";
@@ -782,6 +790,7 @@ class SmartEVSEFlowCard extends LitElement {
   }
 
   _closeSettingsSubmenu() {
+    this._settingsSession++;
     this._settingsSubmenuEntity = null;
     this._editingEntity = null;
     this._render();
@@ -826,6 +835,8 @@ class SmartEVSEFlowCard extends LitElement {
   }
 
   async _saveEditor(entityId) {
+    if (this._writePending) return;
+    const session = this._settingsSession;
     const meta = this._editorMeta(entityId);
     if (!meta.supported) {
       return;
@@ -850,53 +861,59 @@ class SmartEVSEFlowCard extends LitElement {
       return;
     }
     this._settingsError = "";
+    this._settingsBusy = true;
+    this._render();
     try {
       await this._hass.callService(meta.serviceDomain, meta.service, serviceData);
+      if (session === this._settingsSession && this._editingEntity === entityId) {
+        this._editingEntity = null;
+        if (this._settingsSubmenuEntity === entityId) this._settingsSubmenuEntity = null;
+      }
     } catch (error) {
       this._settingsError = error instanceof Error ? error.message : "Unable to save this setting.";
+    } finally {
+      this._settingsBusy = false;
       this._render();
-      return;
     }
-    this._editingEntity = null;
-    if (this._settingsSubmenuEntity === entityId) {
-      this._settingsSubmenuEntity = null;
-    }
-    this._render();
   }
 
   async _chooseEditorOption(entityId, value) {
-    const previousValue = this._editorDraft(entityId);
-    this._updateEditorDraft(entityId, value);
-    this._render();
+    if (this._writePending) return;
     const meta = this._editorMeta(entityId);
-    if (!meta.supported || meta.kind !== "select" || !meta.options.includes(value)) {
-      return;
-    }
+    if (!meta.supported || meta.kind !== "select" || !meta.options.includes(value)) return;
+    const previousValue = this._editorDraft(entityId);
+    const session = this._settingsSession;
+    this._updateEditorDraft(entityId, value);
     this._settingsError = "";
+    this._settingsBusy = true;
+    this._render();
     try {
-      await this._hass.callService(meta.serviceDomain, meta.service, {
-        entity_id: entityId,
-        option: value,
-      });
+      await this._hass.callService(meta.serviceDomain, meta.service, { entity_id: entityId, option: value });
     } catch (error) {
-      this._updateEditorDraft(entityId, previousValue);
+      if (session === this._settingsSession) this._updateEditorDraft(entityId, previousValue);
+      else delete this._editorDrafts[entityId];
       this._settingsError = error instanceof Error ? error.message : "Unable to save this setting.";
+    } finally {
+      this._settingsBusy = false;
       this._render();
     }
   }
 
   _openSettingsModal() {
+    this._settingsSession++;
+    this._editingEntity = null;
     this._confirmDiscard = false;
     this._chargerDetailsKey = null;
     this._forceWizardOpen = false;
     this._settingsModalOpen = true;
-    this._settingsError = "";
+    if (!this._writePending) this._settingsError = "";
     this._settingsSubmenuEntity = null;
-    this._editorDrafts = {};
+    if (!this._writePending) this._editorDrafts = {};
     this._render();
   }
 
   _closeSettingsModal() {
+    this._settingsSession++;
     this._settingsModalOpen = false;
     this._settingsSubmenuEntity = null;
     this._editingEntity = null;
@@ -922,8 +939,8 @@ class SmartEVSEFlowCard extends LitElement {
     this._settingsModalOpen = false;
     this._forceWizardOpen = true;
     this._forceWizardStep = "choose";
+    if (this._writePending) { this._render(); return; }
     this._syncPlanPreferencesFromEntities();
-    if (this._forceWizardBusy) { this._render(); return; }
     this._forceWizardError = "";
     if (this._config.acceptable_price_entity) {
       this._editorDrafts[this._config.acceptable_price_entity] = this._state(this._config.acceptable_price_entity);
@@ -952,7 +969,7 @@ class SmartEVSEFlowCard extends LitElement {
   }
 
   _backForceWizard() {
-    if (this._forceWizardBusy) {
+    if (this._writePending) {
       return;
     }
     this._forceWizardStep = "choose";
@@ -988,7 +1005,7 @@ class SmartEVSEFlowCard extends LitElement {
   }
 
   async _toggleChargingPlan(mode) {
-    if (this._forceWizardBusy || !["schedule", "now"].includes(mode)) {
+    if (this._writePending || !["schedule", "now"].includes(mode)) {
       return;
     }
     const enabled = mode === "schedule" ? this._isSchedulePlanActive() : this._isForcePlanActive();
@@ -1000,7 +1017,7 @@ class SmartEVSEFlowCard extends LitElement {
   }
 
   async _disableChargingPlan(mode) {
-    if (this._forceWizardBusy || !["schedule", "now"].includes(mode)) {
+    if (this._writePending || !["schedule", "now"].includes(mode)) {
       return;
     }
     this._syncPlanPreferencesFromEntities();
@@ -1040,7 +1057,7 @@ class SmartEVSEFlowCard extends LitElement {
   }
 
   async _toggleSchedulePriceGate() {
-    if (this._forceWizardBusy) {
+    if (this._writePending) {
       return;
     }
     if (
@@ -1064,7 +1081,7 @@ class SmartEVSEFlowCard extends LitElement {
   }
 
   async _toggleForceNowTimer() {
-    if (this._forceWizardBusy) {
+    if (this._writePending) {
       return;
     }
     if (
@@ -1087,7 +1104,7 @@ class SmartEVSEFlowCard extends LitElement {
   }
 
   async _toggleForceNowPrice() {
-    if (this._forceWizardBusy) {
+    if (this._writePending) {
       return;
     }
     if (
@@ -1123,12 +1140,12 @@ class SmartEVSEFlowCard extends LitElement {
     });
   }
 
-  async _setWizardNumber(entityId) {
+  async _setWizardNumber(entityId, rawValue = this._editorDraft(entityId)) {
     const meta = this._editorMeta(entityId);
     if (!meta.supported || meta.kind !== "number") {
       throw new Error("This force-charge setting is unavailable or is not a number entity.");
     }
-    const value = Number.parseFloat(this._editorDraft(entityId));
+    const value = Number.parseFloat(rawValue);
     if (!Number.isFinite(value)) {
       throw new Error("Enter a valid number before continuing.");
     }
@@ -1145,7 +1162,7 @@ class SmartEVSEFlowCard extends LitElement {
   }
 
   async _saveForceWizardNumber(entityId) {
-    if (this._forceWizardBusy || !entityId) {
+    if (this._writePending || !entityId) {
       return;
     }
     this._forceWizardBusy = true;
@@ -1162,78 +1179,84 @@ class SmartEVSEFlowCard extends LitElement {
   }
 
   async _applyForceMode(mode) {
-    if (this._forceWizardBusy || !["schedule", "simple", "price", "timer", "timer_price"].includes(mode)) {
+    if (this._writePending || !["schedule", "simple", "price", "timer", "timer_price"].includes(mode)) {
       return;
     }
+    // Freeze the requested plan before any asynchronous command or dialog navigation.
+    const config = { ...this._config };
+    const schedulePriceEntity = this._schedulePriceEntity();
+    const independentPlans = this._supportsIndependentPlans();
+    const target = this._forceModeEntity(mode);
+    const schedulePriceGate = this._schedulePriceGate;
+    const priceDraft = this._editorDraft(config.acceptable_price_entity);
+    const durationDraft = this._editorDraft(config.force_charge_duration_entity);
     this._forceWizardBusy = true;
     this._forceWizardError = "";
     this._render();
     try {
-      const needsPrice = mode === "price" || mode === "timer_price" || (mode === "schedule" && this._schedulePriceGate);
+      const needsPrice = mode === "price" || mode === "timer_price" || (mode === "schedule" && schedulePriceGate);
       const needsTimer = mode === "timer" || mode === "timer_price";
       const required = mode === "schedule"
-        ? [this._config.schedule_switch_entity, this._config.schedule_entity, ...(this._entity(this._schedulePriceEntity()) ? [this._schedulePriceEntity()] : [])]
-        : [this._forceModeEntity(mode), ...(this._supportsIndependentPlans() ? [this._config.force_charge_entity] : [])];
-      if (needsPrice) required.push(this._config.price_entity, this._config.acceptable_price_entity,
-        mode === "schedule" ? this._schedulePriceEntity() : this._config.force_price_entity);
-      if (needsTimer) required.push(this._config.force_timer_entity, this._config.force_charge_duration_entity);
-      required.push(this._config.controller_entity);
+        ? [config.schedule_switch_entity, config.schedule_entity, ...(this._entity(schedulePriceEntity) ? [schedulePriceEntity] : [])]
+        : [target, ...(independentPlans ? [config.force_charge_entity] : [])];
+      if (needsPrice) required.push(config.price_entity, config.acceptable_price_entity,
+        mode === "schedule" ? schedulePriceEntity : config.force_price_entity);
+      if (needsTimer) required.push(config.force_timer_entity, config.force_charge_duration_entity);
+      required.push(config.controller_entity);
       if (required.some(entity => !this._isAvailable(entity))) {
         throw new Error("A required charging control is unavailable. Check the connection before enabling this plan.");
       }
       if (mode === "schedule") {
-        const scheduleEntity = this._config.schedule_switch_entity;
-        const schedulePriceEntity = this._schedulePriceEntity();
+        const scheduleEntity = config.schedule_switch_entity;
         if (!scheduleEntity || !this._entity(scheduleEntity)) {
           throw new Error("The scheduled-charging switch is unavailable.");
         }
-        if (this._schedulePriceGate) {
+        if (schedulePriceGate) {
           if (
             !schedulePriceEntity ||
             !this._entity(schedulePriceEntity) ||
-            !this._entity(this._config.price_entity)
+            !this._entity(config.price_entity)
           ) {
             throw new Error("A required price-controlled charging entity is unavailable.");
           }
-          await this._setWizardNumber(this._config.acceptable_price_entity);
+          await this._setWizardNumber(config.acceptable_price_entity, priceDraft);
         }
 
         await this._setSwitchState(scheduleEntity, true);
         if (schedulePriceEntity && this._entity(schedulePriceEntity)) {
-          await this._setSwitchState(schedulePriceEntity, this._schedulePriceGate);
+          await this._setSwitchState(schedulePriceEntity, schedulePriceGate);
         }
         this._savePlanPreferences();
         return;
       }
 
-      const target = this._forceModeEntity(mode);
       if (!target || !this._entity(target)) {
         throw new Error("The switch for this force-charge mode is unavailable.");
       }
       if (mode === "price" || mode === "timer_price") {
-        if (!this._entity(this._config.price_entity)) {
+        if (!this._entity(config.price_entity)) {
           throw new Error("The electricity price sensor is unavailable.");
         }
-        await this._setWizardNumber(this._config.acceptable_price_entity);
+        await this._setWizardNumber(config.acceptable_price_entity, priceDraft);
       }
       if (mode === "timer" || mode === "timer_price") {
-        await this._setWizardNumber(this._config.force_charge_duration_entity);
+        await this._setWizardNumber(config.force_charge_duration_entity, durationDraft);
       }
 
       const forceEntities = [
-        this._config.force_charge_entity,
-        this._config.force_price_entity,
-        this._config.force_timer_entity,
+        config.force_charge_entity,
+        config.force_price_entity,
+        config.force_timer_entity,
       ].filter(Boolean);
-      const activateForceEntity = this._supportsIndependentPlans() ? [this._config.force_charge_entity] : [];
+      const activateForceEntity = independentPlans ? [config.force_charge_entity] : [];
       const targets =
         mode === "timer_price"
-          ? [this._config.force_price_entity, this._config.force_timer_entity, ...activateForceEntity].filter(Boolean)
+          ? [config.force_price_entity, config.force_timer_entity, ...activateForceEntity].filter(Boolean)
           : mode === "price"
-            ? [this._config.force_price_entity, ...activateForceEntity].filter(Boolean)
+            ? [config.force_price_entity, ...activateForceEntity].filter(Boolean)
             : mode === "timer"
-              ? [this._config.force_timer_entity, ...activateForceEntity].filter(Boolean)
-              : [this._config.force_charge_entity].filter(Boolean);
+              ? [config.force_timer_entity, ...activateForceEntity].filter(Boolean)
+              : [config.force_charge_entity].filter(Boolean);
       for (const entityId of forceEntities) {
         if (!targets.includes(entityId) && this._state(entityId) === "on") {
           await this._setSwitchState(entityId, false);
@@ -1291,6 +1314,7 @@ class SmartEVSEFlowCard extends LitElement {
           </div>
           <div class="family-dialog-body">${settingsControls}
           ${this._chargingHistory()}
+          ${this._settingsBusy ? `<p class="overview-note" role="status">Saving settings…</p>` : ""}
           ${this._settingsError ? `<div class="wizard-error" role="alert">${this._safe(this._settingsError)}</div>` : ""}</div>
         </div>
     `;
@@ -1385,7 +1409,7 @@ class SmartEVSEFlowCard extends LitElement {
       return "";
     }
 
-    const busy = this._forceWizardBusy;
+    const busy = this._writePending;
     const error = this._forceWizardError
       ? `<div class="wizard-error" role="alert">${this._safe(this._forceWizardError)}</div>`
       : "";
@@ -1635,7 +1659,7 @@ class SmartEVSEFlowCard extends LitElement {
                     data-action="choose-option"
                     data-entity="${this._safe(entityId)}"
                     data-value="${this._safe(option.value)}"
-                    type="button"
+                    type="button" ${this._writePending ? "disabled" : ""}
                   >
                     <span class="modal-option-title">${this._safe(option.label)}</span>
                     ${selected ? `<ha-icon class="modal-option-check" icon="mdi:check-circle"></ha-icon>` : ""}
@@ -1661,6 +1685,7 @@ class SmartEVSEFlowCard extends LitElement {
             <button class="family-icon-button" data-action="close-settings" type="button" aria-label="Close charger settings" title="Close"><ha-icon icon="mdi:close" aria-hidden="true"></ha-icon></button>
           </div>
           <div class="family-dialog-body">${content}
+          ${this._settingsBusy ? `<p class="overview-note" role="status">Saving settings…</p>` : ""}
           ${this._settingsError ? `<div class="wizard-error" role="alert">${this._safe(this._settingsError)}</div>` : ""}</div>
         </div>
     `;
@@ -1675,7 +1700,7 @@ class SmartEVSEFlowCard extends LitElement {
     if (!isEditing) {
       const action = presentation === "submenu" ? "open-submenu" : "edit";
       return `
-        <button class="setting-tile" data-action="${this._safe(action)}" data-entity="${this._safe(entityId)}" type="button" ${!meta.supported ? "disabled" : ""}>
+        <button class="setting-tile" data-action="${this._safe(action)}" data-entity="${this._safe(entityId)}" type="button" ${!meta.supported || this._writePending ? "disabled" : ""}>
           <div class="setting-icon"><ha-icon icon="${this._safe(icon)}"></ha-icon></div>
           <div class="setting-copy">
             <div class="setting-label">${this._safe(label)}</div>
@@ -1698,7 +1723,7 @@ class SmartEVSEFlowCard extends LitElement {
         )
         .join("");
       control = `
-        <select class="setting-select" data-entity="${this._safe(entityId)}">
+        <select class="setting-select" data-entity="${this._safe(entityId)}" ${this._writePending ? "disabled" : ""}>
           ${options}
         </select>
       `;
@@ -1713,6 +1738,7 @@ class SmartEVSEFlowCard extends LitElement {
           data-entity="${this._safe(entityId)}"
           type="${this._safe(inputType)}"
           value="${this._safe(draft)}"
+          ${this._writePending ? "disabled" : ""}
           ${minAttr}
           ${maxAttr}
           ${stepAttr}
@@ -1729,7 +1755,7 @@ class SmartEVSEFlowCard extends LitElement {
           <div class="setting-editor">
             ${control}
             <div class="setting-editor-actions">
-              <button class="setting-editor-button tone-primary" data-action="save-edit" data-entity="${this._safe(entityId)}" type="button">Apply</button>
+              <button class="setting-editor-button tone-primary" data-action="save-edit" data-entity="${this._safe(entityId)}" type="button" ${this._writePending ? "disabled" : ""}>Apply</button>
               <button class="setting-editor-button" data-action="cancel-edit" data-entity="${this._safe(entityId)}" type="button">Cancel</button>
             </div>
           </div>
@@ -1809,7 +1835,7 @@ class SmartEVSEFlowCard extends LitElement {
     const keys = this._editingEntity ? [this._editingEntity] : this._forceWizardOpen && this._forceWizardStep !== "choose"
       ? [this._forceWizardStep === "schedule" ? this._schedulePriceGate && this._config.acceptable_price_entity : this._forceNowPrice && this._config.acceptable_price_entity,
          this._forceWizardStep === "now" && this._forceNowTimer && this._config.force_charge_duration_entity].filter(Boolean) : [];
-    const dirty = !this._forceWizardBusy && keys.some(key => key && this._isAvailable(key) &&
+    const dirty = !this._writePending && keys.some(key => key && this._isAvailable(key) &&
       Object.prototype.hasOwnProperty.call(this._editorDrafts, key) &&
       this._editorDrafts[key] !== this._state(key) &&
       Number(this._editorDrafts[key]) !== Number(this._state(key)));
@@ -1828,6 +1854,7 @@ class SmartEVSEFlowCard extends LitElement {
   }
 
   _closeActiveDialog() {
+    this._settingsSession++;
     this._confirmDiscard = false;
     closeFamilyDialog(this.renderRoot.querySelector<HTMLDialogElement>("dialog"));
     this._settingsModalOpen = false;
@@ -2198,6 +2225,8 @@ class SmartEVSEFlowCard extends LitElement {
               </div>
             </section>
 
+            ${!this._settingsModalOpen && this._settingsBusy ? `<p class="overview-note" role="status">Saving settings…</p>` : ""}
+            ${!this._settingsModalOpen && this._settingsError ? `<p class="wizard-error" role="alert">${this._safe(this._settingsError)}</p>` : ""}
             ${!this._forceWizardOpen && this._forceWizardBusy ? `<p class="overview-note" role="status">Updating charging plan…</p>` : ""}
             ${!this._forceWizardOpen && this._forceWizardError ? `<p class="wizard-error" role="alert">${this._safe(this._forceWizardError)}</p>` : ""}
             <div class="ev-row">
@@ -2213,7 +2242,7 @@ class SmartEVSEFlowCard extends LitElement {
     const dialogMarkup = this._confirmDiscard ? this._discardDialog() : this._chargerDetailsKey ? this._chargerDetails(ev1, ev2) : this._forceWizardModal() ||
       this._settingsModal(this._settingsControls({ policy, dutyCycleMinutes: this._numberState(this._config.duty_cycle_entity) }));
     return html`${unsafeHTML(markup)}${dialogMarkup ? html`
-      <dialog class="family-dialog" style=${wledStyleVars} aria-labelledby="charging-dialog-title" aria-busy=${this._forceWizardBusy ? "true" : "false"}
+      <dialog class="family-dialog" style=${wledStyleVars} aria-labelledby="charging-dialog-title" aria-busy=${this._writePending ? "true" : "false"}
         @cancel=${(event: Event) => { event.preventDefault(); if (this._confirmDiscard) { this._confirmDiscard = false; this._render(); } else this._requestDialogClose(); }}>
         ${unsafeHTML(dialogMarkup)}
       </dialog>` : nothing}`;
@@ -2306,7 +2335,7 @@ class SmartEVSEFlowCard extends LitElement {
       const body = dialog.querySelector<HTMLElement>('.family-dialog-body');
       if (body && dialogKey === previousDialogKey) body.scrollTop = this._dialogScroll;
       dialog.tabIndex = -1;
-      dialog.setAttribute("aria-busy", this._forceWizardBusy ? "true" : "false");
+      dialog.setAttribute("aria-busy", this._writePending ? "true" : "false");
       if (dialogKey !== previousDialogKey) {
         this._busyUiFocus = null;
         dialog.focus({ preventScroll: true });
@@ -2314,7 +2343,7 @@ class SmartEVSEFlowCard extends LitElement {
         if (this._restoreUiFocus(this._pendingUiFocus)) {
           this._busyUiFocus = null;
         } else {
-          this._busyUiFocus = this._forceWizardBusy ? this._pendingUiFocus : null;
+          this._busyUiFocus = this._writePending ? this._pendingUiFocus : null;
           dialog.focus({ preventScroll: true });
         }
       } else if (this._dialogHadFocus) {
@@ -2402,10 +2431,6 @@ class SmartEVSEFlowCard extends LitElement {
         this._openForceWizard();
         return;
       }
-      if (action === "close-force-wizard") {
-        this._closeForceWizard();
-        return;
-      }
       if (action === "back-force-wizard") {
         this._backForceWizard();
         return;
@@ -2430,10 +2455,6 @@ class SmartEVSEFlowCard extends LitElement {
         await this._toggleForceNowPrice();
         return;
       }
-      if (action === "close-settings") {
-        this._closeSettingsModal();
-        return;
-      }
       if (action === "back-settings") {
         this._closeSettingsSubmenu();
         return;
@@ -2443,7 +2464,7 @@ class SmartEVSEFlowCard extends LitElement {
       }
       if (action === "open-more-info") {
         // Hand focus to Home Assistant only after our own modal and trap close.
-        if (this._forceWizardBusy) return;
+        if (this._writePending) return;
         if (this._forceWizardOpen) this._closeForceWizard();
         if (this._settingsModalOpen) this._closeSettingsModal();
         await this.updateComplete;
@@ -2551,12 +2572,21 @@ class SmartEVSEFlowCard extends LitElement {
   }
 
   async _toggleEntity(entityId) {
+    if (this._writePending) return;
     const state = this._state(entityId);
-    if (!state) {
-      return;
-    }
+    if (!["on", "off"].includes(state)) return;
     const service = state === "on" ? "turn_off" : "turn_on";
-    await this._hass.callService("homeassistant", service, { entity_id: entityId });
+    this._settingsBusy = true;
+    this._settingsError = "";
+    this._render();
+    try {
+      await this._hass.callService("homeassistant", service, { entity_id: entityId });
+    } catch (error) {
+      this._settingsError = error instanceof Error ? error.message : "Unable to change this setting.";
+    } finally {
+      this._settingsBusy = false;
+      this._render();
+    }
   }
 }
 
