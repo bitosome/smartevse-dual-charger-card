@@ -106,7 +106,6 @@ export const OVERVIEW_CSS = `
   .charger-diagnostics dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
   .advanced-settings { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 44px; border: 0; background: transparent; color: var(--secondary-text-color); font: inherit; font-size: 13px; margin-top: var(--large-gap); cursor: pointer; }
   .advanced-settings ha-icon { --mdc-icon-size: 18px; width: 18px; height: 18px; }
-  .modal-title { font-size: 18px; font-weight: 650; line-height: 1.35; }
   .wizard-option-title, .wizard-toggle-copy { font-size: 14px; }
   .wizard-plan-toggle, .wizard-plan-toggle.selected { width: 44px; height: 44px; background: transparent; }
   .wizard-plan-toggle::before { content: ""; position: absolute; top: 11px; left: 3px; width: 38px; height: 22px; border-radius: 99px; background: color-mix(in srgb, var(--secondary-text-color) 34%, transparent); }

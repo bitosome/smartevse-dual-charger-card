@@ -281,6 +281,9 @@
               return ["icon"];
             }
 
+            get icon() { return this.getAttribute("icon") || ""; }
+            set icon(value) { this.setAttribute("icon", String(value)); }
+
             connectedCallback() {
               this.render();
             }

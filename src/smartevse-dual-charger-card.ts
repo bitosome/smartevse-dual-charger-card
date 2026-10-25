@@ -1,10 +1,10 @@
-import { LitElement, html, nothing } from "lit";
+import { LitElement, html } from "lit";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { CARD_CSS } from "./styles/card";
-import { familyStyles, dialogStyles, showFamilyDialog, closeFamilyDialog, disposeFamilyDialog } from "./shared/card-primitives";
+import { familyStyles, dialogStyles, componentStyles, glowStyles, FamilyFlowController, renderFamilyDialog, showEntityMoreInfo } from "@bitosome/ha-card-ui";
 import { buildGlow, type PulseColors } from "./shared/glow";
 
-const CARD_VERSION = "0.0.55";
+const CARD_VERSION = "0.1.0";
 
 const ACTIVE_GLOW: PulseColors = {
   weak: "rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha))",
@@ -54,20 +54,39 @@ interface SmartEvseCardConfig {
   [key: string]: unknown;
 }
 
+type DialogPage = "plan" | "schedule" | "now" | "settings" | `setting:${string}` | `charger:${string}`;
 class SmartEVSEFlowCard extends LitElement {
+  private _flow = new FamilyFlowController<DialogPage>(this, {
+    guard: (intent) => this._dialogGuard(intent),
+    onChange: () => {
+      this._settingsSession++;
+      this._editingEntity = null;
+    },
+  });
+  private get _settingsModalOpen() { return this._flow.stack.includes("settings"); }
+  private get _settingsSubmenuEntity() {
+    const route = this._flow.current;
+    return route?.startsWith("setting:") ? route.slice(8) : null;
+  }
+  private get _forceWizardOpen() { return ["plan", "schedule", "now"].includes(this._flow.current || ""); }
+  private get _forceWizardStep(): "choose" | "schedule" | "now" {
+    const route = this._flow.current;
+    return route === "schedule" || route === "now" ? route : "choose";
+  }
+  private get _chargerDetailsKey() {
+    const route = this._flow.current;
+    return route?.startsWith("charger:") ? route.slice(8) : null;
+  }
+
   private _hass?: HomeAssistant;
   private _config?: SmartEvseCardConfig;
   private _currency = "EUR/kWh";
   private _editingEntity: string | null = null;
   private _editorDrafts: Record<string, string> = {};
-  private _settingsModalOpen = false;
   private _settingsError = "";
   private _settingsBusy = false;
   private _settingsSession = 0;
   private get _writePending() { return this._settingsBusy || this._forceWizardBusy; }
-  private _settingsSubmenuEntity: string | null = null;
-  private _forceWizardOpen = false;
-  private _forceWizardStep: "choose" | "schedule" | "now" = "choose";
   private _schedulePriceGate = false;
   private _forcePlanEnabled = false;
   private _forceNowTimer = false;
@@ -81,18 +100,9 @@ class SmartEVSEFlowCard extends LitElement {
   private _busyUiFocus: UiFocusSnapshot | null = null;
   private _dialogReturnFocus: UiFocusSnapshot | null = null;
   private _renderedDialogKey = "";
-  private _dialogHadFocus = false;
-  private _chargerDetailsKey: string | null = null;
-  private _dialogScroll = 0;
-  private _confirmDiscard = false;
+  private _nativeHandoff = false;
 
-  static styles = [familyStyles, dialogStyles];
-
-  disconnectedCallback() {
-    disposeFamilyDialog(this.renderRoot.querySelector<HTMLDialogElement>("dialog"));
-    super.disconnectedCallback();
-  }
-
+  static styles = [familyStyles, dialogStyles, componentStyles, glowStyles];
 
   static getStubConfig() {
     return {
@@ -778,7 +788,7 @@ class SmartEVSEFlowCard extends LitElement {
     const meta = this._editorMeta(entityId);
     if (!meta.supported || meta.kind !== "select") return;
     this._settingsError = "";
-    this._settingsSubmenuEntity = entityId;
+    if (!this._flow.push(`setting:${entityId}`)) return;
     this._editingEntity = entityId;
     if (!this._editorDrafts) {
       this._editorDrafts = {};
@@ -786,13 +796,6 @@ class SmartEVSEFlowCard extends LitElement {
     if (!Object.prototype.hasOwnProperty.call(this._editorDrafts, entityId)) {
       this._editorDrafts[entityId] = this._state(entityId) ?? "";
     }
-    this._render();
-  }
-
-  _closeSettingsSubmenu() {
-    this._settingsSession++;
-    this._settingsSubmenuEntity = null;
-    this._editingEntity = null;
     this._render();
   }
 
@@ -867,7 +870,12 @@ class SmartEVSEFlowCard extends LitElement {
       await this._hass.callService(meta.serviceDomain, meta.service, serviceData);
       if (session === this._settingsSession && this._editingEntity === entityId) {
         this._editingEntity = null;
-        if (this._settingsSubmenuEntity === entityId) this._settingsSubmenuEntity = null;
+        if (this._settingsSubmenuEntity === entityId) {
+          // Completion only navigates the still-current editor; late responses
+          // cannot close a subsequently opened flow.
+          this._settingsBusy = false;
+          this._flow.back();
+        }
       }
     } catch (error) {
       this._settingsError = error instanceof Error ? error.message : "Unable to save this setting.";
@@ -900,23 +908,12 @@ class SmartEVSEFlowCard extends LitElement {
   }
 
   _openSettingsModal() {
-    this._settingsSession++;
-    this._editingEntity = null;
-    this._confirmDiscard = false;
-    this._chargerDetailsKey = null;
-    this._forceWizardOpen = false;
-    this._settingsModalOpen = true;
-    if (!this._writePending) this._settingsError = "";
-    this._settingsSubmenuEntity = null;
-    if (!this._writePending) this._editorDrafts = {};
-    this._render();
-  }
-
-  _closeSettingsModal() {
-    this._settingsSession++;
-    this._settingsModalOpen = false;
-    this._settingsSubmenuEntity = null;
-    this._editingEntity = null;
+    const opened = this._flow.current === "plan" ? this._flow.push("settings") : this._flow.open("settings");
+    if (!opened) return;
+    if (!this._writePending) {
+      this._settingsError = "";
+      this._editorDrafts = {};
+    }
     this._render();
   }
 
@@ -934,11 +931,7 @@ class SmartEVSEFlowCard extends LitElement {
   }
 
   _openForceWizard() {
-    this._confirmDiscard = false;
-    this._chargerDetailsKey = null;
-    this._settingsModalOpen = false;
-    this._forceWizardOpen = true;
-    this._forceWizardStep = "choose";
+    if (!this._flow.open("plan")) return;
     if (this._writePending) { this._render(); return; }
     this._syncPlanPreferencesFromEntities();
     this._forceWizardError = "";
@@ -946,35 +939,14 @@ class SmartEVSEFlowCard extends LitElement {
       this._editorDrafts[this._config.acceptable_price_entity] = this._state(this._config.acceptable_price_entity);
     }
     if (this._config.force_charge_duration_entity) {
-      this._editorDrafts[this._config.force_charge_duration_entity] = this._state(
-        this._config.force_charge_duration_entity,
-      );
+      this._editorDrafts[this._config.force_charge_duration_entity] = this._state(this._config.force_charge_duration_entity);
     }
-    this._render();
-  }
-
-  _closeForceWizard() {
-    this._forceWizardOpen = false;
-    this._forceWizardStep = "choose";
     this._render();
   }
 
   _selectForceMode(mode) {
-    if (!["schedule", "now"].includes(mode)) {
-      return;
-    }
-    this._forceWizardStep = mode;
-    this._forceWizardError = "";
-    this._render();
-  }
-
-  _backForceWizard() {
-    if (this._writePending) {
-      return;
-    }
-    this._forceWizardStep = "choose";
-    this._forceWizardError = "";
-    this._render();
+    if (!["schedule", "now"].includes(mode)) return;
+    if (this._flow.push(mode)) this._forceWizardError = "";
   }
 
   _forceNowMode() {
@@ -1305,14 +1277,7 @@ class SmartEVSEFlowCard extends LitElement {
     return `
 
         <div class="dialog-panel settings-panel">
-          <div class="modal-head family-dialog-header">
-            <div>
-              <div class="modal-kicker">Controls</div>
-              <div class="modal-title" id="charging-dialog-title" tabindex="-1">Charger settings</div>
-            </div>
-            <button class="family-icon-button" data-action="close-settings" type="button" aria-label="Close charger settings" title="Close"><ha-icon icon="mdi:close" aria-hidden="true"></ha-icon></button>
-          </div>
-          <div class="family-dialog-body">${settingsControls}
+          <div class="dialog-content">${settingsControls}
           ${this._chargingHistory()}
           ${this._settingsBusy ? `<p class="overview-note" role="status">Saving settings…</p>` : ""}
           ${this._settingsError ? `<div class="wizard-error" role="alert">${this._safe(this._settingsError)}</div>` : ""}</div>
@@ -1444,14 +1409,7 @@ class SmartEVSEFlowCard extends LitElement {
       return `
 
           <div class="dialog-panel force-wizard-panel">
-            <div class="modal-head family-dialog-header">
-              <div>
-                <div class="modal-kicker">Charging plan</div>
-                <div class="modal-title" id="charging-dialog-title" tabindex="-1">How should charging run?</div>
-              </div>
-              <button class="family-icon-button" data-action="close-force-wizard" type="button" aria-label="Close charging plan" title="Close"><ha-icon icon="mdi:close" aria-hidden="true"></ha-icon></button>
-            </div>
-            <div class="family-dialog-body"><div class="wizard-options">
+            <div class="dialog-content"><div class="wizard-options">
               ${choices
                 .filter(choice => choice.available || choice.enabled)
                 .map((choice) => {
@@ -1514,7 +1472,6 @@ class SmartEVSEFlowCard extends LitElement {
     const timerReady = this._isAvailable(this._config.force_timer_entity) && this._isAvailable(this._config.force_charge_duration_entity);
     const priceReady = this._isAvailable(isSchedule ? this._schedulePriceEntity() : this._config.force_price_entity) &&
       this._isAvailable(this._config.acceptable_price_entity) && this._isAvailable(this._config.price_entity);
-    const title = isSchedule ? "Scheduled charging" : "Force charge";
     const field = isSchedule
       ? `
           <button
@@ -1621,27 +1578,13 @@ class SmartEVSEFlowCard extends LitElement {
     return `
 
         <div class="dialog-panel force-wizard-panel wizard-step-panel">
-          <div class="modal-head modal-head-navigation family-dialog-header">
-            <button class="modal-back family-icon-button" data-action="back-force-wizard" type="button" aria-label="Back" ${busy ? "disabled" : ""}>
-              <ha-icon icon="mdi:arrow-left"></ha-icon>
-            </button>
-            <div class="modal-copy">
-              <div class="modal-kicker">Charging plan</div>
-              <div class="modal-title" id="charging-dialog-title" tabindex="-1">${this._safe(title)}</div>
-            </div>
-            <button class="family-icon-button" data-action="close-force-wizard" type="button" aria-label="Close charging plan" title="Close"><ha-icon icon="mdi:close" aria-hidden="true"></ha-icon></button>
-          </div>
-          <div class="family-dialog-body wizard-step-body">${field}${error}</div>
+          <div class="dialog-content wizard-step-body">${field}${error}</div>
         </div>
     `;
   }
 
   _settingsSubmenuModal(entityId) {
     const meta = this._editorMeta(entityId);
-    const entity = this._entity(entityId);
-    const name = entity?.attributes?.friendly_name || "Setting";
-    const isChargePolicy = entityId === this._config.charge_policy_entity;
-    const title = isChargePolicy ? "Charge Policy" : name;
     const draft = this._editorDraft(entityId);
     const content =
       !meta.supported ? `<p class="overview-note">This setting is unavailable.</p>` : meta.kind === "select"
@@ -1674,17 +1617,7 @@ class SmartEVSEFlowCard extends LitElement {
     return `
 
         <div class="dialog-panel settings-panel submenu-panel">
-          <div class="modal-head modal-head-navigation family-dialog-header">
-            <button class="modal-back family-icon-button" data-action="back-settings" type="button" aria-label="Back">
-              <ha-icon icon="mdi:arrow-left"></ha-icon>
-            </button>
-            <div class="modal-copy">
-              <div class="modal-kicker">Controls</div>
-              <div class="modal-title" id="charging-dialog-title" tabindex="-1">${this._safe(title)}</div>
-            </div>
-            <button class="family-icon-button" data-action="close-settings" type="button" aria-label="Close charger settings" title="Close"><ha-icon icon="mdi:close" aria-hidden="true"></ha-icon></button>
-          </div>
-          <div class="family-dialog-body">${content}
+          <div class="dialog-content">${content}
           ${this._settingsBusy ? `<p class="overview-note" role="status">Saving settings…</p>` : ""}
           ${this._settingsError ? `<div class="wizard-error" role="alert">${this._safe(this._settingsError)}</div>` : ""}</div>
         </div>
@@ -1819,10 +1752,7 @@ class SmartEVSEFlowCard extends LitElement {
     const ev = [ev1, ev2].find(item => item.key === this._chargerDetailsKey);
     if (!ev) return "";
     return `<section class="dialog-panel diagnostics-panel">
-      <header class="family-dialog-header"><h2 id="charging-dialog-title" tabindex="-1">${this._safe(ev.smartevseName)}</h2>
-        <button class="family-icon-button" data-action="close-charger-details" type="button" aria-label="Close charger details" title="Close"><ha-icon icon="mdi:close" aria-hidden="true"></ha-icon></button>
-      </header>
-      <div class="family-dialog-body"><dl class="charger-diagnostics">
+      <div class="dialog-content"><dl class="charger-diagnostics">
         <div><dt>State</dt><dd>${this._safe(ev.available ? ev.state : "Unavailable")}</dd></div>
         <div><dt>Mode</dt><dd>${this._safe(ev.available ? ev.mode : "Unavailable")}</dd></div>
         <div><dt>Current offered</dt><dd>${this._safe(ev.available ? this._formatCurrent(ev.chargeCurrent) : "Unavailable")}</dd></div>
@@ -1831,7 +1761,7 @@ class SmartEVSEFlowCard extends LitElement {
     </section>`;
   }
 
-  _requestDialogClose() {
+  _dialogGuard(intent: string) {
     const keys = this._editingEntity ? [this._editingEntity] : this._forceWizardOpen && this._forceWizardStep !== "choose"
       ? [this._forceWizardStep === "schedule" ? this._schedulePriceGate && this._config.acceptable_price_entity : this._forceNowPrice && this._config.acceptable_price_entity,
          this._forceWizardStep === "now" && this._forceNowTimer && this._config.force_charge_duration_entity].filter(Boolean) : [];
@@ -1839,31 +1769,25 @@ class SmartEVSEFlowCard extends LitElement {
       Object.prototype.hasOwnProperty.call(this._editorDrafts, key) &&
       this._editorDrafts[key] !== this._state(key) &&
       Number(this._editorDrafts[key]) !== Number(this._state(key)));
-    if (dirty) { this._confirmDiscard = true; this._render(); return; }
-    this._closeActiveDialog();
+    // A sent request can be dismissed, but cannot be submitted twice. Pending
+    // indicators/errors remain on the main card; no dismissal cancels a write.
+    return {
+      pending: intent === "back" && this._writePending,
+      dirty,
+      message: this._writePending ? "Wait for the current charging request to finish." : "Discard unsaved changes? Any charging request already sent continues.",
+      discard: () => { for (const key of keys) delete this._editorDrafts[key]; },
+    };
   }
 
-  _discardDialog() {
-    return `<section class="dialog-panel">
-      <header class="family-dialog-header"><h2 id="charging-dialog-title" tabindex="-1">Discard unsaved changes?</h2>
-        <button class="family-icon-button" data-action="cancel-discard" type="button" aria-label="Close discard confirmation" title="Close"><ha-icon icon="mdi:close" aria-hidden="true"></ha-icon></button>
-      </header>
-      <div class="family-dialog-body"><p class="overview-note">Only your unsaved values will be discarded. Any charging request already sent continues.</p></div>
-      <footer class="family-dialog-footer"><button class="family-action" data-action="cancel-discard" type="button">Keep editing</button><button class="family-action" data-action="discard-dialog" type="button">Discard changes</button></footer>
-    </section>`;
-  }
+  _requestDialogClose() { this._flow.close(); }
 
-  _closeActiveDialog() {
-    this._settingsSession++;
-    this._confirmDiscard = false;
-    closeFamilyDialog(this.renderRoot.querySelector<HTMLDialogElement>("dialog"));
-    this._settingsModalOpen = false;
-    this._settingsSubmenuEntity = null;
-    this._editingEntity = null;
-    this._forceWizardOpen = false;
-    this._forceWizardStep = "choose";
-    this._chargerDetailsKey = null;
-    this._render();
+  _closeActiveDialog() { this._flow.forceClose(); }
+
+  _dialogTitle(ev1, ev2) {
+    if (this._chargerDetailsKey) return [ev1, ev2].find(ev => ev.key === this._chargerDetailsKey)?.smartevseName || "Charger details";
+    if (this._settingsSubmenuEntity) return this._settingsSubmenuEntity === this._config.charge_policy_entity ? "Charge policy" : this._entity(this._settingsSubmenuEntity)?.attributes?.friendly_name || "Setting";
+    if (this._settingsModalOpen) return "Settings";
+    return this._forceWizardStep === "schedule" ? "Schedule" : this._forceWizardStep === "now" ? "Force charge" : "Charging plan";
   }
 
   _evNode(ev) {
@@ -2239,13 +2163,13 @@ class SmartEVSEFlowCard extends LitElement {
       </ha-card>
     `;
 
-    const dialogMarkup = this._confirmDiscard ? this._discardDialog() : this._chargerDetailsKey ? this._chargerDetails(ev1, ev2) : this._forceWizardModal() ||
+    const dialogMarkup = this._chargerDetailsKey ? this._chargerDetails(ev1, ev2) : this._forceWizardModal() ||
       this._settingsModal(this._settingsControls({ policy, dutyCycleMinutes: this._numberState(this._config.duty_cycle_entity) }));
-    return html`${unsafeHTML(markup)}${dialogMarkup ? html`
-      <dialog class="family-dialog" style=${wledStyleVars} aria-labelledby="charging-dialog-title" aria-busy=${this._writePending ? "true" : "false"}
-        @cancel=${(event: Event) => { event.preventDefault(); if (this._confirmDiscard) { this._confirmDiscard = false; this._render(); } else this._requestDialogClose(); }}>
-        ${unsafeHTML(dialogMarkup)}
-      </dialog>` : nothing}`;
+    return html`${unsafeHTML(markup)}${renderFamilyDialog(this._flow, {
+      title: this._dialogTitle(ev1, ev2),
+      content: html`<div style=${wledStyleVars} aria-busy=${String(this._writePending)}>${unsafeHTML(dialogMarkup)}</div>`,
+      long: this._settingsModalOpen,
+    })}`;
   }
 
   _detailsKey(element: HTMLDetailsElement) {
@@ -2262,13 +2186,13 @@ class SmartEVSEFlowCard extends LitElement {
     const data = ["action", "entity", "mode", "durationPart", "value", "charger"]
       .map((name) => `${name}:${element.dataset[name] || ""}`).join("|");
     const detail = element.closest<HTMLDetailsElement>("details");
-    return [element.localName, element.id, element.getAttribute("name") || "", data,
+    return [element.localName, element.id, element.getAttribute("name") || "", element.getAttribute("aria-label") || "", data,
       detail ? this._detailsKey(detail) : ""].join("|");
   }
 
   _captureUiFocus(): UiFocusSnapshot | null {
     const element = (this.renderRoot as ShadowRoot).activeElement as HTMLElement | null;
-    if (!element || element.matches('dialog, .dialog-panel, .modal-title')) return null;
+    if (!element || element.matches('dialog, .dialog-panel, [data-family-heading]')) return null;
     const snapshot: UiFocusSnapshot = { key: this._uiFocusKey(element) };
     if (element.matches("input, textarea")) {
       const input = element as HTMLInputElement | HTMLTextAreaElement;
@@ -2308,11 +2232,9 @@ class SmartEVSEFlowCard extends LitElement {
     this.renderRoot.querySelectorAll<HTMLDetailsElement>("details").forEach((element) => {
       this._detailsOpen.set(this._detailsKey(element), element.open);
     });
-    this._dialogScroll = this.renderRoot.querySelector<HTMLElement>('.family-dialog-body')?.scrollTop || 0;
     const focus = this._captureUiFocus();
     const active = (this.renderRoot as ShadowRoot).activeElement;
-    this._dialogHadFocus = Boolean(active?.matches('dialog, .dialog-panel'));
-    this._pendingUiFocus = focus || (active?.matches('dialog, .dialog-panel') ? this._busyUiFocus : null);
+    this._pendingUiFocus = focus || (active?.matches('dialog, .dialog-panel, [data-family-heading]') ? this._busyUiFocus : null);
     if (!this._renderedDialogKey && (this._forceWizardOpen || this._settingsModalOpen || this._chargerDetailsKey)) {
       this._dialogReturnFocus = focus;
     }
@@ -2323,75 +2245,31 @@ class SmartEVSEFlowCard extends LitElement {
       const key = this._detailsKey(element);
       if (this._detailsOpen.has(key)) element.open = this._detailsOpen.get(key)!;
     });
-    const dialog = this.renderRoot.querySelector<HTMLElement>('.dialog-panel');
-    const nativeDialog = this.renderRoot.querySelector<HTMLDialogElement>('dialog');
-    const dialogKey = dialog?.querySelector('#charging-dialog-title')?.textContent || "";
-    if (nativeDialog && !nativeDialog.open) showFamilyDialog(nativeDialog, { onBackdrop: () => { if (!this._confirmDiscard) this._requestDialogClose(); } });
+    const dialog = this.renderRoot.querySelector<HTMLDialogElement>('dialog');
+    const dialogKey = this._flow.current || "";
     const previousDialogKey = this._renderedDialogKey;
     this._renderedDialogKey = dialogKey;
     const overview = this.renderRoot.querySelector<HTMLElement>(".flow-stage");
     if (overview) overview.inert = Boolean(dialog);
     if (dialog) {
-      const body = dialog.querySelector<HTMLElement>('.family-dialog-body');
-      if (body && dialogKey === previousDialogKey) body.scrollTop = this._dialogScroll;
-      dialog.tabIndex = -1;
-      dialog.setAttribute("aria-busy", this._writePending ? "true" : "false");
-      if (dialogKey !== previousDialogKey) {
-        this._busyUiFocus = null;
-        dialog.focus({ preventScroll: true });
-      } else if (this._pendingUiFocus) {
-        if (this._restoreUiFocus(this._pendingUiFocus)) {
-          this._busyUiFocus = null;
-        } else {
+      // Shared flow owns initial/route/confirmation focus. unsafeHTML content
+      // needs only same-page field/caret restoration after telemetry updates.
+      if (dialogKey === previousDialogKey && !this._flow.confirmation && this._pendingUiFocus) {
+        if (this._restoreUiFocus(this._pendingUiFocus)) this._busyUiFocus = null;
+        else {
           this._busyUiFocus = this._writePending ? this._pendingUiFocus : null;
-          dialog.focus({ preventScroll: true });
+          dialog.querySelector<HTMLElement>('[data-family-heading]')?.focus({preventScroll:true});
         }
-      } else if (this._dialogHadFocus) {
-        dialog.focus({ preventScroll: true });
       }
     } else if (previousDialogKey) {
       this._busyUiFocus = null;
-      if (!this._restoreUiFocus(this._dialogReturnFocus)) {
+      if (!this._nativeHandoff && !this._restoreUiFocus(this._dialogReturnFocus)) {
         this.renderRoot.querySelector<HTMLElement>('[data-action="open-force-wizard"]')?.focus({ preventScroll: true });
       }
       this._dialogReturnFocus = null;
-    } else {
-      this._restoreUiFocus(this._pendingUiFocus);
-    }
+      this._nativeHandoff = false;
+    } else this._restoreUiFocus(this._pendingUiFocus);
     this._pendingUiFocus = null;
-  }
-
-  _handleDialogKeydown(event: KeyboardEvent) {
-    const dialog = this.renderRoot.querySelector<HTMLElement>('.dialog-panel');
-    if (!dialog) return false;
-    if (event.key === "Escape") {
-      event.preventDefault();
-      event.stopPropagation();
-      if (this._confirmDiscard) { this._confirmDiscard = false; this._render(); }
-      else this._requestDialogClose();
-      return true;
-    }
-    if (event.key !== "Tab") return false;
-    const controls = Array.from(dialog.querySelectorAll<HTMLElement>(
-      'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], summary, [tabindex]:not([tabindex="-1"])',
-    )).filter((element) => {
-      if (element.matches(":disabled") || element.closest("[hidden], [inert]")) return false;
-      for (let node: HTMLElement | null = element; node && node !== dialog; node = node.parentElement) {
-        const style = getComputedStyle(node);
-        if (style.display === "none" || style.visibility === "hidden") return false;
-      }
-      return true;
-    });
-    const active = (this.renderRoot as ShadowRoot).activeElement as HTMLElement | null;
-    const index = controls.indexOf(active!);
-    if (!controls.length || index < 0 || (event.shiftKey ? index === 0 : index === controls.length - 1)) {
-      event.preventDefault();
-      event.stopPropagation();
-      (event.shiftKey ? controls[controls.length - 1] : controls[0])?.focus({ preventScroll: true });
-      if (!controls.length) dialog.focus({ preventScroll: true });
-      return true;
-    }
-    return false;
   }
 
   firstUpdated() {
@@ -2410,17 +2288,8 @@ class SmartEVSEFlowCard extends LitElement {
       event.preventDefault();
       event.stopPropagation();
       const { action, entity, value, mode, charger } = element.dataset;
-      if (action === "cancel-discard") { this._confirmDiscard = false; this._render(); return; }
-      if (action === "discard-dialog") { this._closeActiveDialog(); return; }
       if (action === "open-charger-details") {
-        this._chargerDetailsKey = charger || null;
-        this._settingsModalOpen = false;
-        this._forceWizardOpen = false;
-        this._render();
-        return;
-      }
-      if (action === "close-charger-details" || action === "close-settings" || action === "close-force-wizard") {
-        this._requestDialogClose();
+        if (charger) this._flow.open(`charger:${charger}`);
         return;
       }
       if (action === "open-settings") {
@@ -2429,10 +2298,6 @@ class SmartEVSEFlowCard extends LitElement {
       }
       if (action === "open-force-wizard") {
         this._openForceWizard();
-        return;
-      }
-      if (action === "back-force-wizard") {
-        this._backForceWizard();
         return;
       }
       if (action === "choose-force-mode") {
@@ -2455,26 +2320,15 @@ class SmartEVSEFlowCard extends LitElement {
         await this._toggleForceNowPrice();
         return;
       }
-      if (action === "back-settings") {
-        this._closeSettingsSubmenu();
-        return;
-      }
       if (!entity) {
         return;
       }
       if (action === "open-more-info") {
-        // Hand focus to Home Assistant only after our own modal and trap close.
         if (this._writePending) return;
-        if (this._forceWizardOpen) this._closeForceWizard();
-        if (this._settingsModalOpen) this._closeSettingsModal();
-        await this.updateComplete;
-        this.dispatchEvent(
-          new CustomEvent("hass-more-info", {
-            detail: { entityId: entity },
-            bubbles: true,
-            composed: true,
-          }),
-        );
+        this._flow.handoff(() => {
+          this._nativeHandoff = true;
+          showEntityMoreInfo(this, entity);
+        });
         return;
       }
       if (action === "toggle") {
@@ -2537,7 +2391,6 @@ class SmartEVSEFlowCard extends LitElement {
     });
 
     root.addEventListener("keydown", async (event: Event) => {
-      if (this._handleDialogKeydown(event as KeyboardEvent)) return;
       const element = (event.target as HTMLElement | null)?.closest<HTMLElement>(
         ".setting-input[data-entity], .setting-select[data-entity]",
       );
@@ -2554,19 +2407,11 @@ class SmartEVSEFlowCard extends LitElement {
             await this._saveForceWizardNumber(entityId);
           }
         }
-        if ((event as KeyboardEvent).key === "Escape") {
-          event.preventDefault();
-          this._backForceWizard();
-        }
         return;
       }
       if ((event as KeyboardEvent).key === "Enter") {
         event.preventDefault();
         await this._saveEditor(entityId);
-      }
-      if ((event as KeyboardEvent).key === "Escape") {
-        event.preventDefault();
-        this._closeEditor();
       }
     });
   }

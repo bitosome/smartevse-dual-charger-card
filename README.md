@@ -130,9 +130,11 @@ The preview renders the real card against mock Home Assistant state.
 
 ## Design System & UI Implementation
 
-This card is part of the `bitosome` Home Assistant card family and follows a shared design system. The **single source of truth** is [`space-hub-card`](https://github.com/bitosome/space-hub-card) — specifically `space-hub-card/src/shared/design-tokens.ts`. See its [Design System & UI Implementation](https://github.com/bitosome/space-hub-card#design-system--ui-implementation) section for the full approach and file map.
+This card belongs to the `bitosome` Home Assistant card family. [Space Hub Card](https://github.com/bitosome/space-hub-card) remains the visual reference. Shared design tokens, components, glow and modal behavior are owned by [`@bitosome/ha-card-ui`](https://github.com/bitosome/ha-card-ui).
 
-This card is built with **TypeScript + Lit + Rollup** (`src/smartevse-dual-charger-card.ts`, output to `dist/`), matching the rest of the family. The design tokens are **vendored** into this repo at `src/shared/design-tokens.ts` (carrying an `AUTO-SYNCED … DO NOT EDIT` banner); its `DESIGN_TOKENS_CSS` is injected at the top of the card's `<style>` block. The canonical `buildGlow()` helper is vendored from `space-hub-card/src/glow.ts` into `src/shared/glow.ts` and is used for hero and selected-plan glows. Update shared UI primitives in `space-hub-card` first and keep the vendored copies aligned.
+The TypeScript + Lit + Rollup build bundles the pinned package into `dist/smartevse-dual-charger-card.js`. No separate card, runtime network import or additional HACS installation is required. Compatibility paths in `src/shared/` only re-export the package; do not add implementation copies. Fix common behavior in the library, publish it and update the exact dependency URL and lockfile here.
+
+Charging plans, settings and diagnostics use the shared native dialog and navigation stack. Back moves within the flow; X and Escape close the whole flow with a shared guard for unsaved drafts. A sent request can be dismissed without cancelling it; pending/error status remains visible and duplicate writes stay blocked. Native Home Assistant more-info receives focus only after the custom dialog closes. Domain logic retains responsibility for service validation and confirmation.
 
 Rules when implementing or changing UI (these mirror `space-hub-card`, so every card looks and behaves the same):
 
@@ -146,7 +148,7 @@ effect state, speed, and intensity come from the controller entity's live
 `wled_visuals` attributes so the card stays aligned with the integration-managed
 WLED installation.
 
-The responsive overview styles live in `src/styles/overview.ts`; shared token/glow files remain canonical vendored primitives. The entire overview uses one stacking context so glows remain below sibling surfaces.
+The responsive overview styles live in `src/styles/overview.ts`; shared token/glow imports resolve to the pinned UI package. The entire overview uses one stacking context so glows remain below sibling surfaces.
 
 Development:
 

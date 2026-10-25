@@ -260,7 +260,7 @@ el.hass = hass;
 await new Promise((r) => setTimeout(r, 30));
 check('diagnostics retain their native dialog and show fresh current after a state update',
   root.querySelector('dialog') === nativeDetails && nativeDetails.open && nativeDetails.textContent.includes('12.3 A'));
-root.querySelector('[data-action="close-charger-details"]').click();
+root.querySelector('dialog .family-dialog-header [title="Close"]').click();
 await new Promise((r) => setTimeout(r, 30));
 check('closing diagnostics returns focus to the correct charger',
   !root.querySelector('dialog') && root.activeElement?.dataset.charger === 'smartevse_1');
@@ -304,33 +304,30 @@ console.log(`${hasTwoPlanFamilies ? 'PASS' : 'FAIL'}: wizard groups charging int
 console.log(`${mainMenuUsesIndependentToggles ? 'PASS' : 'FAIL'}: main plan tiles expose independent toggles with title-only copy`);
 if (!forceWizardOpened || !hasTwoPlanFamilies || !mainMenuUsesIndependentToggles) ok = false;
 
-// Dialogs are fully operable from the keyboard, including focus restoration.
-let dialog = root.querySelector('.force-wizard-panel');
-check('opening charging settings moves keyboard focus into the dialog',
-  !!dialog?.contains(root.activeElement));
-dialog?.focus();
+// The native dialog owns keyboard containment and Escape; the shared flow owns
+// route focus. Real-browser QA checks Tab containment (Happy DOM has no native
+// sequential focus navigation).
+let dialog = root.querySelector('dialog');
+check('opening charging settings moves keyboard focus to the shared dialog heading',
+  dialog?.open && root.activeElement === dialog.querySelector('[data-family-heading]'));
+const initialHeading = root.activeElement;
 controllerAttrs.smartevse_1_max_current = 15;
 el.hass = hass;
 await new Promise((r) => setTimeout(r, 30));
-check('live state updates preserve keyboard focus on the dialog container',
-  root.activeElement === root.querySelector('.force-wizard-panel'));
+check('live state updates preserve keyboard focus on the shared heading',
+  root.activeElement === initialHeading && root.querySelector('dialog') === dialog);
 controllerAttrs.smartevse_1_max_current = originalControllerAttrs.smartevse_1_max_current;
 el.hass = hass;
 await new Promise((r) => setTimeout(r, 30));
-dialog = root.querySelector('.force-wizard-panel');
-const focusableControls = [...dialog.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex="0"]')];
-const firstControl = focusableControls[0];
-const lastControl = focusableControls[focusableControls.length - 1];
-lastControl?.focus();
-lastControl?.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Tab', bubbles: true, composed: true, cancelable: true }));
-check('Tab wraps from the last dialog control to the first', root.activeElement === firstControl);
-firstControl?.focus();
-firstControl?.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, composed: true, cancelable: true }));
-check('Shift-Tab wraps from the first dialog control to the last', root.activeElement === lastControl);
-lastControl?.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, composed: true, cancelable: true }));
+check('native modal excludes the underlying charging controls',
+  dialog.open && root.querySelector('.flow-stage').inert);
+check('one shared X dismisses the full flow',
+  dialog.querySelectorAll('.family-dialog-header [title="Close"]').length === 1 &&
+  !dialog.querySelector('[data-action="close-force-wizard"]'));
+dialog.dispatchEvent(new win.Event('cancel', { cancelable:true }));
 await new Promise((r) => setTimeout(r, 30));
 check('Escape closes settings and returns focus to the charging-plan control',
-  !root.querySelector('.force-wizard-panel') &&
+  !root.querySelector('dialog') &&
   root.activeElement === root.querySelector('[data-action="open-force-wizard"]'));
 openForceWizard();
 await new Promise((r) => setTimeout(r, 30));
@@ -362,7 +359,7 @@ await new Promise((r) => setTimeout(r, 30));
 click('[data-action="choose-force-mode"][data-mode="schedule"]');
 await new Promise((r) => setTimeout(r, 30));
 const scheduleNavigationIsClean =
-  root.querySelectorAll('[data-action="back-force-wizard"]').length === 1 &&
+  root.querySelectorAll('dialog [aria-label="Back"]').length === 1 &&
   !root.querySelector('.wizard-secondary');
 const settingsUseTitlesOnly =
   !root.querySelector('.modal-subtitle') &&
@@ -411,7 +408,7 @@ const submenuDoesNotActivateSchedule =
   !scheduleConfigCalls.some((c) => c[1] === 'turn_on' && c[2].entity_id === 'switch.schedule') &&
   !root.querySelector('[data-action="apply-force-mode"]') &&
   !root.querySelector('.wizard-actions');
-click('[data-action="back-force-wizard"]');
+click('dialog [aria-label="Back"]');
 await new Promise((r) => setTimeout(r, 30));
 const scheduleCallStart = calls.length;
 click('[data-action="toggle-charging-plan"][data-mode="schedule"]');
@@ -517,7 +514,7 @@ const forceConfigSavedWithoutActivation =
   forceConfigCalls.some((c) => c[0] === 'number' && c[1] === 'set_value' && c[2].entity_id === 'number.price') &&
   states['switch.schedule'].state === 'on' &&
   states['switch.force_price'].state === 'off';
-click('[data-action="back-force-wizard"]');
+click('dialog [aria-label="Back"]');
 await new Promise((r) => setTimeout(r, 30));
 const forcePriceCallStart = calls.length;
 click('[data-action="toggle-charging-plan"][data-mode="now"]');
@@ -553,7 +550,7 @@ console.log(`${forceConfigSavedWithoutActivation ? 'PASS' : 'FAIL'}: force-charg
 console.log(`${scheduleWasNotDisabled && scheduleRemainsOn && priceRemainsEnabled && forceActivationEnabled && scheduleAndForceStayEnabled ? 'PASS' : 'FAIL'}: only the main toggle enables Force charge and keeps the standing schedule on`);
 console.log(`${forcePriceHeroIsUnambiguous ? 'PASS' : 'FAIL'}: both groups show enabled modes while only Force shows its enabled acceptable-price setting`);
 if (!forceConfigSavedWithoutActivation || !scheduleWasNotDisabled || !scheduleRemainsOn || !priceRemainsEnabled || !forceActivationEnabled || !scheduleAndForceStayEnabled || !forcePriceHeroIsUnambiguous) ok = false;
-click('[data-action="close-force-wizard"]');
+click('dialog .family-dialog-header [title="Close"]');
 
 // Force charge with both timer and acceptable price enables both force entities.
 // Simulate a stale raw schedule-price entity while its saved submenu option is
@@ -574,7 +571,7 @@ click('[data-action="choose-force-mode"][data-mode="schedule"]');
 await new Promise((r) => setTimeout(r, 30));
 click('[data-action="toggle-schedule-price"]');
 await new Promise((r) => setTimeout(r, 50));
-click('[data-action="back-force-wizard"]');
+click('dialog [aria-label="Back"]');
 await new Promise((r) => setTimeout(r, 30));
 click('[data-action="choose-force-mode"][data-mode="now"]');
 await new Promise((r) => setTimeout(r, 30));
@@ -659,7 +656,7 @@ const forceDisabledButRemembered =
   states['switch.force_price'].state === 'off' &&
   el._forceNowTimer === true &&
   el._forceNowPrice === true;
-click('[data-action="close-force-wizard"]');
+click('dialog .family-dialog-header [title="Close"]');
 el.setConfig(config);
 openForceWizard();
 await new Promise((r) => setTimeout(r, 30));
@@ -744,14 +741,14 @@ check('force editor omits timer and price options whose required entities are mi
   !root.querySelector('[data-action="toggle-force-now-timer"]') &&
   !root.querySelector('[data-action="toggle-force-now-price"]') &&
   !root.querySelector('.force-input'));
-click('[data-action="back-force-wizard"]');
+click('dialog [aria-label="Back"]');
 await new Promise((r) => setTimeout(r, 30));
 click('[data-action="choose-force-mode"][data-mode="schedule"]');
 await new Promise((r) => setTimeout(r, 30));
 check('schedule editor keeps the available schedule while omitting the missing price option',
   !!root.querySelector('[data-action="open-more-info"][data-entity="schedule.charging"]') &&
   !root.querySelector('[data-action="toggle-schedule-price"]'));
-click('[data-action="close-force-wizard"]');
+click('dialog .family-dialog-header [title="Close"]');
 await new Promise((r) => setTimeout(r, 30));
 
 Object.assign(states, {
@@ -791,7 +788,7 @@ check('removing an enabled unavailable price gate keeps scheduled charging enabl
     call[2].entity_id === 'switch.schedule_price') &&
   states['switch.schedule_price'].state === 'off' && states['switch.schedule'].state === 'on' &&
   el._schedulePriceGate === false);
-click('[data-action="close-force-wizard"]');
+click('dialog .family-dialog-header [title="Close"]');
 await new Promise((r) => setTimeout(r, 30));
 states['sensor.current_price'] = savedMissingPriceSensor;
 states['switch.schedule_price'].state = savedMissingPriceSwitchState;
@@ -873,7 +870,7 @@ check('priority service failure is visible and restores the previous choice',
   /Priority rejected by controller/.test(root.querySelector('.settings-panel [role="alert"]')?.textContent || '') &&
   root.querySelector('[data-action="choose-option"].selected')?.dataset.value === 'Custom solar priority');
 hass.callService = workingCallService;
-click('[data-action="back-settings"]');
+click('dialog [aria-label="Back"]');
 await new Promise((r) => setTimeout(r, 30));
 states['select.policy'].attributes.options = [];
 el.hass = hass;
@@ -881,7 +878,7 @@ click('[data-action="open-submenu"][data-entity="select.policy"]');
 await new Promise((r) => setTimeout(r, 30));
 check('an empty priority option list never invents controller choices',
   !root.querySelector('[data-action="choose-option"][data-entity="select.policy"]'));
-click('[data-action="back-settings"]');
+click('dialog [aria-label="Back"]');
 await new Promise((r) => setTimeout(r, 30));
 states['select.policy'].state = originalPolicy;
 states['select.policy'].attributes.options = originalPolicyOptions;
@@ -927,18 +924,18 @@ check('duty service failure shows a visible alert and keeps the draft editable',
   root.querySelector('.setting-input[data-entity="number.duty"]')?.value === '60' &&
   states['number.duty'].state === '45');
 hass.callService = workingCallService;
-click('[data-action="close-settings"]');
+click('dialog .family-dialog-header [title="Close"]');
 await new Promise((r) => setTimeout(r, 30));
 check('X protects an unsaved rejected draft with a discard confirmation',
-  !!root.querySelector('[data-action="discard-dialog"]') &&
-  !!root.querySelector('[aria-label="Close discard confirmation"] ha-icon[icon="mdi:close"]'));
-click('[data-action="cancel-discard"]');
+  !!root.querySelector('dialog .family-action.destructive') &&
+  !!root.querySelector('dialog .family-dialog-header [title="Close"] ha-icon'));
+click('dialog [data-family-keep]');
 await new Promise((r) => setTimeout(r, 30));
 check('keeping the draft restores the typed value',
   root.querySelector('.setting-input[data-entity="number.duty"]')?.value === '60');
-click('[data-action="close-settings"]');
+click('dialog .family-dialog-header [title="Close"]');
 await new Promise((r) => setTimeout(r, 30));
-click('[data-action="discard-dialog"]');
+click('dialog .family-action.destructive');
 await new Promise((r) => setTimeout(r, 30));
 check('discarding the local draft closes without sending another command', !root.querySelector('dialog'));
 
@@ -967,10 +964,10 @@ await new Promise((r) => setTimeout(r, 30));
 const lostPolicyStillNavigable =
   !!root.querySelector('.settings-panel') &&
   /unavailable/i.test(root.querySelector('.settings-panel [role="alert"]')?.textContent || '') &&
-  !!root.querySelector('[data-action="back-settings"]') &&
-  !!root.querySelector('[data-action="close-settings"]') &&
+  !!root.querySelector('dialog [aria-label="Back"]') &&
+  !!root.querySelector('dialog .family-dialog-header [title="Close"]') &&
   !root.querySelector('[data-action="choose-option"]') && !el._editingEntity;
-click('[data-action="close-settings"]');
+click('dialog .family-dialog-header [title="Close"]');
 await new Promise((r) => setTimeout(r, 30));
 check('a policy lost during editing shows an error and remains possible to close',
   lostPolicyStillNavigable && !root.querySelector('.settings-panel'));
@@ -999,7 +996,7 @@ check('updated negative costs and missing-price warnings render',
 sampleRecord.vehicle='<img src=x onerror=alert(1)>';
 el.hass=hass;await new Promise(r=>setTimeout(r,30));
 check('history vehicle labels are escaped', !root.querySelector('.cost-history img'));
-click('[data-action="close-settings"]');await new Promise(r=>setTimeout(r,30));
+click('dialog .family-dialog-header [title="Close"]');await new Promise(r=>setTimeout(r,30));
 check('history shortcut closes without triggering a charger command', !root.querySelector('.settings-panel'));
 
 // A slow request can be dismissed without cancelling it or enabling duplicates.
@@ -1011,7 +1008,7 @@ hass.callService = () => { pendingWrites++; return new Promise(resolve => { reso
 el._editorDrafts['number.price'] = '0.21';
 const pendingSave = el._saveForceWizardNumber('number.price');
 await new Promise(r => setTimeout(r, 30));
-click('[data-action="close-force-wizard"]');
+click('dialog .family-dialog-header [title="Close"]');
 await new Promise(r => setTimeout(r, 30));
 check('a pending charging request remains visible after X dismisses its dialog',
   !root.querySelector('dialog') && /Updating charging plan/.test(root.textContent) && el._forceWizardBusy);
@@ -1020,7 +1017,7 @@ await new Promise(r => setTimeout(r, 30));
 await el._saveForceWizardNumber('number.price');
 check('reopening a pending plan does not enable another write',
   pendingWrites === 1 && el._forceWizardBusy && root.querySelector('[data-action="toggle-charging-plan"]')?.disabled);
-click('[data-action="close-force-wizard"]');
+click('dialog .family-dialog-header [title="Close"]');
 await new Promise(r => setTimeout(r, 30));
 resolveNumberWrite();
 await pendingSave;
@@ -1118,6 +1115,49 @@ el._openSettingsSubmenu('select.policy'); await el.updateComplete;
 check('a rejected choice is reconciled with Home Assistant after closing and reopening settings',
   root.querySelector('[data-action="choose-option"].selected')?.dataset.value === storedPolicy);
 hass.callService = workingCallService;
+
+// Shared navigation guards protect unsent/rejected values on Back as well as X.
+el._closeActiveDialog(); await el.updateComplete;
+el._openForceWizard(); el._selectForceMode('now'); await el.updateComplete;
+el._forceNowPrice = true; el._editorDrafts['number.price'] = '0.26'; el._render(); await el.updateComplete;
+const dirtyCalls = calls.length;
+const stableDialog = root.querySelector('dialog');
+click('dialog [aria-label="Back"]'); await el.updateComplete;
+check('Back uses shared discard protection without losing the current page',
+  root.querySelector('dialog') === stableDialog && !!root.querySelector('[aria-label="Unsaved changes"]') && el._forceWizardStep === 'now');
+click('dialog [data-family-keep]'); await el.updateComplete;
+check('keeping a charging draft restores its value and existing dialog',
+  root.querySelector('dialog') === stableDialog && root.querySelector('input[data-entity="number.price"]')?.value === '0.26');
+const retainedPriceInput = root.querySelector('input[data-entity="number.price"]'); retainedPriceInput?.focus();
+controllerAttrs.smartevse_1_max_current = 14; el.hass = hass; await el.updateComplete;
+check('telemetry updates retain the user-owned number draft and focus',
+  root.activeElement?.dataset.entity === 'number.price' && root.activeElement?.value === '0.26');
+click('dialog [aria-label="Back"]'); await el.updateComplete;
+click('dialog .family-action.destructive'); await el.updateComplete;
+check('confirmed Back returns to the plan menu without sending a command',
+  el._forceWizardStep === 'choose' && el._forceWizardOpen && calls.length === dirtyCalls);
+
+// A native HA handoff is deferred until the shared dirty-value guard is resolved.
+el._selectForceMode('schedule'); el._schedulePriceGate = true; el._editorDrafts['number.price'] = '0.29'; el._render(); await el.updateComplete;
+moreInfoEntity = null;
+const nativeFocus = document.createElement('button'); document.body.append(nativeFocus);
+const onNativeHandoff = () => nativeFocus.focus(); el.addEventListener('hass-more-info', onNativeHandoff);
+click('[data-action="open-more-info"][data-entity="schedule.charging"]'); await el.updateComplete;
+check('native schedule details wait for draft confirmation',
+  moreInfoEntity === null && !!root.querySelector('[aria-label="Unsaved changes"]'));
+click('dialog .family-action.destructive'); await el.updateComplete;
+check('confirmed native handoff closes the shared flow without stealing native focus',
+  moreInfoEntity === 'schedule.charging' && !root.querySelector('dialog') && document.activeElement === nativeFocus);
+el.removeEventListener('hass-more-info', onNativeHandoff); nativeFocus.remove();
+
+// The settings entry inside a charging plan is a real child route.
+el._openForceWizard(); el._openSettingsModal(); await el.updateComplete;
+check('plan settings has one shared Back and X',
+  root.querySelectorAll('dialog [aria-label="Back"]').length === 1 && root.querySelectorAll('dialog .family-dialog-header [title="Close"]').length === 1);
+click('dialog [aria-label="Back"]'); await el.updateComplete;
+check('settings Back returns to the originating charging plan',
+  el._forceWizardOpen && el._forceWizardStep === 'choose' && !el._settingsModalOpen);
+el._closeActiveDialog(); await el.updateComplete;
 
 console.log(ok ? '\nSMOKE TEST OK' : '\nSMOKE TEST FAILED');
 process.exit(ok ? 0 : 1);

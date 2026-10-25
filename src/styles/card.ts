@@ -257,7 +257,6 @@ ha-card {
 
 .control-label,
 .setting-label,
-.modal-kicker,
 .section-title span,
 .flow-line-icon {
   color: var(--sdc-text-muted);
@@ -271,7 +270,6 @@ ha-card {
 .control-value,
 .setting-value,
 .status-title,
-.modal-title,
 .modal-option-title,
 .ev-label-text {
   font-weight: var(--sdc-weight-strong);
@@ -369,7 +367,6 @@ ha-card {
   .control-tile,
   .setting-tile,
   .setting-editor-button,
-  .modal-back,
   .modal-option,
   .wizard-option-main,
   .wizard-plan-toggle,
@@ -384,7 +381,6 @@ ha-card {
   .control-tile,
   .setting-tile,
   .setting-editor-button,
-  .modal-back,
   .modal-option,
   .wizard-option-main,
   .wizard-plan-toggle,
@@ -401,7 +397,6 @@ ha-card {
     .control-tile,
     .setting-tile,
     .setting-editor-button,
-      .modal-back,
     .modal-option,
     .wizard-option-main,
     .wizard-plan-toggle,
@@ -417,7 +412,6 @@ ha-card {
   .control-tile,
   .setting-tile,
   .setting-editor-button,
-  .modal-back,
   .modal-option,
   .wizard-option-main,
   .wizard-plan-toggle,
@@ -453,23 +447,7 @@ ha-card {
 }
 
 .force-wizard-panel { --wizard-tile-height: 64px; }
-.dialog-panel { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-width: 0; min-height: 0; }
-.family-dialog[open] { grid-template-rows: minmax(0, 1fr); }
-.modal-head-navigation { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; }
-
-.modal-copy {
-  min-width: 0;
-}
-
-.modal-kicker {
-  margin-bottom: 5px;
-}
-
-.modal-title {
-  color: var(--primary-text-color);
-  font-size: var(--sdc-font-title);
-  line-height: 1.12;
-}
+.dialog-panel { min-width: 0; min-height: 0; }
 
 .modal-options {
   display: grid;
@@ -607,8 +585,7 @@ ha-card {
 .wizard-option-main:disabled,
 .wizard-plan-toggle:disabled,
 .wizard-toggle:disabled,
-.wizard-schedule-entity:disabled,
-.modal-back:disabled {
+.wizard-schedule-entity:disabled {
   cursor: default;
   opacity: 0.55;
 }
