@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.1 — 2026-10-25
+
+- Size Settings to its content instead of forcing a tall dialog with unused space. Expanded charging history still scrolls inside the bounded shared modal body.
+
+Validation: typecheck, production build and 108 smoke checks, plus 390px mobile and short-landscape browser checks. No physical charger commands were sent.
+
 ## 0.1.0 — 2026-10-25
 
 - Bundle the versioned `@bitosome/ha-card-ui` library instead of maintaining local copies of shared UI code. Home Assistant still loads one self-contained card resource.

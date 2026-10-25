@@ -986,6 +986,10 @@ check('session estimate appears underneath the battery reading',
 click('.smartevse_1 .session-cost');await new Promise(r=>setTimeout(r,30));
 check('cost shortcut opens per-charger history in settings',
   !!root.querySelector('.settings-panel .cost-history') && root.querySelectorAll('.cost-charger').length === 2);
+check('collapsed settings use content height rather than forcing a tall dialog',
+  !root.querySelector('dialog').classList.contains('long') &&
+  !!root.querySelector('dialog .family-dialog-body') &&
+  root.querySelectorAll('.cost-charger').length === 2);
 check('history shows energy and honest empty state',
   /19.30 kWh/.test(root.textContent) && /No charging sessions recorded yet/.test(root.textContent));
 sampleRecord.cost = -1.25;sampleRecord.partial=true;sampleRecord.issues=['price_unavailable'];sampleRecord.unpriced_kwh=.3;

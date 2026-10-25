@@ -4,7 +4,7 @@ import { CARD_CSS } from "./styles/card";
 import { familyStyles, dialogStyles, componentStyles, glowStyles, FamilyFlowController, renderFamilyDialog, showEntityMoreInfo } from "@bitosome/ha-card-ui";
 import { buildGlow, type PulseColors } from "./shared/glow";
 
-const CARD_VERSION = "0.1.0";
+const CARD_VERSION = "0.1.1";
 
 const ACTIVE_GLOW: PulseColors = {
   weak: "rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha))",
@@ -2168,7 +2168,6 @@ class SmartEVSEFlowCard extends LitElement {
     return html`${unsafeHTML(markup)}${renderFamilyDialog(this._flow, {
       title: this._dialogTitle(ev1, ev2),
       content: html`<div style=${wledStyleVars} aria-busy=${String(this._writePending)}>${unsafeHTML(dialogMarkup)}</div>`,
-      long: this._settingsModalOpen,
     })}`;
   }
 
