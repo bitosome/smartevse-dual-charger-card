@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.2 — 2026-10-26
+
+- Use the shared settings cog for editing the charging plan and opening Settings, and advertise modal launchers consistently to assistive technology.
+- Give duty-cycle editing a named child page with Back, X and unsaved-draft protection. Keep settings writes and late-response safeguards unchanged.
+- Move charging history into its own page; a charger cost opens its history directly, while Settings opens it as a child page. Remove redundant embedded-section spacing.
+- Restore focus to the actual tapped control on touch browsers even when live telemetry replaces the card markup.
+
+Validation: typecheck, production build and 116 offline smoke checks. Browser checks cover 320px/390px widths, short landscape, light/dark presentation, protected drafts and focus return. No physical charger commands were sent.
+
 ## 0.1.1 — 2026-10-25
 
 - Size Settings to its content instead of forcing a tall dialog with unused space. Expanded charging history still scrolls inside the bounded shared modal body.

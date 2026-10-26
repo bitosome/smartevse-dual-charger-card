@@ -1,10 +1,10 @@
 import { LitElement, html } from "lit";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { CARD_CSS } from "./styles/card";
-import { familyStyles, dialogStyles, componentStyles, glowStyles, FamilyFlowController, renderFamilyDialog, showEntityMoreInfo } from "@bitosome/ha-card-ui";
+import { familyStyles, dialogStyles, componentStyles, glowStyles, FamilyFlowController, renderFamilyDialog, showEntityMoreInfo, UI_ICONS } from "@bitosome/ha-card-ui";
 import { buildGlow, type PulseColors } from "./shared/glow";
 
-const CARD_VERSION = "0.1.1";
+const CARD_VERSION = "0.1.2";
 
 const ACTIVE_GLOW: PulseColors = {
   weak: "rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha))",
@@ -54,16 +54,19 @@ interface SmartEvseCardConfig {
   [key: string]: unknown;
 }
 
-type DialogPage = "plan" | "schedule" | "now" | "settings" | `setting:${string}` | `charger:${string}`;
+type DialogPage = "plan" | "schedule" | "now" | "settings" | "history" | `setting:${string}` | `charger:${string}`;
 class SmartEVSEFlowCard extends LitElement {
   private _flow = new FamilyFlowController<DialogPage>(this, {
     guard: (intent) => this._dialogGuard(intent),
-    onChange: () => {
+    onChange: (route) => {
       this._settingsSession++;
-      this._editingEntity = null;
+      this._editingEntity = route?.startsWith("setting:") ? route.slice(8) : null;
+      if (this._editingEntity && !Object.prototype.hasOwnProperty.call(this._editorDrafts, this._editingEntity)) {
+        this._editorDrafts[this._editingEntity] = this._state(this._editingEntity);
+      }
     },
   });
-  private get _settingsModalOpen() { return this._flow.stack.includes("settings"); }
+  private get _settingsModalOpen() { return this._flow.current === "settings" || Boolean(this._settingsSubmenuEntity); }
   private get _settingsSubmenuEntity() {
     const route = this._flow.current;
     return route?.startsWith("setting:") ? route.slice(8) : null;
@@ -764,38 +767,26 @@ class SmartEVSEFlowCard extends LitElement {
   }
 
   _openEditor(entityId) {
-    if (this._writePending) return;
-    this._settingsSession++;
-    if (!this._editorMeta(entityId).supported) return;
+    if (this._writePending || !this._editorMeta(entityId).supported) return;
+    if (!this._flow.push(`setting:${entityId}`)) return;
     this._settingsError = "";
-    this._editingEntity = entityId;
-    if (!this._editorDrafts) {
-      this._editorDrafts = {};
-    }
     this._editorDrafts[entityId] = this._state(entityId) ?? "";
     this._render();
   }
 
   _closeEditor() {
-    this._settingsSession++;
+    if (this._writePending) return;
+    if (this._editingEntity) delete this._editorDrafts[this._editingEntity];
     this._editingEntity = null;
-    this._render();
+    this._flow.back();
   }
 
   _openSettingsSubmenu(entityId) {
     if (this._writePending) return;
-    this._settingsSession++;
     const meta = this._editorMeta(entityId);
     if (!meta.supported || meta.kind !== "select") return;
-    this._settingsError = "";
     if (!this._flow.push(`setting:${entityId}`)) return;
-    this._editingEntity = entityId;
-    if (!this._editorDrafts) {
-      this._editorDrafts = {};
-    }
-    if (!Object.prototype.hasOwnProperty.call(this._editorDrafts, entityId)) {
-      this._editorDrafts[entityId] = this._state(entityId) ?? "";
-    }
+    this._settingsError = "";
     this._render();
   }
 
@@ -907,12 +898,30 @@ class SmartEVSEFlowCard extends LitElement {
     }
   }
 
-  _openSettingsModal() {
-    const opened = this._flow.current === "plan" ? this._flow.push("settings") : this._flow.open("settings");
+  _openRootDialog(route: DialogPage, opener?: HTMLElement) {
+    const wasActive = this._flow.active;
+    const opened = this._flow.open(route, opener);
+    // Touch browsers need not focus a tapped button. Keep its logical identity
+    // as well as the shared node reference because unsafeHTML replaces nodes.
+    if (opened && !wasActive && opener) this._dialogReturnFocus = { key: this._uiFocusKey(opener) };
+    return opened;
+  }
+
+  _openSettingsModal(opener?: HTMLElement) {
+    const opened = this._flow.current === "plan" ? this._flow.push("settings") : this._openRootDialog("settings", opener);
     if (!opened) return;
     if (!this._writePending) {
       this._settingsError = "";
       this._editorDrafts = {};
+    }
+    this._render();
+  }
+
+  _openChargingHistory(charger?: string, opener?: HTMLElement) {
+    const opened = this._flow.current === "settings" ? this._flow.push("history") : this._openRootDialog("history", opener);
+    if (!opened) return;
+    if (["smartevse_1", "smartevse_2"].includes(charger || "")) {
+      for (const key of ["smartevse_1", "smartevse_2"]) this._detailsOpen.set(`cost-${key}`, key === charger);
     }
     this._render();
   }
@@ -930,8 +939,8 @@ class SmartEVSEFlowCard extends LitElement {
     return this._config.force_charge_entity;
   }
 
-  _openForceWizard() {
-    if (!this._flow.open("plan")) return;
+  _openForceWizard(opener?: HTMLElement) {
+    if (!this._openRootDialog("plan", opener)) return;
     if (this._writePending) { this._render(); return; }
     this._syncPlanPreferencesFromEntities();
     this._forceWizardError = "";
@@ -1253,14 +1262,14 @@ class SmartEVSEFlowCard extends LitElement {
         ${this._settingTile({
           entityId: this._config.charge_policy_entity,
           icon: "mdi:source-fork",
-          label: "Charge Policy",
+          label: "Charge policy",
           value: policy,
           presentation: "submenu",
         })}
         ${this._settingTile({
           entityId: this._config.duty_cycle_entity,
           icon: "mdi:swap-horizontal-bold",
-          label: "Duty Cycle",
+          label: "Duty cycle",
           value: this._formatMinutes(dutyCycleMinutes),
         })}
       </div>
@@ -1278,7 +1287,7 @@ class SmartEVSEFlowCard extends LitElement {
 
         <div class="dialog-panel settings-panel">
           <div class="dialog-content">${settingsControls}
-          ${this._chargingHistory()}
+          ${this._costData() ? `<button class="advanced-settings" data-action="open-history" type="button" aria-haspopup="dialog"><ha-icon icon="${UI_ICONS.history}" aria-hidden="true"></ha-icon><span>Charging history</span><ha-icon icon="${UI_ICONS.next}" aria-hidden="true"></ha-icon></button>` : ""}
           ${this._settingsBusy ? `<p class="overview-note" role="status">Saving settings…</p>` : ""}
           ${this._settingsError ? `<div class="wizard-error" role="alert">${this._safe(this._settingsError)}</div>` : ""}</div>
         </div>
@@ -1450,7 +1459,7 @@ class SmartEVSEFlowCard extends LitElement {
                 })
                 .join("")}
             </div>
-            ${this._entity(this._config.charge_policy_entity) || this._entity(this._config.duty_cycle_entity) || this._costData() ? `<button class="advanced-settings" data-action="open-settings" type="button">Settings &amp; charging history<ha-icon icon="mdi:chevron-right" aria-hidden="true"></ha-icon></button>` : ""}
+            ${this._entity(this._config.charge_policy_entity) || this._entity(this._config.duty_cycle_entity) || this._costData() ? `<button class="advanced-settings" data-action="open-settings" type="button" aria-haspopup="dialog"><ha-icon icon="${UI_ICONS.settings}" aria-hidden="true"></ha-icon><span>Settings</span><ha-icon icon="${UI_ICONS.next}" aria-hidden="true"></ha-icon></button>` : ""}
             ${error}</div>
           </div>
       `;
@@ -1612,7 +1621,7 @@ class SmartEVSEFlowCard extends LitElement {
               .join("")}
           </div>
         `
-        : "";
+        : this._settingEditor(entityId, meta, draft);
 
     return `
 
@@ -1625,25 +1634,22 @@ class SmartEVSEFlowCard extends LitElement {
   }
 
   _settingTile({ entityId, icon, label, value, presentation = "inline" }) {
-    if (!entityId || !this._entity(entityId)) {
-      return "";
-    }
+    if (!entityId || !this._entity(entityId)) return "";
     const meta = this._editorMeta(entityId);
-    const isEditing = presentation === "inline" && this._editingEntity === entityId && meta.supported;
-    if (!isEditing) {
-      const action = presentation === "submenu" ? "open-submenu" : "edit";
-      return `
-        <button class="setting-tile" data-action="${this._safe(action)}" data-entity="${this._safe(entityId)}" type="button" ${!meta.supported || this._writePending ? "disabled" : ""}>
-          <div class="setting-icon"><ha-icon icon="${this._safe(icon)}"></ha-icon></div>
-          <div class="setting-copy">
-            <div class="setting-label">${this._safe(label)}</div>
-            <div class="setting-value">${meta.supported ? this._safe(value) : "Unavailable"}</div>
-          </div>
-        </button>
-      `;
-    }
+    const action = presentation === "submenu" ? "open-submenu" : "edit";
+    return `
+      <button class="setting-tile" data-action="${this._safe(action)}" data-entity="${this._safe(entityId)}" type="button" aria-haspopup="dialog" ${!meta.supported || this._writePending ? "disabled" : ""}>
+        <div class="setting-icon"><ha-icon icon="${this._safe(icon)}" aria-hidden="true"></ha-icon></div>
+        <div class="setting-copy">
+          <div class="setting-label">${this._safe(label)}</div>
+          <div class="setting-value">${meta.supported ? this._safe(value) : "Unavailable"}</div>
+        </div>
+        <ha-icon class="setting-next" icon="${UI_ICONS.next}" aria-hidden="true"></ha-icon>
+      </button>
+    `;
+  }
 
-    const draft = this._editorDraft(entityId);
+  _settingEditor(entityId, meta, draft) {
     let control = "";
     if (meta.kind === "select") {
       const options = meta.optionItems
@@ -1668,6 +1674,8 @@ class SmartEVSEFlowCard extends LitElement {
       control = `
         <input
           class="setting-input"
+          aria-label="${this._safe(meta.unit ? `Value (${meta.unit})` : "Value")}"
+          data-family-initial-focus
           data-entity="${this._safe(entityId)}"
           type="${this._safe(inputType)}"
           value="${this._safe(draft)}"
@@ -1680,18 +1688,11 @@ class SmartEVSEFlowCard extends LitElement {
     }
 
     return `
-      <div class="setting-tile setting-tile-editing">
-        <div class="setting-icon"><ha-icon icon="${this._safe(icon)}"></ha-icon></div>
-        <div class="setting-copy">
-          <div class="setting-label">${this._safe(label)}</div>
-          <div class="setting-value">${this._safe(value)}</div>
-          <div class="setting-editor">
-            ${control}
-            <div class="setting-editor-actions">
-              <button class="setting-editor-button tone-primary" data-action="save-edit" data-entity="${this._safe(entityId)}" type="button" ${this._writePending ? "disabled" : ""}>Apply</button>
-              <button class="setting-editor-button" data-action="cancel-edit" data-entity="${this._safe(entityId)}" type="button">Cancel</button>
-            </div>
-          </div>
+      <div class="setting-editor">
+        ${control}
+        <div class="setting-editor-actions">
+          <button class="setting-editor-button tone-primary" data-action="save-edit" data-entity="${this._safe(entityId)}" type="button" ${this._writePending ? "disabled" : ""}>Apply</button>
+          <button class="setting-editor-button" data-action="cancel-edit" data-entity="${this._safe(entityId)}" type="button" ${this._writePending ? "disabled" : ""}>Cancel</button>
         </div>
       </div>
     `;
@@ -1732,7 +1733,6 @@ class SmartEVSEFlowCard extends LitElement {
       start_not_observed: "Charging was already in progress when tracking started.",
     };
     return `<section class="cost-history" aria-label="Charging history">
-      <h3>Charging history</h3>
       ${ledger.error ? `<p role="alert" class="wizard-error">${this._safe(ledger.error)}</p>` : ""}
       <p class="cost-note">Estimated from measured power and Real Electricity Price at the time of charging. Shared across all users; latest ${this._safe(ledger.history_limit || 100)} sessions per charger.</p>
       ${["smartevse_1", "smartevse_2"].map(key => {
@@ -1784,8 +1784,9 @@ class SmartEVSEFlowCard extends LitElement {
   _closeActiveDialog() { this._flow.forceClose(); }
 
   _dialogTitle(ev1, ev2) {
+    if (this._flow.current === "history") return "Charging history";
     if (this._chargerDetailsKey) return [ev1, ev2].find(ev => ev.key === this._chargerDetailsKey)?.smartevseName || "Charger details";
-    if (this._settingsSubmenuEntity) return this._settingsSubmenuEntity === this._config.charge_policy_entity ? "Charge policy" : this._entity(this._settingsSubmenuEntity)?.attributes?.friendly_name || "Setting";
+    if (this._settingsSubmenuEntity) return this._settingsSubmenuEntity === this._config.charge_policy_entity ? "Charge policy" : this._settingsSubmenuEntity === this._config.duty_cycle_entity ? "Duty cycle" : this._entity(this._settingsSubmenuEntity)?.attributes?.friendly_name || "Setting";
     if (this._settingsModalOpen) return "Settings";
     return this._forceWizardStep === "schedule" ? "Schedule" : this._forceWizardStep === "now" ? "Force charge" : "Charging plan";
   }
@@ -1799,8 +1800,8 @@ class SmartEVSEFlowCard extends LitElement {
       : ev.isCharging ? "Charging" : ev.sessionComplete ? "Session complete" : ev.active ? "Ready to charge" : "Connected · waiting";
     const visual = this._wledVisuals(this._entity(this._config.controller_entity)?.attributes || {});
     const diagnostics = ev.available && ev.connected ? `
-      <button class="charger-details" type="button" data-action="open-charger-details" data-charger="${this._safe(ev.key)}" aria-label="${this._safe(ev.smartevseName)} charger details">
-        Charger details<ha-icon icon="mdi:information-outline" aria-hidden="true"></ha-icon>
+      <button class="charger-details" type="button" data-action="open-charger-details" aria-haspopup="dialog" data-charger="${this._safe(ev.key)}" aria-label="${this._safe(ev.smartevseName)} charger details">
+        Charger details<ha-icon icon="${UI_ICONS.details}" aria-hidden="true"></ha-icon>
       </button>` : "";
     return `
       <div class="ev-node-wrap ${this._safe(ev.key)} tone-${this._safe(ev.tone)} visual-${this._safe(ev.visual)}"
@@ -1817,7 +1818,7 @@ class SmartEVSEFlowCard extends LitElement {
             </div>
             <div class="charger-totals">
               ${ev.connected && battery !== null ? `<div class="battery-value">${this._safe(battery)}<span>%</span></div>` : ""}
-              ${record ? `<button class="session-cost" data-action="open-settings" aria-label="${this._safe(ev.smartevseName)} charging cost history"><strong>≈ ${this._safe(this._costAmount(record))}</strong><small>${this._costData()?.error ? "History not saved" : record.partial ? "Partial estimate" : ev.connected && record.status !== "finished" ? "Session estimate" : "Last session"}</small></button>` : ev.connected && this._costData() ? `<span class="session-cost empty"><small>No cost recorded yet</small></span>` : ""}
+              ${record ? `<button class="session-cost" data-action="open-history" data-charger="${this._safe(ev.key)}" aria-haspopup="dialog" aria-label="${this._safe(ev.smartevseName)} charging cost history"><strong>≈ ${this._safe(this._costAmount(record))}</strong><small>${this._costData()?.error ? "History not saved" : record.partial ? "Partial estimate" : ev.connected && record.status !== "finished" ? "Session estimate" : "Last session"}</small></button>` : ev.connected && this._costData() ? `<span class="session-cost empty"><small>No cost recorded yet</small></span>` : ""}
             </div>
           </div>
           ${ev.connected && battery !== null ? `<div class="battery-track" role="meter" aria-label="${this._safe(vehicleTitle)} battery" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${battery}"><span style="width:${battery}%"></span></div>` : ""}
@@ -2138,8 +2139,9 @@ class SmartEVSEFlowCard extends LitElement {
                   data-action="open-force-wizard"
                   type="button"
                   aria-label="Edit charging plan"
+                  aria-haspopup="dialog"
                 >
-                  <div class="overview-heading"><span>EV charging</span><span class="edit-plan">Edit plan<ha-icon icon="mdi:chevron-right" aria-hidden="true"></ha-icon></span></div>
+                  <div class="overview-heading"><span>EV charging</span><span class="edit-plan">Edit plan<ha-icon icon="${UI_ICONS.settings}" aria-hidden="true"></ha-icon></span></div>
                   <div class="status-copy">
                     <div class="status-title">${this._safe(activeTitle)}</div>
                     ${hasControllerError ? `<p class="overview-note">${this._safe(controllerError)}</p>` : ""}
@@ -2163,7 +2165,7 @@ class SmartEVSEFlowCard extends LitElement {
       </ha-card>
     `;
 
-    const dialogMarkup = this._chargerDetailsKey ? this._chargerDetails(ev1, ev2) : this._forceWizardModal() ||
+    const dialogMarkup = this._flow.current === "history" ? this._chargingHistory() : this._chargerDetailsKey ? this._chargerDetails(ev1, ev2) : this._forceWizardModal() ||
       this._settingsModal(this._settingsControls({ policy, dutyCycleMinutes: this._numberState(this._config.duty_cycle_entity) }));
     return html`${unsafeHTML(markup)}${renderFamilyDialog(this._flow, {
       title: this._dialogTitle(ev1, ev2),
@@ -2235,7 +2237,7 @@ class SmartEVSEFlowCard extends LitElement {
     const active = (this.renderRoot as ShadowRoot).activeElement;
     this._pendingUiFocus = focus || (active?.matches('dialog, .dialog-panel, [data-family-heading]') ? this._busyUiFocus : null);
     if (!this._renderedDialogKey && (this._forceWizardOpen || this._settingsModalOpen || this._chargerDetailsKey)) {
-      this._dialogReturnFocus = focus;
+      this._dialogReturnFocus = this._dialogReturnFocus || focus;
     }
   }
 
@@ -2288,15 +2290,19 @@ class SmartEVSEFlowCard extends LitElement {
       event.stopPropagation();
       const { action, entity, value, mode, charger } = element.dataset;
       if (action === "open-charger-details") {
-        if (charger) this._flow.open(`charger:${charger}`);
+        if (charger) this._openRootDialog(`charger:${charger}`, element);
+        return;
+      }
+      if (action === "open-history") {
+        this._openChargingHistory(charger, element);
         return;
       }
       if (action === "open-settings") {
-        this._openSettingsModal();
+        this._openSettingsModal(element);
         return;
       }
       if (action === "open-force-wizard") {
-        this._openForceWizard();
+        this._openForceWizard(element);
         return;
       }
       if (action === "choose-force-mode") {

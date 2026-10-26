@@ -75,8 +75,7 @@ export const OVERVIEW_CSS = `
   .session-cost strong { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
   .session-cost small { font-size: 10px; line-height: 1.3; color: var(--secondary-text-color); }
   .session-cost.empty { cursor: default; }
-  .cost-history { border-top: var(--sdc-border-faint); margin-top: 16px; padding-top: 8px; }
-  .cost-history h3 { font-size: 15px; margin: 12px 0 6px; }
+  .cost-history > .cost-note:first-child { margin-top: 0; }
   .cost-note, .cost-record-details { font-size: 12px; color: var(--secondary-text-color); line-height: 1.5; }
   .cost-charger { margin: 10px 0; padding: 0 10px; background: var(--chip-background-color); border-radius: var(--tile-border-radius); }
   .cost-charger > summary { display: flex; align-items: center; gap: 8px; min-height: 48px; font-size: 13px; font-weight: 600; cursor: pointer; }
@@ -105,6 +104,10 @@ export const OVERVIEW_CSS = `
   .charger-diagnostics dt { color: var(--secondary-text-color); }
   .charger-diagnostics dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
   .advanced-settings { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 44px; border: 0; background: transparent; color: var(--secondary-text-color); font: inherit; font-size: 13px; margin-top: var(--large-gap); cursor: pointer; }
+  .advanced-settings { gap: 8px; text-align: left; }
+  .advanced-settings span { flex: 1; }
+  .settings-panel .setting-tile { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .setting-next { --mdc-icon-size: 18px; width: 18px; height: 18px; color: var(--secondary-text-color); }
   .advanced-settings ha-icon { --mdc-icon-size: 18px; width: 18px; height: 18px; }
   .wizard-option-title, .wizard-toggle-copy { font-size: 14px; }
   .wizard-plan-toggle, .wizard-plan-toggle.selected { width: 44px; height: 44px; background: transparent; }

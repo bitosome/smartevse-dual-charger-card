@@ -984,9 +984,11 @@ await new Promise(r=>setTimeout(r,30));
 check('session estimate appears underneath the battery reading',
   /4[.,]28/.test(root.querySelector('.smartevse_1 .charger-totals .session-cost')?.textContent || ''));
 click('.smartevse_1 .session-cost');await new Promise(r=>setTimeout(r,30));
-check('cost shortcut opens per-charger history in settings',
-  !!root.querySelector('.settings-panel .cost-history') && root.querySelectorAll('.cost-charger').length === 2);
-check('collapsed settings use content height rather than forcing a tall dialog',
+check('cost shortcut opens charging history directly with its charger expanded',
+  root.querySelector('dialog')?.getAttribute('aria-label') === 'Charging history' &&
+  !root.querySelector('.settings-panel') && root.querySelectorAll('.cost-charger').length === 2 &&
+  root.querySelector('[data-charger="cost-smartevse_1"]')?.open && !root.querySelector('[data-charger="cost-smartevse_2"]')?.open);
+check('session history stays content sized and scrolls within the shared body',
   !root.querySelector('dialog').classList.contains('long') &&
   !!root.querySelector('dialog .family-dialog-body') &&
   root.querySelectorAll('.cost-charger').length === 2);
@@ -1001,7 +1003,7 @@ sampleRecord.vehicle='<img src=x onerror=alert(1)>';
 el.hass=hass;await new Promise(r=>setTimeout(r,30));
 check('history vehicle labels are escaped', !root.querySelector('.cost-history img'));
 click('dialog .family-dialog-header [title="Close"]');await new Promise(r=>setTimeout(r,30));
-check('history shortcut closes without triggering a charger command', !root.querySelector('.settings-panel'));
+check('history shortcut closes its own dialog', !root.querySelector('dialog'));
 
 // A slow request can be dismissed without cancelling it or enabling duplicates.
 openForceWizard();
@@ -1161,6 +1163,45 @@ check('plan settings has one shared Back and X',
 click('dialog [aria-label="Back"]'); await el.updateComplete;
 check('settings Back returns to the originating charging plan',
   el._forceWizardOpen && el._forceWizardStep === 'choose' && !el._settingsModalOpen);
+el._closeActiveDialog(); await el.updateComplete;
+
+// Config, history and numeric editing use distinct, guarded shared routes.
+const uiCalls = calls.length;
+const unrelatedOpener = document.createElement('button'); document.body.append(unrelatedOpener); unrelatedOpener.focus();
+click('.smartevse_1 .session-cost'); await el.updateComplete;
+click('dialog .family-dialog-header [title="Close"]'); await el.updateComplete;
+check('a non-focusing touch history launch returns focus to its actual cost button',
+  root.activeElement?.matches('.smartevse_1 .session-cost'));
+unrelatedOpener.remove();
+check('the charging-plan editor uses the shared settings icon and dialog semantics',
+  root.querySelector('.edit-plan ha-icon')?.getAttribute('icon') === 'mdi:cog-outline' &&
+  root.querySelector('[data-action="open-force-wizard"]')?.getAttribute('aria-haspopup') === 'dialog');
+el._openForceWizard(); await el.updateComplete;
+check('settings entry uses the common cog and no tab semantics',
+  root.querySelector('[data-action="open-settings"] ha-icon')?.getAttribute('icon') === 'mdi:cog-outline' &&
+  !root.querySelector('[role="tab"], [aria-selected]'));
+click('[data-action="open-settings"]'); await el.updateComplete;
+check('settings offers a separate history page rather than embedding its session records',
+  !!root.querySelector('[data-action="open-history"]') && !root.querySelector('.cost-history') &&
+  root.querySelector('[data-action="open-history"] ha-icon')?.getAttribute('icon') === 'mdi:history');
+click('[data-action="open-history"]'); await el.updateComplete;
+check('history opened from settings stays a child of that settings flow',
+  el._flow.current === 'history' && root.querySelector('dialog [aria-label="Back"]'));
+click('dialog [aria-label="Back"]'); await el.updateComplete;
+click('[data-action="edit"][data-entity="number.duty"]'); await el.updateComplete;
+check('duty cycle uses a named child editor with one Back and X',
+  root.querySelector('dialog')?.getAttribute('aria-label') === 'Duty cycle' &&
+  root.querySelectorAll('dialog [aria-label="Back"]').length === 1 &&
+  root.querySelectorAll('dialog .family-dialog-header [title="Close"]').length === 1 &&
+  !!root.querySelector('input[aria-label="Value (min)"]'));
+el._updateEditorDraft('number.duty', String(Number(states['number.duty'].state) + 5)); el._render(); await el.updateComplete;
+click('dialog [aria-label="Back"]'); await el.updateComplete;
+check('numeric child Back protects its unsent draft',
+  !!root.querySelector('[aria-label="Unsaved changes"]') && el._settingsSubmenuEntity === 'number.duty');
+click('dialog [data-family-keep]'); await el.updateComplete;
+click('[data-action="cancel-edit"]'); await el.updateComplete;
+check('explicit Cancel returns to settings without submitting the numeric draft',
+  el._flow.current === 'settings' && !el._editingEntity && calls.length === uiCalls);
 el._closeActiveDialog(); await el.updateComplete;
 
 console.log(ok ? '\nSMOKE TEST OK' : '\nSMOKE TEST FAILED');
