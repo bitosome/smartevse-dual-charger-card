@@ -63,7 +63,8 @@ ${DESIGN_TOKENS_CSS}
 
 ha-card {
   display: block;
-  overflow: visible;
+  /* Bound decorative light without clipping native top-layer dialogs. */
+  overflow: clip;
   position: relative;
   border-radius: var(--ha-card-border-radius, 16px);
   border: 0;
