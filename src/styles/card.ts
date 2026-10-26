@@ -90,8 +90,6 @@ ha-card {
   gap: var(--large-gap);
   margin: 0;
   overflow: visible;
-  /* Shared stacking context so a tile glow never paints over a sibling tile. */
-  isolation: isolate;
 }
 
 .control-tile-wrap,
@@ -448,6 +446,10 @@ ha-card {
 
 .force-wizard-panel { --wizard-tile-height: 64px; }
 .dialog-panel { min-width: 0; min-height: 0; }
+.family-dialog-body {
+  /* Include neighboring controls and feedback, not just the glowing options. */
+  isolation: isolate;
+}
 
 .modal-options {
   display: grid;
@@ -573,9 +575,8 @@ ha-card {
 }
 
 .wizard-option.selected {
-  --pulse-weak: rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha));
-  --pulse-strong: rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-strong-alpha));
-  box-shadow: var(--tile-shadow-active);
+  /* Color belongs to the sibling under-layer, never to the foreground face. */
+  box-shadow: var(--tile-shadow-default);
 }
 
 .wizard-option-wrap.selected .glow-under {
@@ -793,10 +794,12 @@ ha-card {
 }
 
 .wizard-error {
+  position: relative;
+  z-index: 1;
   margin-top: var(--medium-gap);
   padding: 8px 10px;
   border-radius: var(--tile-border-radius);
-  background: rgba(var(--sdc-led-error-rgb), var(--sdc-led-error-weak-alpha));
+  background: linear-gradient(rgba(var(--sdc-led-error-rgb), var(--sdc-led-error-weak-alpha)), rgba(var(--sdc-led-error-rgb), var(--sdc-led-error-weak-alpha))), var(--sdc-surface-panel);
   color: var(--sdc-led-error);
   font-size: var(--sdc-font-body);
   font-weight: var(--sdc-weight-medium);
@@ -874,6 +877,7 @@ ha-card {
 .status-hero {
   appearance: none;
   position: relative;
+  z-index: 1;
   display: block;
   width: 100%;
   min-height: 92px;
