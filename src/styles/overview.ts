@@ -108,6 +108,7 @@ export const OVERVIEW_CSS = `
   .charger-diagnostics dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
   .advanced-settings { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 44px; border: 0; background: transparent; color: var(--secondary-text-color); font: inherit; font-size: 13px; margin-top: var(--large-gap); cursor: pointer; }
   .advanced-settings { gap: 8px; text-align: left; position: relative; z-index: 1; background: var(--sdc-surface-panel); }
+  .charging-history-launcher { margin-top: 0; padding: 12px 16px; border-radius: 16px; }
   .advanced-settings span { flex: 1; }
   .settings-panel .setting-tile { grid-template-columns: auto minmax(0, 1fr) auto; }
   .setting-next { --mdc-icon-size: 18px; width: 18px; height: 18px; color: var(--secondary-text-color); }

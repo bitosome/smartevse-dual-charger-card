@@ -1181,13 +1181,8 @@ check('settings entry uses the common cog and no tab semantics',
   root.querySelector('[data-action="open-settings"] ha-icon')?.getAttribute('icon') === 'mdi:cog-outline' &&
   !root.querySelector('[role="tab"], [aria-selected]'));
 click('[data-action="open-settings"]'); await el.updateComplete;
-check('settings offers a separate history page rather than embedding its session records',
-  !!root.querySelector('[data-action="open-history"]') && !root.querySelector('.cost-history') &&
-  root.querySelector('[data-action="open-history"] ha-icon')?.getAttribute('icon') === 'mdi:history');
-click('[data-action="open-history"]'); await el.updateComplete;
-check('history opened from settings stays a child of that settings flow',
-  el._flow.current === 'history' && root.querySelector('dialog [aria-label="Back"]'));
-click('dialog [aria-label="Back"]'); await el.updateComplete;
+check('settings no longer contains charging history',
+  !root.querySelector('dialog [data-action="open-history"]') && !root.querySelector('dialog .cost-history'));
 click('[data-action="edit"][data-entity="number.duty"]'); await el.updateComplete;
 check('duty cycle uses a named child editor with one Back and X',
   root.querySelector('dialog')?.getAttribute('aria-label') === 'Duty cycle' &&
@@ -1203,6 +1198,19 @@ click('[data-action="cancel-edit"]'); await el.updateComplete;
 check('explicit Cancel returns to settings without submitting the numeric draft',
   el._flow.current === 'settings' && !el._editingEntity && calls.length === uiCalls);
 el._closeActiveDialog(); await el.updateComplete;
+
+const mainHistoryOpener = root.querySelector('.charging-history-launcher');
+check('main card exposes a named charging-history action',
+  mainHistoryOpener?.textContent.includes('Charging history') &&
+  mainHistoryOpener?.getAttribute('aria-haspopup') === 'dialog' &&
+  mainHistoryOpener?.querySelector('ha-icon')?.getAttribute('icon') === 'mdi:history');
+const chargerTiles = root.querySelector('.ev-row');
+mainHistoryOpener.click(); await el.updateComplete;
+check('main charging history is a root modal without Settings or Back',
+  root.querySelector('dialog')?.getAttribute('aria-label') === 'Charging history' &&
+  !root.querySelector('dialog [aria-label="Back"]') && root.querySelector('.ev-row') === chargerTiles);
+click('dialog [title="Close"]'); await el.updateComplete;
+check('charging history closes back to its main-card opener',root.activeElement === mainHistoryOpener);
 
 console.log(ok ? '\nSMOKE TEST OK' : '\nSMOKE TEST FAILED');
 process.exit(ok ? 0 : 1);

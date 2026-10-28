@@ -162,8 +162,7 @@ npm run typecheck  # tsc --noEmit
 ### Session costs
 
 With SmartEVSE Dual Charger integration 0.0.8.7+, each charger tile displays its
-session cost below the battery percentage. Tap the cost or open **Edit plan →
-Settings & charging history** to see records grouped by charger. Expand a record
+session cost below the battery percentage. Tap the cost or the **Charging history** button below the charger tiles to open the shared history modal with records grouped by charger. History is separate from Settings. Expand a record
 for the energy-weighted average rate and missing-data details. All amounts are
 estimates from the integration's measured-power accounting and Real Electricity
 Price tariff; the card never calculates or persists authoritative costs locally.

@@ -4,7 +4,7 @@ import { CARD_CSS } from "./styles/card";
 import { familyStyles, dialogStyles, componentStyles, glowStyles, FamilyFlowController, renderFamilyDialog, showEntityMoreInfo, UI_ICONS } from "@bitosome/ha-card-ui";
 import { buildGlow, type PulseColors } from "./shared/glow";
 
-const CARD_VERSION = "0.1.4";
+const CARD_VERSION = "0.1.5";
 
 const ACTIVE_GLOW: PulseColors = {
   weak: "rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha))",
@@ -918,7 +918,7 @@ class SmartEVSEFlowCard extends LitElement {
   }
 
   _openChargingHistory(charger?: string, opener?: HTMLElement) {
-    const opened = this._flow.current === "settings" ? this._flow.push("history") : this._openRootDialog("history", opener);
+    const opened = this._openRootDialog("history", opener);
     if (!opened) return;
     if (["smartevse_1", "smartevse_2"].includes(charger || "")) {
       for (const key of ["smartevse_1", "smartevse_2"]) this._detailsOpen.set(`cost-${key}`, key === charger);
@@ -1287,7 +1287,6 @@ class SmartEVSEFlowCard extends LitElement {
 
         <div class="dialog-panel settings-panel">
           <div class="dialog-content">${settingsControls}
-          ${this._costData() ? `<button class="advanced-settings" data-action="open-history" type="button" aria-haspopup="dialog"><ha-icon icon="${UI_ICONS.history}" aria-hidden="true"></ha-icon><span>Charging history</span><ha-icon icon="${UI_ICONS.next}" aria-hidden="true"></ha-icon></button>` : ""}
           ${this._settingsBusy ? `<p class="overview-note" role="status">Saving settings…</p>` : ""}
           ${this._settingsError ? `<div class="wizard-error" role="alert">${this._safe(this._settingsError)}</div>` : ""}</div>
         </div>
@@ -1459,7 +1458,7 @@ class SmartEVSEFlowCard extends LitElement {
                 })
                 .join("")}
             </div>
-            ${this._entity(this._config.charge_policy_entity) || this._entity(this._config.duty_cycle_entity) || this._costData() ? `<button class="advanced-settings" data-action="open-settings" type="button" aria-haspopup="dialog"><ha-icon icon="${UI_ICONS.settings}" aria-hidden="true"></ha-icon><span>Settings</span><ha-icon icon="${UI_ICONS.next}" aria-hidden="true"></ha-icon></button>` : ""}
+            ${this._entity(this._config.charge_policy_entity) || this._entity(this._config.duty_cycle_entity) ? `<button class="advanced-settings" data-action="open-settings" type="button" aria-haspopup="dialog"><ha-icon icon="${UI_ICONS.settings}" aria-hidden="true"></ha-icon><span>Settings</span><ha-icon icon="${UI_ICONS.next}" aria-hidden="true"></ha-icon></button>` : ""}
             ${error}</div>
           </div>
       `;
@@ -2159,6 +2158,7 @@ class SmartEVSEFlowCard extends LitElement {
               ${this._evNode(ev1)}
               ${this._evNode(ev2)}
             </div>
+            <button class="advanced-settings charging-history-launcher" data-action="open-history" type="button" aria-haspopup="dialog"><ha-icon icon="${UI_ICONS.history}" aria-hidden="true"></ha-icon><span>Charging history</span><ha-icon icon="${UI_ICONS.next}" aria-hidden="true"></ha-icon></button>
           </div>
 
         </div>
