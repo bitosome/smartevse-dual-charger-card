@@ -79,7 +79,9 @@
         align-items: start;
       }
 
+      .surface > * { min-width: 0; }
       .frame {
+        min-width: 0;
         width: 390px;
         max-width: 100%;
         transition: width 140ms ease;
@@ -997,7 +999,7 @@
       }
 
       function setWidth(width) {
-        frame.style.width = `${width}px`;
+        frame.style.width = `min(${width}px, 100%)`;
         widthButtons.forEach((button) => {
           button.classList.toggle("active", Number(button.dataset.width) === width);
         });

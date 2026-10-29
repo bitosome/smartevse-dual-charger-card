@@ -21,13 +21,13 @@ export const OVERVIEW_CSS = `
   .ev-node { box-shadow: var(--tile-shadow-default); }
   .overview-heading {
     display: flex; justify-content: space-between; align-items: center;
-    gap: var(--large-gap); margin-bottom: 14px;
+    gap: var(--large-gap); margin-bottom: 12px;
     font-size: 12px; font-weight: 600; color: var(--secondary-text-color);
   }
-  .edit-plan { display: inline-flex; align-items: center; gap: 2px; color: var(--primary-color); }
+  .edit-plan { display: inline-flex; align-items: center; flex-shrink: 0; gap: 6px; color: var(--primary-color); }
   .edit-plan ha-icon { --mdc-icon-size: 18px; width: 18px; height: 18px; }
   .status-copy { gap: 14px; }
-  .status-title { font-size: 21px; font-weight: 600; line-height: 1.3; letter-spacing: -.025em; }
+  .status-title { font-size: 21px; font-weight: 600; line-height: 1.3; letter-spacing: -.025em; overflow-wrap: anywhere; }
   .overview-note { margin: 0; color: var(--secondary-text-color); font-size: 13px; line-height: 1.5; }
   .flow-stage > .overview-note, .dialog-content > .overview-note {
     position: relative; z-index: 1; background: var(--sdc-surface-panel);
@@ -65,33 +65,38 @@ export const OVERVIEW_CSS = `
   }
   .charger-icon ha-icon { --mdc-icon-size: 24px; height: 24px; width: 24px; }
   .charger-copy { flex: 1; min-width: 0; }
-  .charger-name { color: var(--secondary-text-color); font-size: 11px; font-weight: 600; line-height: 1.45; }
+  .charger-name { overflow-wrap: anywhere; color: var(--secondary-text-color); font-size: 11px; font-weight: 600; line-height: 1.45; }
   .vehicle-name { margin: 3px 0 6px; font-size: 17px; line-height: 1.3; font-weight: 600; overflow-wrap: anywhere; letter-spacing: -.015em; }
-  .charger-status { display: flex; align-items: center; gap: 6px; color: var(--secondary-text-color); font-size: 12px; line-height: 1.5; }
+  .charger-status { overflow-wrap: anywhere; display: flex; align-items: center; gap: 6px; color: var(--secondary-text-color); font-size: 12px; line-height: 1.5; }
   .state-dot { height: 6px; width: 6px; flex: 0 0 6px; border-radius: 50%; background: currentColor; }
   .tone-charging .charger-status, .tone-complete .charger-status { color: var(--status-success-color); }
   .tone-error .charger-status { color: var(--status-alert-color); }
   .tone-unavailable .charger-status { color: var(--status-warn-color); }
   .visual-charging .charger-icon { color: var(--status-success-color); }
-  .charger-totals { display: grid; gap: 5px; text-align: right; flex: 0 0 auto; max-width: 38%; }
+  .charger-totals { min-width: 0; display: grid; gap: 5px; text-align: right; flex: 0 0 auto; max-width: 38%; }
   .session-cost { display: grid; gap: 3px; padding: 6px 0; min-height: 44px; border: 0; background: none; color: var(--primary-text-color); text-align: right; font: inherit; cursor: pointer; }
   .session-cost strong { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-  .session-cost small { font-size: 10px; line-height: 1.3; color: var(--secondary-text-color); }
+  .session-cost small { font-size: 11px; line-height: 1.4; color: var(--secondary-text-color); }
   .session-cost.empty { cursor: default; }
   .cost-history > .cost-note:first-child { margin-top: 0; }
   .cost-note, .cost-record-details { font-size: 12px; color: var(--secondary-text-color); line-height: 1.5; }
   .cost-charger { margin: 10px 0; padding: 0 10px; background: var(--chip-background-color); border-radius: var(--tile-border-radius); }
   .cost-charger > summary { display: flex; align-items: center; gap: 8px; min-height: 48px; font-size: 13px; font-weight: 600; cursor: pointer; }
-  .cost-charger > summary span { margin-left: auto; color: var(--secondary-text-color); }
+  .cost-charger-name { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+  .cost-charger-count { color: var(--secondary-text-color); white-space: nowrap; font-size: 12px; font-weight: 400; }
+  .cost-charger[open] > summary > .cost-disclosure, .cost-record[open] > summary .cost-disclosure { transform: rotate(180deg); }
+  .cost-disclosure { transition: transform 160ms ease; }
   .cost-charger ha-icon { --mdc-icon-size: 20px; width: 20px; height: 20px; flex: 0 0 20px; }
   .cost-charger summary, .cost-record summary { list-style: none; }
   .cost-charger summary::-webkit-details-marker { display: none; }
   .cost-record { border-top: var(--sdc-border-faint); }
-  .cost-record summary { display: flex; justify-content: space-between; gap: 12px; padding: 12px 0; min-height: 44px; cursor: pointer; }
+  .cost-record summary { display: flex; align-items: start; justify-content: space-between; gap: 12px; padding: 12px 0; min-height: 44px; cursor: pointer; }
   .cost-record-copy, .cost-record-value { display: grid; gap: 5px; min-width: 0; overflow-wrap: anywhere; }
   .cost-record strong { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
   .cost-record small { font-size: 11px; color: var(--secondary-text-color); }
-  .cost-record-value { text-align: right; }
+  .cost-record-value { text-align: right; flex-shrink: 0; max-width: 44%; }
+  .cost-record-amount { display: flex; align-items: center; justify-content: end; gap: 6px; }
+  .cost-record-amount ha-icon { width: 16px; height: 16px; --mdc-icon-size: 16px; flex-basis: 16px; }
   .cost-record-details p { margin: 4px 0 10px; }
   .battery-value { font-size: 28px; font-weight: 600; line-height: 1; letter-spacing: -.045em; font-variant-numeric: tabular-nums; }
   .battery-value span { font-size: 13px; color: var(--secondary-text-color); margin-left: 2px; letter-spacing: 0; }
@@ -121,7 +126,10 @@ export const OVERVIEW_CSS = `
   .control-unavailable { display: block; color: var(--secondary-text-color); font-size: 11px; margin-top: 4px; }
   .settings-panel .setting-controls { grid-template-columns: 1fr; }
   .dialog-panel { outline: none; }
-  .setting-input { font-size: 16px; }
+  .setting-input, .setting-select { font-size: 16px; min-height: 44px; min-width: 0; }
+  .setting-editor-button { min-height: 44px; min-width: 44px; }
+  .setting-editor-actions { flex-wrap: wrap; }
+  .charger-diagnostics dt, .charger-diagnostics dd { min-width: 0; overflow-wrap: anywhere; }
   button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 3px; }
   @container charging-overview (max-width: 540px) {
     .ev-row { grid-template-columns: 1fr; }
@@ -130,7 +138,10 @@ export const OVERVIEW_CSS = `
     .status-hero, .ev-node { padding-left: 14px; padding-right: 14px; }
     .status-title { font-size: 19px; }
     .charger-heading { gap: 10px; }
-    .charger-icon { width: 34px; height: 38px; flex-basis: 34px; }
+    /* The charger name already identifies the port; the decorative icon gives
+       its space to the vehicle and cost on a narrow dashboard column. */
+    .charger-icon { display: none; }
+    .charger-totals { max-width: 44%; }
     .battery-value { font-size: 25px; }
   }
   @media (prefers-reduced-motion: reduce) {

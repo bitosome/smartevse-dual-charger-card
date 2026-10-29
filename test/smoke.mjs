@@ -1188,7 +1188,7 @@ check('duty cycle uses a named child editor with one Back and X',
   root.querySelector('dialog')?.getAttribute('aria-label') === 'Duty cycle' &&
   root.querySelectorAll('dialog [aria-label="Back"]').length === 1 &&
   root.querySelectorAll('dialog .family-dialog-header [title="Close"]').length === 1 &&
-  !!root.querySelector('input[aria-label="Value (min)"]'));
+  !!root.querySelector('input[aria-label="Duty cycle (min)"]'));
 el._updateEditorDraft('number.duty', String(Number(states['number.duty'].state) + 5)); el._render(); await el.updateComplete;
 click('dialog [aria-label="Back"]'); await el.updateComplete;
 check('numeric child Back protects its unsent draft',
@@ -1211,6 +1211,25 @@ check('main charging history is a root modal without Settings or Back',
   !root.querySelector('dialog [aria-label="Back"]') && root.querySelector('.ev-row') === chargerTiles);
 click('dialog [title="Close"]'); await el.updateComplete;
 check('charging history closes back to its main-card opener',root.activeElement === mainHistoryOpener);
+
+// Price labels preserve missing data and provide the value to screen readers.
+check('unknown cost is never presented as a numeric approximation',
+  el._costLabel(null) === 'Unavailable' &&
+  el._costLabel({...sampleRecord, cost: NaN}) === 'Unavailable' &&
+  el._costLabel({...sampleRecord, energy_kwh: 1, priced_kwh: 0}) === 'Unavailable');
+check('zero and negative electricity cost remain valid estimates',
+  el._costLabel({...sampleRecord, cost: 0}).startsWith('≈ ') &&
+  el._costLabel({...sampleRecord, cost: -1}).startsWith('≈ '));
+check('cost history button includes the charger and formatted estimate in its accessible name',
+  root.querySelector('.smartevse_1 .session-cost')?.getAttribute('aria-label')?.includes(el._costLabel(sampleRecord)));
+const historyCommandsBefore = calls.length;
+mainHistoryOpener.click(); await el.updateComplete;
+check('history summaries label their session count and expose a record disclosure',
+  root.querySelector('.cost-charger-name')?.textContent.includes('Carport charger') &&
+  root.querySelector('.cost-charger-count')?.textContent.includes('1 session') &&
+  !!root.querySelector('.cost-record summary .cost-disclosure'));
+check('browsing charging costs sends no control commands', calls.length === historyCommandsBefore);
+el._closeActiveDialog(); await el.updateComplete;
 
 console.log(ok ? '\nSMOKE TEST OK' : '\nSMOKE TEST FAILED');
 process.exit(ok ? 0 : 1);
