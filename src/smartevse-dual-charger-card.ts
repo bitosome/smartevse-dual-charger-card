@@ -4,7 +4,7 @@ import { CARD_CSS } from "./styles/card";
 import { familyStyles, dialogStyles, componentStyles, glowStyles, FamilyFlowController, renderFamilyDialog, showEntityMoreInfo, UI_ICONS } from "@bitosome/ha-card-ui";
 import { buildGlow, type PulseColors } from "./shared/glow";
 
-const CARD_VERSION = "0.1.6";
+const CARD_VERSION = "0.1.7";
 
 const ACTIVE_GLOW: PulseColors = {
   weak: "rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha))",
@@ -495,6 +495,13 @@ class SmartEVSEFlowCard extends LitElement {
     const hours = Math.floor(minutes / 60);
     const rest = minutes % 60;
     return `${hours}:${String(rest).padStart(2, "0")}`;
+  }
+
+  // 60 % and above is healthy (green), 20-59 % a warning (yellow), below 20 % low (red).
+  _batteryLevel(percent) {
+    if (percent >= 60) return "high";
+    if (percent >= 20) return "medium";
+    return "low";
   }
 
   _batteryPercent(value) {
@@ -1829,7 +1836,7 @@ class SmartEVSEFlowCard extends LitElement {
               ${record ? `<button class="session-cost" data-action="open-history" data-charger="${this._safe(ev.key)}" aria-haspopup="dialog" aria-label="${this._safe(ev.smartevseName)} charging cost ${this._safe(this._costLabel(record))}; open history"><strong>${this._safe(this._costLabel(record))}</strong><small>${this._costData()?.error ? "History not saved" : record.partial ? "Partial estimate" : ev.connected && record.status !== "finished" ? "Session estimate" : "Last session"}</small></button>` : ev.connected && this._costData() ? `<span class="session-cost empty"><small>No cost recorded yet</small></span>` : ""}
             </div>
           </div>
-          ${ev.connected && battery !== null ? `<div class="battery-track" role="meter" aria-label="${this._safe(vehicleTitle)} battery" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${battery}"><span style="width:${battery}%"></span></div>` : ""}
+          ${ev.connected && battery !== null ? `<div class="battery-track" role="meter" aria-label="${this._safe(vehicleTitle)} battery" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${battery}"><span class="level-${this._batteryLevel(battery)}" style="width:${battery}%"></span></div>` : ""}
           ${ev.hasError ? `<p class="charger-message" role="status">${this._safe(ev.error)}</p>` : !ev.available ? `<p class="charger-message">Status cannot be read. Check the charger connection.</p>` : ""}
           ${diagnostics}
         </section>

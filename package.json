@@ -1,6 +1,6 @@
 {
   "name": "smartevse-dual-charger-card",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Visual SmartEVSE state and current-routing Lovelace card",
   "keywords": [
     "home-assistant",

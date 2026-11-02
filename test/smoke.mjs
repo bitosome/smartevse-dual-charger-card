@@ -1231,5 +1231,11 @@ check('history summaries label their session count and expose a record disclosur
 check('browsing charging costs sends no control commands', calls.length === historyCommandsBefore);
 el._closeActiveDialog(); await el.updateComplete;
 
+check('battery bands are green from 60 %, yellow from 20 % and red below 20 %',
+  [[100, 'high'], [60, 'high'], [59, 'medium'], [20, 'medium'], [19, 'low'], [0, 'low']]
+    .every(([level, band]) => el._batteryLevel(level) === band));
+check('connected vehicle battery meter carries its level band',
+  root.querySelector('.smartevse_1 .battery-track span')?.classList.contains('level-high'));
+
 console.log(ok ? '\nSMOKE TEST OK' : '\nSMOKE TEST FAILED');
 process.exit(ok ? 0 : 1);

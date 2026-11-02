@@ -101,7 +101,9 @@ export const OVERVIEW_CSS = `
   .battery-value { font-size: 28px; font-weight: 600; line-height: 1; letter-spacing: -.045em; font-variant-numeric: tabular-nums; }
   .battery-value span { font-size: 13px; color: var(--secondary-text-color); margin-left: 2px; letter-spacing: 0; }
   .battery-track { height: 5px; border-radius: 99px; background: color-mix(in srgb, var(--secondary-text-color) 15%, transparent); margin-top: 18px; overflow: hidden; }
-  .battery-track span { height: 100%; display: block; background: var(--status-success-color); border-radius: inherit; }
+  .battery-track span { height: 100%; display: block; background: var(--success-color, #43a047); border-radius: inherit; }
+  .battery-track span.level-medium { background: var(--warning-color, #ffa600); }
+  .battery-track span.level-low { background: var(--error-color, #db4437); }
   .charger-message { font-size: 12px; line-height: 1.5; margin: var(--large-gap) 0 0; color: var(--secondary-text-color); overflow-wrap: anywhere; }
   .compact { padding-bottom: 18px; }
   .compact .charger-status { margin-top: 3px; }

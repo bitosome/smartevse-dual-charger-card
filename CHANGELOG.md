@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.7 — 2026-11-02
+
+- Colour the connected vehicle's battery meter by level: green from 60 %, yellow from 20 % to 59 %, red below 20 %, using the theme's success, warning and error colours.
+
+Validation: typecheck, production build and offline smoke checks including the new level bands. No physical charger commands were sent.
+
 ## 0.1.2 — 2026-10-26
 
 - Use the shared settings cog for editing the charging plan and opening Settings, and advertise modal launchers consistently to assistive technology.
