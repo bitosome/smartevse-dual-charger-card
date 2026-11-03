@@ -282,6 +282,11 @@ ha-card {
   text-align: left;
 }
 
+/* A left-aligned list keeps every label on the same edge, so skip the shared centring shift. */
+.modal-options .modal-option > * {
+  translate: none;
+}
+
 .modal-option-title {
   min-width: 0;
   overflow-wrap: anywhere;

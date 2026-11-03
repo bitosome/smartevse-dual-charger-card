@@ -1288,19 +1288,18 @@ check('history summaries label their session count and expose a record disclosur
 check('browsing charging costs sends no control commands', calls.length === historyCommandsBefore);
 el._closeActiveDialog(); await el.updateComplete;
 
-check('battery bands are green from 60 %, yellow from 20 % and red below 20 %',
-  [[100, 'high'], [60, 'high'], [59, 'medium'], [20, 'medium'], [19, 'low'], [0, 'low']]
-    .every(([level, band]) => el._batteryLevel(level) === band));
-check('connected vehicle battery meter carries its level band',
-  root.querySelector('.smartevse_1 .battery-track span')?.classList.contains('level-high'));
+const batteryMeter = root.querySelector('.smartevse_1 .family-level-meter.battery-meter');
+check('connected vehicle battery uses the shared level meter with its band',
+  batteryMeter?.getAttribute('role') === 'meter' &&
+  batteryMeter.querySelector('.family-level-fill')?.dataset.tone === 'success');
 
 // Shared presentation: plan chips, status colours and HA-aware formatting.
 const cardCss = [...root.querySelectorAll('style')].map((node) => node.textContent).join('\n');
 check('an unavailable charger uses the readable unavailable colour, not amber',
   /\.tone-unavailable \.charger-status \{ color: var\(--family-unavailable\); \}/.test(cardCss) &&
   !/var\(--status-(success|warn|alert)-color\)/.test(cardCss));
-check('battery bands use the shared status aliases',
-  /level-medium \{ background: var\(--family-warning\)/.test(cardCss) && /level-low \{ background: var\(--family-error\)/.test(cardCss));
+check('the battery bar comes from the shared level meter, not card CSS',
+  !/\.battery-track|level-medium|level-low/.test(cardCss) && /\.battery-meter \{ margin-top: 18px; \}/.test(cardCss));
 check('the outer card uses the family radius and divider border without a heavy shadow',
   /border-radius: var\(--family-radius\);\s*border: 1px solid var\(--divider-color/.test(cardCss) && !/0 10px 30px/.test(cardCss));
 const savedLocale = el._hass.locale;

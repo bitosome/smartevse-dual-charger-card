@@ -82,11 +82,8 @@ export const OVERVIEW_CSS = `
   .cost-record-details p { margin: 4px 0 10px; }
   .battery-value { font-size: 28px; font-weight: 600; line-height: 1; letter-spacing: -.045em; font-variant-numeric: tabular-nums; }
   .battery-value span { font-size: 13px; color: var(--secondary-text-color); margin-left: 2px; letter-spacing: 0; }
-  /* Track matches the family vehicle meter; level thresholds stay in the card. */
-  .battery-track { height: 6px; border-radius: 999px; background: color-mix(in srgb, var(--primary-text-color) 12%, transparent); margin-top: 18px; overflow: hidden; }
-  .battery-track span { height: 100%; display: block; background: var(--family-success); border-radius: inherit; }
-  .battery-track span.level-medium { background: var(--family-warning); }
-  .battery-track span.level-low { background: var(--family-error); }
+  /* The bar is the shared levelMeter(); the card only places it. */
+  .battery-meter { margin-top: 18px; }
   .charger-message { font-size: 12px; line-height: 1.5; margin: var(--large-gap) 0 0; color: var(--secondary-text-color); overflow-wrap: anywhere; }
   .compact { padding-bottom: 18px; }
   .compact .charger-status { margin-top: 3px; }

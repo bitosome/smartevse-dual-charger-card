@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.1 — 2026-11-03
+
+- Bundle `@bitosome/ha-card-ui` 1.5.0. The vehicle battery bar is the shared family level meter, so it matches the Volvo battery and the Vallox fan speed; the battery bands now come from the shared library. Unselected charge-policy pills keep their label centred.
+
 ## 0.2.0 — 2026-11-03
 
 - Adopt `@bitosome/ha-card-ui` 1.4.0 status colours: charger states, plan pills and the battery meter now use the shared success, warning, error and unavailable aliases, so the bar and the "Charging" text can no longer show two greens. An unavailable charger reads in the quiet unavailable colour instead of amber. Battery thresholds are unchanged.

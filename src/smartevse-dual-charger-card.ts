@@ -4,11 +4,11 @@ import { CARD_CSS } from "./styles/card";
 import {
   familyStyles, dialogStyles, componentStyles, glowStyles, FamilyFlowController, renderFamilyDialog, showEntityMoreInfo,
   UI_ICONS, TONE_ICONS, pendingIndicator, formatHassNumber, formatHassCurrency, formatHassTime, formatHassDateTime,
-  formatHassDuration, hassTimeZone, UNAVAILABLE_TEXT, type Tone,
+  formatHassDuration, hassTimeZone, UNAVAILABLE_TEXT, levelMeterMarkup, batteryTone, type Tone,
 } from "@bitosome/ha-card-ui";
 import { buildGlow, type PulseColors } from "./shared/glow";
 
-const CARD_VERSION = "0.2.0";
+const CARD_VERSION = "0.2.1";
 
 // String twin of the shared pendingIndicator(); this card renders through unsafeHTML.
 const PENDING_INDICATOR = `<span class="family-pending-indicator" aria-hidden="true"></span>`;
@@ -493,13 +493,6 @@ class SmartEVSEFlowCard extends LitElement {
       return UNAVAILABLE_TEXT;
     }
     return formatHassDuration(this._hass, minutes * 60);
-  }
-
-  // 60 % and above is healthy (green), 20-59 % a warning (yellow), below 20 % low (red).
-  _batteryLevel(percent) {
-    if (percent >= 60) return "high";
-    if (percent >= 20) return "medium";
-    return "low";
   }
 
   _batteryPercent(value) {
@@ -1857,7 +1850,7 @@ class SmartEVSEFlowCard extends LitElement {
               ${record ? `<button class="session-cost" data-action="open-history" data-charger="${this._safe(ev.key)}" aria-haspopup="dialog" aria-label="${this._safe(ev.smartevseName)} charging cost ${this._safe(this._costLabel(record))}; open history"><strong>${this._safe(this._costLabel(record))}</strong><small>${this._costData()?.error ? "History not saved" : record.partial ? "Partial estimate" : ev.connected && record.status !== "finished" ? "Session estimate" : "Last session"}</small></button>` : ev.connected && this._costData() ? `<span class="session-cost empty"><small>No cost recorded yet</small></span>` : ""}
             </div>
           </div>
-          ${ev.connected && battery !== null ? `<div class="battery-track" role="meter" aria-label="${this._safe(vehicleTitle)} battery" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${battery}"><span class="level-${this._batteryLevel(battery)}" style="width:${battery}%"></span></div>` : ""}
+          ${ev.connected && battery !== null ? levelMeterMarkup({ value: battery, label: `${vehicleTitle} battery`, tone: batteryTone(battery), className: "battery-meter" }) : ""}
           ${ev.hasError ? `<p class="charger-message" role="status">${this._safe(ev.error)}</p>` : !ev.available ? `<p class="charger-message">Status cannot be read. Check the charger connection.</p>` : ""}
           ${diagnostics}
         </section>
