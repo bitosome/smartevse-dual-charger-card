@@ -1,13 +1,9 @@
 /** Overview presentation. Colors/glow/shape are inherited from Space Hub tokens and WLED. */
 export const OVERVIEW_CSS = `
   :host {
-    --sdc-font-tiny: 10px;
-    --sdc-font-label: 11px;
     --sdc-font-detail: 12px;
     --sdc-font-body: 13px;
-    --sdc-font-button: 13px;
     --sdc-font-value: 14px;
-    --sdc-font-title: 18px;
     --sdc-font-icon: 20px;
   }
   .flow-stage {
@@ -29,32 +25,18 @@ export const OVERVIEW_CSS = `
   .status-copy { gap: 14px; }
   .status-title { font-size: 21px; font-weight: 600; line-height: 1.3; letter-spacing: -.025em; overflow-wrap: anywhere; }
   .overview-note { margin: 0; color: var(--secondary-text-color); font-size: 13px; line-height: 1.5; }
-  .flow-stage > .overview-note, .dialog-content > .overview-note {
-    position: relative; z-index: 1; background: var(--sdc-surface-panel);
+  .flow-stage > .overview-note, .dialog-content > .overview-note,
+  .flow-stage > .family-notice, .flow-stage > .pending-note {
+    position: relative; z-index: 1;
   }
+  .flow-stage > .overview-note, .dialog-content > .overview-note, .flow-stage > .pending-note { background: var(--sdc-surface-panel); }
   .status-pill-groups { gap: var(--large-gap); }
   .status-pill-group { gap: var(--medium-gap); }
   .status-pill-group-items { display: contents; }
   .status-pill-group + .status-pill-group { padding-top: var(--large-gap); margin-top: 0; }
-  .status-pill, .status-pill-group-label {
-    min-height: 28px; height: auto; padding: 4px 8px;
-    font-size: 12px; line-height: 1.4; white-space: normal; overflow: visible; overflow-wrap: anywhere;
-    border: none;
-  }
-  .status-pill-group-label {
-    padding: 3px 8px; white-space: nowrap;
-    color: var(--sdc-action-color); background: color-mix(in srgb, var(--sdc-action-color) 18%, var(--chip-background-color));
-    border: 1px solid color-mix(in srgb, var(--sdc-action-color) 32%, transparent);
-  }
-  .status-pill-icon, .status-pill-group-label .status-pill-icon {
-    --mdc-icon-size: 17px; height: 17px; width: 17px; flex: 0 0 17px; margin-right: 5px;
-  }
-  .status-pill-group-label .status-pill-icon { --mdc-icon-size: 20px; width: 20px; height: 20px; flex-basis: 20px; }
-  .plan-note {
-    display: inline-flex; align-items: center; min-height: 28px; max-width: 100%; padding: 4px 8px;
-    border-radius: var(--chip-border-radius); background: color-mix(in srgb, var(--secondary-text-color) 13%, var(--chip-background-color));
-    color: var(--secondary-text-color); font-size: var(--sdc-font-label); line-height: 1.4; order: 2;
-  }
+  /* Plan pills are shared .family-chip elements; the enabled-state label keeps its toggle icon. */
+  .status-pill-group-label { flex: 0 0 auto; white-space: nowrap; }
+  .status-pill-group .plan-note { max-width: 100%; color: var(--secondary-text-color); order: 2; }
   .status-runtime-pills { margin: 0; }
   .ev-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--large-gap); margin: 0; align-items: start; }
   .ev-node { padding: 16px 16px 0; clip-path: none; overflow: visible; }
@@ -69,10 +51,10 @@ export const OVERVIEW_CSS = `
   .vehicle-name { margin: 3px 0 6px; font-size: 17px; line-height: 1.3; font-weight: 600; overflow-wrap: anywhere; letter-spacing: -.015em; }
   .charger-status { overflow-wrap: anywhere; display: flex; align-items: center; gap: 6px; color: var(--secondary-text-color); font-size: 12px; line-height: 1.5; }
   .state-dot { height: 6px; width: 6px; flex: 0 0 6px; border-radius: 50%; background: currentColor; }
-  .tone-charging .charger-status, .tone-complete .charger-status { color: var(--status-success-color); }
-  .tone-error .charger-status { color: var(--status-alert-color); }
-  .tone-unavailable .charger-status { color: var(--status-warn-color); }
-  .visual-charging .charger-icon { color: var(--status-success-color); }
+  .tone-charging .charger-status, .tone-complete .charger-status { color: var(--family-success); }
+  .tone-error .charger-status { color: var(--family-error); }
+  .tone-unavailable .charger-status { color: var(--family-unavailable); }
+  .visual-charging .charger-icon { color: var(--family-success); }
   .charger-totals { min-width: 0; display: grid; gap: 5px; text-align: right; flex: 0 0 auto; max-width: 38%; }
   .session-cost { display: grid; gap: 3px; padding: 6px 0; min-height: 44px; border: 0; background: none; color: var(--primary-text-color); text-align: right; font: inherit; cursor: pointer; }
   .session-cost strong { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
@@ -100,10 +82,11 @@ export const OVERVIEW_CSS = `
   .cost-record-details p { margin: 4px 0 10px; }
   .battery-value { font-size: 28px; font-weight: 600; line-height: 1; letter-spacing: -.045em; font-variant-numeric: tabular-nums; }
   .battery-value span { font-size: 13px; color: var(--secondary-text-color); margin-left: 2px; letter-spacing: 0; }
-  .battery-track { height: 5px; border-radius: 99px; background: color-mix(in srgb, var(--secondary-text-color) 15%, transparent); margin-top: 18px; overflow: hidden; }
-  .battery-track span { height: 100%; display: block; background: var(--success-color, #43a047); border-radius: inherit; }
-  .battery-track span.level-medium { background: var(--warning-color, #ffa600); }
-  .battery-track span.level-low { background: var(--error-color, #db4437); }
+  /* Track matches the family vehicle meter; level thresholds stay in the card. */
+  .battery-track { height: 6px; border-radius: 999px; background: color-mix(in srgb, var(--primary-text-color) 12%, transparent); margin-top: 18px; overflow: hidden; }
+  .battery-track span { height: 100%; display: block; background: var(--family-success); border-radius: inherit; }
+  .battery-track span.level-medium { background: var(--family-warning); }
+  .battery-track span.level-low { background: var(--family-error); }
   .charger-message { font-size: 12px; line-height: 1.5; margin: var(--large-gap) 0 0; color: var(--secondary-text-color); overflow-wrap: anywhere; }
   .compact { padding-bottom: 18px; }
   .compact .charger-status { margin-top: 3px; }
@@ -129,8 +112,6 @@ export const OVERVIEW_CSS = `
   .settings-panel .setting-controls { grid-template-columns: 1fr; }
   .dialog-panel { outline: none; }
   .setting-input, .setting-select { font-size: 16px; min-height: 44px; min-width: 0; }
-  .setting-editor-button { min-height: 44px; min-width: 44px; }
-  .setting-editor-actions { flex-wrap: wrap; }
   .charger-diagnostics dt, .charger-diagnostics dd { min-width: 0; overflow-wrap: anywhere; }
   button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 3px; }
   @container charging-overview (max-width: 540px) {

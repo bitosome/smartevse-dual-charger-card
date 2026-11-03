@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.0 — 2026-11-03
+
+- Adopt `@bitosome/ha-card-ui` 1.4.0 status colours: charger states, plan pills and the battery meter now use the shared success, warning, error and unavailable aliases, so the bar and the "Charging" text can no longer show two greens. An unavailable charger reads in the quiet unavailable colour instead of amber. Battery thresholds are unchanged.
+- Show errors and unavailable plan fields as shared notices with a severity icon. Charging history uses the same notice for ledger errors and a plain empty state when no session is recorded.
+- Show progress on the control that sent a command: plan toggles, price and timer switches, plan fields and the chosen policy show a spinner with `aria-busy`, and Apply turns into "Saving…". A dismissed request keeps its status with the same indicator on the main card.
+- Move Apply and Cancel into the dialog footer as equal-width shared buttons, with Apply as the primary action.
+- Render Schedule and Force charge as shared chips that keep their on-state icon, with quieter constraint chips. Charge-policy choices are shared toggle pills that expose their pressed state.
+- Format prices, energy, current, costs, durations and times from the Home Assistant profile (language, number format, 12/24-hour clock and time zone). Durations read like `5 min` or `1 h 30 min`; missing values read "Unavailable".
+- Match the family card shell (theme radius, divider border, no heavy shadow), use sentence-case 12px labels, keep the expanded plan face neutral and let enabled plan glows follow the WLED idle effect. Remove unused tokens and dead control-tile styles.
+
+Validation: typecheck, production build and 138 offline smoke checks, including new checks for shared notices, control-level pending states, the equal footer, pressed policy choices, shared chips and HA-aware formatting. No physical charger commands were sent.
+
 ## 0.1.7 — 2026-11-02
 
 - Colour the connected vehicle's battery meter by level: green from 60 %, yellow from 20 % to 59 %, red below 20 %, using the theme's success, warning and error colours.

@@ -204,7 +204,7 @@ controllerAttrs.smartevse_2_state = 'Ready to Charge';
 el.hass = hass;
 await new Promise((r) => setTimeout(r, 30));
 check('two eligible cars show the live rotation countdown',
-  root.querySelector('.status-runtime-pill')?.textContent.includes('10m 00s'));
+  root.querySelector('.status-runtime-pill')?.textContent.includes('10\u202fmin'));
 controllerAttrs.smartevse_1_charge_current = 0;
 el.hass = hass;
 await new Promise((r) => setTimeout(r, 30));
@@ -259,7 +259,7 @@ controllerAttrs.smartevse_1_charge_current = 12.3;
 el.hass = hass;
 await new Promise((r) => setTimeout(r, 30));
 check('diagnostics retain their native dialog and show fresh current after a state update',
-  root.querySelector('dialog') === nativeDetails && nativeDetails.open && nativeDetails.textContent.includes('12.3 A'));
+  root.querySelector('dialog') === nativeDetails && nativeDetails.open && nativeDetails.textContent.includes('12.3\u202fA'));
 root.querySelector('dialog .family-dialog-header [title="Close"]').click();
 await new Promise((r) => setTimeout(r, 30));
 check('closing diagnostics returns focus to the correct charger',
@@ -422,13 +422,13 @@ if (!savedSchedulePrice || !submenuDoesNotActivateSchedule || !enabledSchedule |
 
 const scheduleHeroGroup = root.querySelector('[data-plan-group="use-schedule"]');
 const heroPlanDetails = [...(scheduleHeroGroup?.querySelectorAll('.status-pill') || [])].map((node) => node.textContent.trim());
-const schedulePriceIsUnmet = [...(scheduleHeroGroup?.querySelectorAll('.status-pill.tone-neutral') || [])]
-  .some((node) => node.textContent.trim() === '≤ 0.150 EUR/kWh');
+const schedulePriceIsUnmet = [...(scheduleHeroGroup?.querySelectorAll('.status-pill[data-tone="neutral"]') || [])]
+  .some((node) => node.textContent.trim() === '≤ 0.150\u202fEUR/kWh');
 const heroShowsCombinedPlan =
   !root.querySelector('[data-plan-group="force-charge"]') &&
   !!scheduleHeroGroup?.querySelector('.status-pill ha-icon[icon="mdi:clock-start"]') &&
   scheduleHeroGroup?.querySelector('.status-pill-group-label')?.textContent.trim() === 'Schedule' &&
-  heroPlanDetails.includes('≤ 0.150 EUR/kWh') &&
+  heroPlanDetails.includes('≤ 0.150\u202fEUR/kWh') &&
   schedulePriceIsUnmet &&
   heroPlanDetails.some((detail) => detail === el._formatDateTime(states['schedule.charging'].attributes.next_event)) &&
   !heroPlanDetails.some((detail) => detail.startsWith('Waiting for'));
@@ -530,12 +530,12 @@ const forcePriceGroup = root.querySelector('[data-plan-group="force-charge"]');
 const standingScheduleGroup = root.querySelector('[data-plan-group="use-schedule"]');
 const forcePriceHeroDetails = [...(forcePriceGroup?.querySelectorAll('.status-pill') || [])].map((node) => node.textContent.trim());
 const standingScheduleDetails = [...(standingScheduleGroup?.querySelectorAll('.status-pill') || [])].map((node) => node.textContent.trim());
-const forcePriceIsUnmet = [...(forcePriceGroup?.querySelectorAll('.status-pill.tone-neutral') || [])]
-  .some((node) => node.textContent.trim() === '≤ 0.150 EUR/kWh');
+const forcePriceIsUnmet = [...(forcePriceGroup?.querySelectorAll('.status-pill[data-tone="neutral"]') || [])]
+  .some((node) => node.textContent.trim() === '≤ 0.150\u202fEUR/kWh');
 const forcePriceHeroIsUnambiguous =
   /Force.*(waiting|price)/i.test(root.querySelector('.status-title')?.textContent || '') &&
   forcePriceGroup?.querySelector('.status-pill-group-label')?.textContent.trim() === 'Force charge' &&
-  forcePriceHeroDetails.includes('≤ 0.150 EUR/kWh') &&
+  forcePriceHeroDetails.includes('≤ 0.150\u202fEUR/kWh') &&
   forcePriceIsUnmet &&
   standingScheduleGroup?.querySelector('.status-pill-group-label')?.textContent.trim() === 'Schedule' &&
   standingScheduleDetails.some((detail) => detail === el._formatDateTime(states['schedule.charging'].attributes.next_event)) &&
@@ -613,11 +613,11 @@ const forceHeroDetails = [...(orderedHeroGroups[0]?.querySelectorAll('.status-pi
 const forceTimerStaysInHero =
   orderedHeroGroups[1]?.querySelector('.status-pill-group-label')?.textContent.trim() === 'Schedule' &&
   scheduleHeroDetails.some((detail) => detail === el._formatDateTime(states['schedule.charging'].attributes.next_event)) &&
-  scheduleHeroDetails.includes('≤ 0.150 EUR/kWh') &&
+  scheduleHeroDetails.includes('≤ 0.150\u202fEUR/kWh') &&
   orderedHeroGroups[0]?.querySelector('.status-pill-group-label')?.textContent.trim() === 'Force charge' &&
-  forceHeroDetails.includes('5m 00s left') &&
-  orderedHeroGroups[0]?.querySelector('.status-pill.tone-neutral')?.textContent.trim() === '5m 00s left' &&
-  forceHeroDetails.includes('≤ 0.150 EUR/kWh') &&
+  forceHeroDetails.includes('5\u202fmin left') &&
+  orderedHeroGroups[0]?.querySelector('.status-pill[data-tone="neutral"]')?.textContent.trim() === '5\u202fmin left' &&
+  forceHeroDetails.includes('≤ 0.150\u202fEUR/kWh') &&
   ![...scheduleHeroDetails, ...forceHeroDetails].some((detail) => detail.startsWith('Waiting for')) &&
   orderedHeroGroups.length === 2 &&
   !root.querySelector('.flow-line-badge');
@@ -630,14 +630,14 @@ states['sensor.current_price'].state = '0.10';
 el.hass = hass;
 await new Promise((r) => setTimeout(r, 30));
 const acceptedSchedulePrice = root.querySelector(
-  '[data-plan-group="use-schedule"] .status-pill.tone-success',
-)?.textContent.trim() === '≤ 0.150 EUR/kWh';
+  '[data-plan-group="use-schedule"] .status-pill[data-tone="success"]',
+)?.textContent.trim() === '≤ 0.150\u202fEUR/kWh';
 const acceptedForcePrice = root.querySelector(
-  '[data-plan-group="force-charge"] .status-pill.tone-success',
-)?.textContent.trim() === '≤ 0.150 EUR/kWh';
+  '[data-plan-group="force-charge"] .status-pill[data-tone="success"]',
+)?.textContent.trim() === '≤ 0.150\u202fEUR/kWh';
 const activeForceTimer = root.querySelector(
-  '[data-plan-group="force-charge"] .status-pill.tone-active',
-)?.textContent.trim() === '5m 00s left';
+  '[data-plan-group="force-charge"] .status-pill[data-tone="accent"]',
+)?.textContent.trim() === '5\u202fmin left';
 console.log(`${acceptedSchedulePrice && acceptedForcePrice ? 'PASS' : 'FAIL'}: both acceptable-price pills turn green when the live price meets the limit`);
 console.log(`${activeForceTimer ? 'PASS' : 'FAIL'}: combined Force timer returns to active color when its price condition is met`);
 if (!acceptedSchedulePrice || !acceptedForcePrice || !activeForceTimer) ok = false;
@@ -849,7 +849,17 @@ check('priority choices preserve reordered raw values and unknown option labels'
   policyOptions[0]?.textContent.trim() === 'Custom solar priority' &&
   policyOptions[1]?.textContent.trim() === 'SmartEVSE 2 only');
 const policyCallStart = calls.length;
+const policyCallService = hass.callService;
+let releasePolicy;
+hass.callService = (...args) => new Promise((resolve) => { releasePolicy = () => resolve(policyCallService(...args)); });
 click('[data-action="choose-option"][data-value="smartevse_2_only"]');
+await new Promise((r) => setTimeout(r, 30));
+const pendingPolicy = root.querySelector('[data-action="choose-option"][data-value="smartevse_2_only"]');
+check('a pending policy choice shows progress on the chosen option only',
+  pendingPolicy?.getAttribute('aria-busy') === 'true' && !!pendingPolicy?.querySelector('.family-pending-indicator') &&
+  root.querySelectorAll('.modal-option .family-pending-indicator').length === 1);
+releasePolicy();
+hass.callService = policyCallService;
 await new Promise((r) => setTimeout(r, 30));
 click('[data-action="choose-option"][data-value="Custom solar priority"]');
 await new Promise((r) => setTimeout(r, 30));
@@ -869,6 +879,13 @@ await new Promise((r) => setTimeout(r, 30));
 check('priority service failure is visible and restores the previous choice',
   /Priority rejected by controller/.test(root.querySelector('.settings-panel [role="alert"]')?.textContent || '') &&
   root.querySelector('[data-action="choose-option"].selected')?.dataset.value === 'Custom solar priority');
+check('setting errors use the shared error notice with its severity icon',
+  !!root.querySelector('.settings-panel .family-notice[data-tone="error"][role="alert"] ha-icon.family-notice-icon') &&
+  !root.querySelector('.wizard-error'));
+check('policy choices are shared toggle pills exposing their pressed state',
+  [...root.querySelectorAll('[data-action="choose-option"]')].every((option) => option.classList.contains('family-toggle') &&
+    option.getAttribute('aria-pressed') === String(option.classList.contains('selected'))) &&
+  root.querySelector('[data-action="choose-option"][aria-pressed="true"]')?.dataset.value === 'Custom solar priority');
 hass.callService = workingCallService;
 click('dialog [aria-label="Back"]');
 await new Promise((r) => setTimeout(r, 30));
@@ -993,7 +1010,7 @@ check('session history stays content sized and scrolls within the shared body',
   !!root.querySelector('dialog .family-dialog-body') &&
   root.querySelectorAll('.cost-charger').length === 2);
 check('history shows energy and honest empty state',
-  /19.30 kWh/.test(root.textContent) && /No charging sessions recorded yet/.test(root.textContent));
+  /19.30\u202fkWh/.test(root.textContent) && /No charging sessions recorded yet/.test(root.textContent));
 sampleRecord.cost = -1.25;sampleRecord.partial=true;sampleRecord.issues=['price_unavailable'];sampleRecord.unpriced_kwh=.3;
 el.hass=hass;await new Promise(r=>setTimeout(r,30));
 check('updated negative costs and missing-price warnings render',
@@ -1018,6 +1035,8 @@ click('dialog .family-dialog-header [title="Close"]');
 await new Promise(r => setTimeout(r, 30));
 check('a pending charging request remains visible after X dismisses its dialog',
   !root.querySelector('dialog') && /Updating charging plan/.test(root.textContent) && el._forceWizardBusy);
+check('the dismissed request status shows the shared pending indicator',
+  !!root.querySelector('.flow-stage > .pending-note[role="status"] .family-pending-indicator'));
 openForceWizard();
 await new Promise(r => setTimeout(r, 30));
 await el._saveForceWizardNumber('number.price');
@@ -1030,6 +1049,32 @@ await pendingSave;
 await new Promise(r => setTimeout(r, 30));
 check('a dismissed request completes without reopening the modal',
   !root.querySelector('dialog') && !el._forceWizardBusy && !/Updating charging plan/.test(root.textContent));
+
+// Progress belongs to the toggle that sent the command, not to the whole dialog.
+const forceStateBeforeToggle = states['switch.force'].state;
+states['switch.force'].state = 'on';
+el.hass = hass;
+openForceWizard();
+await new Promise(r => setTimeout(r, 30));
+const queuedPlanCalls = [];
+hass.callService = (...args) => new Promise(resolve => queuedPlanCalls.push(() => resolve(workingCallService(...args))));
+const planTogglePending = el._toggleChargingPlan('now');
+await el.updateComplete;
+const pendingPlanToggle = root.querySelector('[data-action="toggle-charging-plan"][data-mode="now"]');
+check('a pending plan toggle carries aria-busy and a visible indicator beside its title',
+  pendingPlanToggle?.getAttribute('aria-busy') === 'true' &&
+  !!pendingPlanToggle.closest('.wizard-option')?.querySelector('.control-pending .family-pending-indicator') &&
+  root.querySelector('[data-action="toggle-charging-plan"][data-mode="schedule"]')?.getAttribute('aria-busy') !== 'true' &&
+  !root.querySelector('dialog .family-dialog-body > div[aria-busy="true"]'));
+hass.callService = workingCallService;
+while (queuedPlanCalls.length) queuedPlanCalls.shift()();
+await planTogglePending;
+await el.updateComplete;
+check('a completed plan toggle clears its pending state',
+  !root.querySelector('[data-action="toggle-charging-plan"][aria-busy="true"]') && !root.querySelector('.control-pending'));
+el._closeActiveDialog(); await el.updateComplete;
+states['switch.force'].state = forceStateBeforeToggle;
+el.hass = hass;
 hass.callService = workingCallService;
 
 // Multi-command plans retain the exact request through close/reopen and stale telemetry.
@@ -1087,6 +1132,12 @@ const dutyApply = el._saveEditor('number.duty'); await el.updateComplete;
 await el._saveEditor('number.duty');
 check('pending settings disable editing and prevent duplicate submissions',
   dutyWrites === 1 && root.querySelector('[data-action="save-edit"]')?.disabled && root.querySelector('.setting-input')?.disabled);
+const pendingApply = root.querySelector('dialog .family-dialog-footer.equal [data-action="save-edit"]');
+check('Apply and Cancel share the equal dialog footer and Apply shows its pending state',
+  pendingApply?.classList.contains('family-action') && pendingApply.classList.contains('primary') &&
+  pendingApply.getAttribute('aria-busy') === 'true' && !!pendingApply.querySelector('.family-pending-indicator') &&
+  /Saving/.test(pendingApply.textContent) &&
+  root.querySelector('dialog .family-dialog-footer.equal [data-action="cancel-edit"]')?.classList.contains('family-action'));
 el._requestDialogClose(); await el.updateComplete;
 check('closing a sent setting shows pending status without pretending it is an unsaved draft',
   !root.querySelector('dialog') && /Saving settings/.test(root.textContent));
@@ -1236,6 +1287,33 @@ check('battery bands are green from 60 %, yellow from 20 % and red below 20 %',
     .every(([level, band]) => el._batteryLevel(level) === band));
 check('connected vehicle battery meter carries its level band',
   root.querySelector('.smartevse_1 .battery-track span')?.classList.contains('level-high'));
+
+// Shared presentation: plan chips, status colours and HA-aware formatting.
+const cardCss = [...root.querySelectorAll('style')].map((node) => node.textContent).join('\n');
+check('an unavailable charger uses the readable unavailable colour, not amber',
+  /\.tone-unavailable \.charger-status \{ color: var\(--family-unavailable\); \}/.test(cardCss) &&
+  !/var\(--status-(success|warn|alert)-color\)/.test(cardCss));
+check('battery bands use the shared status aliases',
+  /level-medium \{ background: var\(--family-warning\)/.test(cardCss) && /level-low \{ background: var\(--family-error\)/.test(cardCss));
+check('the outer card uses the family radius and divider border without a heavy shadow',
+  /border-radius: var\(--family-radius\);\s*border: 1px solid var\(--divider-color/.test(cardCss) && !/0 10px 30px/.test(cardCss));
+const savedLocale = el._hass.locale;
+el._hass.locale = { language: 'de', number_format: 'decimal_comma', time_format: '24' };
+check('current, duration and money follow the Home Assistant profile locale',
+  el._formatCurrent(12.3) === '12,3\u202fA' && el._formatMinutes(90) === '1\u202fh 30\u202fmin' &&
+  el._costAmount({ ...sampleRecord, cost: 1.5 }).includes('1,50'));
+check('missing durations and times use the shared unavailable marker',
+  el._formatSeconds('unknown') === 'Unavailable' && el._formatDateTime('') === 'Unavailable' &&
+  el._costTime('not a time') === 'Time unavailable');
+el._hass.locale = savedLocale;
+states['switch.schedule'].state = 'on';
+el.hass = hass; await el.updateComplete;
+const enabledScheduleLabel = root.querySelector('[data-plan-group="use-schedule"] .status-pill-group-label');
+check('enabled plan labels are shared accent chips that keep their on-state icon',
+  enabledScheduleLabel?.classList.contains('family-chip') && enabledScheduleLabel.dataset.tone === 'accent' &&
+  enabledScheduleLabel.querySelector('ha-icon')?.getAttribute('icon') === 'mdi:toggle-switch' &&
+  !/Enabled/.test(enabledScheduleLabel.textContent) &&
+  [...root.querySelectorAll('.status-pill')].every((pill) => pill.classList.contains('family-chip') && pill.dataset.tone));
 
 console.log(ok ? '\nSMOKE TEST OK' : '\nSMOKE TEST FAILED');
 process.exit(ok ? 0 : 1);

@@ -5,54 +5,18 @@ import { OVERVIEW_CSS } from './overview';
 export const CARD_CSS = `
 ${DESIGN_TOKENS_CSS}
 :host {
-  --sdc-settings-panel-width: min(390px, calc(100vw - 32px));
-  --panel-shadow-color: rgba(0,0,0,0.50);
+  /* Card aliases over the family tokens; chip tokens come from DESIGN_TOKENS_CSS. */
   --pulse-weak: rgba(0,0,0,0.10);
   --pulse-strong: rgba(0,0,0,0.18);
-  --sdc-card-base: var(--ha-card-background, var(--card-background-color));
-  --sdc-surface-panel: var(--sdc-card-base);
-  --sdc-surface-tile: var(
-    --space-hub-tile-background,
-    color-mix(in srgb, var(--sdc-card-base) 96%, var(--primary-text-color) 4%)
-  );
-  --sdc-surface-chip: rgba(0,0,0,0.06);
-  --chip-background-color: var(--sdc-surface-chip);
-  --chip-border-radius: var(--ha-badge-border-radius, 999px);
-  --sdc-font-tiny: 8px;
-  --sdc-font-label: 9px;
-  --sdc-font-detail: 10px;
-  --sdc-font-body: 11px;
-  --sdc-font-button: 12px;
-  --sdc-font-value: 12px;
-  --sdc-font-title: 14px;
-  --sdc-font-icon: 16px;
+  --sdc-surface-panel: var(--family-surface);
+  --sdc-surface-control: var(--space-hub-tile-background, var(--family-tile));
   --sdc-weight-medium: 600;
   --sdc-weight-strong: 700;
-  --sdc-letter-label: 0.06em;
-  --sdc-letter-title: 0;
-  --sdc-led-off: rgb(var(--sdc-led-off-rgb));
-  --sdc-led-idle: rgb(var(--sdc-led-idle-rgb));
-  --sdc-led-error: rgb(var(--sdc-led-error-rgb));
-  --sdc-led-charging: rgb(var(--sdc-led-charging-rgb));
-  --sdc-border-subtle: 1px solid rgba(148, 163, 184, 0.16);
-  --sdc-border-muted: 1px solid rgba(148, 163, 184, 0.18);
-  --sdc-border-soft: 1px solid rgba(148, 163, 184, 0.14);
   --sdc-border-faint: 1px solid rgba(148, 163, 184, 0.12);
-  --sdc-border-input: 1px solid rgba(148, 163, 184, 0.24);
   --sdc-border-hover: rgba(148, 163, 184, 0.28);
-  --sdc-surface-muted: rgba(15, 23, 42, 0.08);
-  --sdc-surface-soft: rgba(15, 23, 42, 0.12);
-  --sdc-surface-control: var(--sdc-surface-tile);
-  --sdc-surface-elevated: var(--sdc-surface-control);
-  --sdc-surface-input: rgba(2, 6, 23, 0.52);
-  --sdc-surface-badge: var(--chip-background-color);
-  --sdc-surface-glass: rgba(0,0,0,0.06);
-  --sdc-surface-icon: var(--chip-background-color);
   --sdc-action-color: var(--primary-color, var(--status-active-color));
   --sdc-action-foreground: var(--text-primary-color, #fff);
-  --sdc-text-muted: var(--secondary-text-color);
-  --sdc-shadow-soft: var(--tile-shadow-default);
-  --sdc-shadow-badge: var(--tile-shadow-default);
+  --sdc-text-muted: var(--family-muted);
 }
 
 *,
@@ -66,13 +30,11 @@ ha-card {
   /* Bound decorative light without clipping native top-layer dialogs. */
   overflow: clip;
   position: relative;
-  border-radius: var(--ha-card-border-radius, 16px);
-  border: 0;
+  border-radius: var(--family-radius);
+  border: 1px solid var(--divider-color, rgba(255, 255, 255, 0.06));
   background: var(--sdc-surface-panel);
-  box-shadow: 0 10px 30px var(--panel-shadow-color);
   padding: var(--tile-padding-large);
   color: var(--primary-text-color);
-  transition: filter 0.12s ease, box-shadow 0.12s ease;
 }
 
 .missing {
@@ -93,47 +55,19 @@ ha-card {
   overflow: visible;
 }
 
-.control-tile-wrap,
-.status-hero-wrap,
-.ev-node-wrap,
-.wizard-option-wrap {
-  position: relative;
+/* glowStyles positions .family-tile-wrap glows and owns the overlay mask. */
+.family-tile-wrap {
   width: 100%;
   display: block;
   border-radius: var(--tile-border-radius);
   overflow: visible;
 }
 
-.control-tile-wrap .glow-under,
-.status-hero-wrap .glow-under,
-.ev-node-wrap .glow-under,
-.wizard-option-wrap .glow-under {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  z-index: 0;
-  display: block;
-  border-radius: var(--tile-border-radius);
+/* Glows stay hidden until the WLED visual or an enabled plan activates them. */
+.family-tile-wrap .glow-under {
   opacity: 0;
 }
 
-.control-tile-wrap .glow-overlay,
-.status-hero-wrap .glow-overlay,
-.ev-node-wrap .glow-overlay,
-.wizard-option-wrap .glow-overlay {
-  position: absolute;
-  inset: -10px -14px -18px -14px;
-  border-radius: inherit;
-  pointer-events: none;
-  mix-blend-mode: screen;
-  opacity: 0.9;
-  -webkit-mask-image: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.25) 18px, rgba(0,0,0,0.9) 44px, rgba(0,0,0,1) 100%);
-  mask-image: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.25) 18px, rgba(0,0,0,0.9) 44px, rgba(0,0,0,1) 100%);
-  -webkit-mask-repeat: no-repeat;
-  mask-repeat: no-repeat;
-}
-
-.control-tile,
 .setting-tile {
   appearance: none;
   display: grid;
@@ -159,53 +93,6 @@ ha-card {
   transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
 }
 
-.primary-controls {
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--large-gap);
-}
-
-.primary-controls .control-tile-wrap {
-  height: 58px;
-}
-
-.primary-controls .control-tile {
-  grid-template-columns: minmax(0, 1fr) 32px;
-  height: 100%;
-  min-height: 58px;
-  align-items: center;
-  padding: var(--tile-padding);
-  border-radius: var(--tile-border-radius);
-  background: var(--sdc-surface-control);
-  box-shadow: var(--tile-shadow-default);
-}
-
-.primary-controls .control-icon {
-  grid-column: 2;
-  grid-row: 1;
-  align-self: center;
-  width: 32px;
-  height: 32px;
-  border-radius: var(--chip-border-radius);
-}
-
-.primary-controls .control-copy {
-  grid-column: 1;
-  grid-row: 1;
-  align-self: center;
-  align-content: center;
-  gap: 4px;
-}
-
-.primary-controls .control-label {
-  font-size: var(--sdc-font-label);
-}
-
-.primary-controls .control-value {
-  font-size: var(--sdc-font-title);
-  line-height: 1.1;
-  letter-spacing: var(--sdc-letter-title);
-}
-
 .setting-controls {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -221,7 +108,6 @@ ha-card {
   transform: none;
 }
 
-.control-icon,
 .setting-icon {
   display: grid;
   place-items: center;
@@ -234,7 +120,6 @@ ha-card {
   transition: color 0.12s ease, background 0.12s ease;
 }
 
-.control-icon ha-icon,
 .setting-icon ha-icon {
   --mdc-icon-size: var(--sdc-font-icon);
   color: inherit;
@@ -246,7 +131,6 @@ ha-card {
   line-height: 1;
 }
 
-.control-copy,
 .setting-copy {
   display: grid;
   align-content: start;
@@ -254,63 +138,28 @@ ha-card {
   min-width: 0;
 }
 
-.control-label,
 .setting-label,
-.section-title span,
-.flow-line-icon {
+.section-title span {
   color: var(--sdc-text-muted);
-  font-size: var(--sdc-font-label);
-  font-weight: var(--sdc-weight-strong);
-  letter-spacing: var(--sdc-letter-label);
-  line-height: 1;
-  text-transform: uppercase;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.3;
 }
 
-.control-value,
 .setting-value,
-.status-title,
-.modal-option-title,
-.ev-label-text {
+.status-title {
   font-weight: var(--sdc-weight-strong);
-  letter-spacing: var(--sdc-letter-title);
 }
 
-.control-label,
 .setting-label {
   margin-bottom: 0;
 }
 
-.control-value,
 .setting-value {
   font-size: var(--sdc-font-value);
   line-height: 1.2;
   margin-bottom: 0;
   transition: color 0.12s ease;
-}
-
-.control-tile.state-off {
-  color: var(--secondary-text-color);
-}
-
-.control-tile.state-off .control-value {
-  color: var(--secondary-text-color);
-}
-
-.control-tile.state-on .control-icon,
-.control-tile.state-on .control-value {
-  color: var(--sdc-led-charging);
-}
-
-.control-tile.state-armed .control-icon,
-.control-tile.state-armed .control-value,
-.control-tile.state-waiting .control-icon,
-.control-tile.state-waiting .control-value {
-  color: var(--sdc-led-idle);
-}
-
-.control-tile.state-warn .control-icon,
-.control-tile.state-warn .control-value {
-  color: var(--sdc-led-error);
 }
 
 .setting-editor {
@@ -339,34 +188,8 @@ ha-card {
   box-shadow: 0 0 0 2px var(--primary-color, var(--status-active-color));
 }
 
-.setting-editor-actions {
-  display: flex;
-  gap: var(--medium-gap);
-}
-
-.setting-editor-button {
-  appearance: none;
-  border: 0;
-  border-radius: var(--chip-border-radius);
-  background: var(--chip-background-color);
-  color: var(--primary-text-color);
-  padding: 6px 10px;
-  font: inherit;
-  font-size: var(--sdc-font-button);
-  font-weight: var(--sdc-weight-medium);
-  cursor: pointer;
-}
-
-.setting-editor-button.tone-primary {
-  border-color: var(--sdc-border-hover);
-  background: var(--chip-background-color);
-}
-
 :where(
-  .control-tile,
   .setting-tile,
-  .setting-editor-button,
-  .modal-option,
   .wizard-option-main,
   .wizard-plan-toggle,
   .wizard-schedule-entity,
@@ -377,10 +200,7 @@ ha-card {
 }
 
 :where(
-  .control-tile,
   .setting-tile,
-  .setting-editor-button,
-  .modal-option,
   .wizard-option-main,
   .wizard-plan-toggle,
   .wizard-schedule-entity,
@@ -393,10 +213,7 @@ ha-card {
 
 @media (hover: hover) and (pointer: fine) {
   :where(
-    .control-tile,
     .setting-tile,
-    .setting-editor-button,
-    .modal-option,
     .wizard-option-main,
     .wizard-plan-toggle,
     .wizard-schedule-entity,
@@ -408,10 +225,7 @@ ha-card {
 }
 
 :where(
-  .control-tile,
   .setting-tile,
-  .setting-editor-button,
-  .modal-option,
   .wizard-option-main,
   .wizard-plan-toggle,
   .wizard-schedule-entity,
@@ -457,49 +271,20 @@ ha-card {
   gap: 8px;
 }
 
-.modal-option {
-  appearance: none;
-  border: 0;
-  border-radius: var(--tile-border-radius);
-  background: var(--sdc-surface-control);
-  box-shadow: var(--tile-shadow-default);
-  color: var(--primary-text-color);
-  cursor: pointer;
+/* Shared toggle pills (.family-toggle) laid out as a full-width option list. */
+.modal-options .modal-option {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: var(--medium-gap);
-  min-height: 44px;
-  padding: 9px 10px;
-  position: relative;
+  grid-template-columns: minmax(0, 1fr) 22px;
+  width: 100%;
+  min-height: 48px;
+  padding: 10px 12px;
+  border-radius: var(--tile-border-radius);
   text-align: left;
-  overflow: hidden;
-  clip-path: inset(0 round var(--tile-border-radius));
-  background-clip: padding-box;
-  transition: box-shadow 0.12s ease, color 0.12s ease, filter 0.12s ease;
-}
-
-.modal-option.selected {
-  --pulse-weak: rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha));
-  --pulse-strong: rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-strong-alpha));
-  color: var(--sdc-led-idle);
-  box-shadow: var(--tile-shadow-active);
 }
 
 .modal-option-title {
-  font-size: 13px;
-  letter-spacing: var(--sdc-letter-title);
-  line-height: 1.15;
-}
-
-.modal-option-check {
-  --mdc-icon-size: 18px;
-  display: block;
-  width: var(--mdc-icon-size);
-  height: var(--mdc-icon-size);
-  min-width: var(--mdc-icon-size);
-  justify-self: end;
-  color: inherit;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .wizard-options,
@@ -660,10 +445,9 @@ ha-card {
   transition: box-shadow 0.16s ease, filter 0.16s ease;
 }
 
+/* The expanded face stays neutral; colour belongs to under-layer glows only. */
 .wizard-expandable.expanded {
-  --pulse-weak: rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha));
-  --pulse-strong: rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-strong-alpha));
-  box-shadow: var(--tile-shadow-active);
+  box-shadow: var(--tile-shadow-default);
 }
 
 .wizard-toggle {
@@ -770,11 +554,9 @@ ha-card {
 
 .wizard-duration-part-label {
   color: var(--sdc-text-muted);
-  font-size: var(--sdc-font-label);
-  font-weight: var(--sdc-weight-strong);
-  letter-spacing: var(--sdc-letter-label);
-  line-height: 1;
-  text-transform: uppercase;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.3;
 }
 
 .wizard-input-unit {
@@ -794,56 +576,34 @@ ha-card {
   }
 }
 
-.wizard-error {
-  position: relative;
-  z-index: 1;
+.dialog-content > .family-notice,
+.dialog-content > .family-async-state,
+.wizard-expansion > .family-notice {
   margin-top: var(--medium-gap);
-  padding: 8px 10px;
-  border-radius: var(--tile-border-radius);
-  background: linear-gradient(rgba(var(--sdc-led-error-rgb), var(--sdc-led-error-weak-alpha)), rgba(var(--sdc-led-error-rgb), var(--sdc-led-error-weak-alpha))), var(--sdc-surface-panel);
-  color: var(--sdc-led-error);
-  font-size: var(--sdc-font-body);
-  font-weight: var(--sdc-weight-medium);
-  line-height: 1.35;
 }
 
-.control-tile.tone-ok {
-  --pulse-weak: rgba(var(--sdc-led-charging-rgb), var(--sdc-led-charging-weak-alpha));
-  --pulse-strong: rgba(var(--sdc-led-charging-rgb), var(--sdc-led-charging-strong-alpha));
-  box-shadow: var(--tile-shadow-active);
+.wizard-step-body > .family-notice {
+  margin-top: 0;
 }
 
-.control-tile-wrap.tone-ok .glow-under {
-  --pulse-weak: rgba(var(--sdc-led-charging-rgb), var(--sdc-led-charging-weak-alpha));
-  --pulse-strong: rgba(var(--sdc-led-charging-rgb), var(--sdc-led-charging-strong-alpha));
-  opacity: 1;
-  box-shadow: 0 18px 40px var(--pulse-strong), 0 6px 18px var(--pulse-weak);
+/* Progress shown on the control whose write is in flight. */
+.control-pending {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--sdc-text-muted);
+  font-size: 12px;
+  font-weight: 500;
 }
 
-.control-tile.tone-active {
-  --pulse-weak: rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha));
-  --pulse-strong: rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-strong-alpha));
-  box-shadow: var(--tile-shadow-active);
+.control-pending .family-pending-indicator {
+  width: 16px;
+  height: 16px;
+  flex-basis: 16px;
 }
 
-.control-tile-wrap.tone-active .glow-under {
-  --pulse-weak: rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha));
-  --pulse-strong: rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-strong-alpha));
-  opacity: 1;
-  box-shadow: 0 18px 40px var(--pulse-strong), 0 6px 18px var(--pulse-weak);
-}
-
-.control-tile.tone-warn {
-  --pulse-weak: rgba(var(--sdc-led-error-rgb), var(--sdc-led-error-weak-alpha));
-  --pulse-strong: rgba(var(--sdc-led-error-rgb), var(--sdc-led-error-strong-alpha));
-  box-shadow: var(--tile-shadow-active);
-}
-
-.control-tile-wrap.tone-warn .glow-under {
-  --pulse-weak: rgba(var(--sdc-led-error-rgb), var(--sdc-led-error-weak-alpha));
-  --pulse-strong: rgba(var(--sdc-led-error-rgb), var(--sdc-led-error-strong-alpha));
-  opacity: 1;
-  box-shadow: 0 18px 40px var(--pulse-strong), 0 6px 18px var(--pulse-weak);
+.wizard-field-label .control-pending {
+  margin-left: 8px;
 }
 
 .flow-stage {
@@ -983,69 +743,6 @@ ha-card {
   min-width: 0;
 }
 
-.status-pill,
-.status-pill-group-label {
-  --status-pill-color: var(--sdc-text-muted);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 0;
-  max-width: 100%;
-  box-sizing: border-box;
-  height: 26px;
-  padding: 0 7px;
-  border: 1px solid color-mix(in srgb, var(--status-pill-color) 30%, transparent);
-  border-radius: var(--chip-border-radius);
-  background: color-mix(in srgb, var(--status-pill-color) 13%, var(--chip-background-color));
-  color: var(--status-pill-color);
-  font-size: 10px;
-  font-weight: var(--chip-text-font-weight);
-  line-height: 1.35;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.status-pill-icon {
-  --mdc-icon-size: 23.4px;
-  width: 23.4px;
-  height: 23.4px;
-  flex: 0 0 23.4px;
-  margin-right: 4px;
-}
-
-.status-pill-group-label .status-pill-icon {
-  --mdc-icon-size: 34px;
-  width: 34px;
-  height: 34px;
-  flex-basis: 34px;
-}
-
-.status-pill-group-label {
-  flex: 0 0 auto;
-  font-weight: 700;
-}
-
-.status-pill.tone-active,
-.status-pill-group-label.tone-active {
-  --status-pill-color: var(--primary-color, var(--status-active-color));
-}
-
-.status-pill.tone-success,
-.status-pill-group-label.tone-success {
-  --status-pill-color: var(--status-success-color);
-}
-
-.status-pill.tone-warn,
-.status-pill-group-label.tone-warn {
-  --status-pill-color: var(--status-warn-color);
-}
-
-.status-pill.tone-error,
-.status-pill-group-label.tone-error {
-  --status-pill-color: var(--status-alert-color);
-}
-
 .home-controls {
   margin-bottom: 0;
   overflow: visible;
@@ -1064,7 +761,6 @@ ha-card {
 }
 
 .section-title span {
-  letter-spacing: var(--sdc-letter-label);
   color: var(--primary-text-color);
 }
 
@@ -1120,12 +816,6 @@ ha-card {
   opacity: 1;
   box-shadow: 0 18px 40px var(--pulse-strong), 0 6px 18px var(--pulse-weak);
   animation: var(--node-glow-animation) var(--node-glow-duration) ease-in-out infinite;
-}
-
-@keyframes glowPulse {
-  0% { box-shadow: 0 10px 20px var(--pulse-weak); }
-  50% { box-shadow: 0 28px 56px var(--pulse-strong); }
-  100% { box-shadow: 0 10px 20px var(--pulse-weak); }
 }
 
 ${OVERVIEW_CSS}

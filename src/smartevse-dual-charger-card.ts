@@ -1,10 +1,17 @@
-import { LitElement, html } from "lit";
+import { LitElement, html, nothing } from "lit";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { CARD_CSS } from "./styles/card";
-import { familyStyles, dialogStyles, componentStyles, glowStyles, FamilyFlowController, renderFamilyDialog, showEntityMoreInfo, UI_ICONS } from "@bitosome/ha-card-ui";
+import {
+  familyStyles, dialogStyles, componentStyles, glowStyles, FamilyFlowController, renderFamilyDialog, showEntityMoreInfo,
+  UI_ICONS, TONE_ICONS, pendingIndicator, formatHassNumber, formatHassCurrency, formatHassTime, formatHassDateTime,
+  formatHassDuration, hassTimeZone, UNAVAILABLE_TEXT, type Tone,
+} from "@bitosome/ha-card-ui";
 import { buildGlow, type PulseColors } from "./shared/glow";
 
-const CARD_VERSION = "0.1.7";
+const CARD_VERSION = "0.2.0";
+
+// String twin of the shared pendingIndicator(); this card renders through unsafeHTML.
+const PENDING_INDICATOR = `<span class="family-pending-indicator" aria-hidden="true"></span>`;
 
 const ACTIVE_GLOW: PulseColors = {
   weak: "rgba(var(--sdc-led-idle-rgb), var(--sdc-led-idle-weak-alpha))",
@@ -25,12 +32,15 @@ interface HassEntity {
 
 interface HassLocale {
   language?: string;
+  number_format?: string;
   time_format?: string;
+  time_zone?: string;
 }
 
 interface HomeAssistant {
   states: Record<string, HassEntity | undefined>;
   locale?: HassLocale;
+  config?: { time_zone?: string; currency?: string };
   callService(domain: string, service: string, data?: Record<string, any>): Promise<unknown>;
 }
 
@@ -96,6 +106,8 @@ class SmartEVSEFlowCard extends LitElement {
   private _forceNowPrice = false;
   private _forceWizardBusy = false;
   private _forceWizardError = "";
+  // The control whose write is in flight; it shows the pending indicator and aria-busy.
+  private _pendingControl = "";
   private _lastRenderKey = "";
   // unsafeHTML replaces the subtree: preserve user-owned UI state explicitly.
   private _detailsOpen = new Map<string, boolean>();
@@ -448,7 +460,7 @@ class SmartEVSEFlowCard extends LitElement {
   _pretty(value) {
     const text = String(value ?? "").trim();
     if (!text) {
-      return "n/a";
+      return UNAVAILABLE_TEXT;
     }
     return text
       .replaceAll("_", " ")
@@ -456,16 +468,13 @@ class SmartEVSEFlowCard extends LitElement {
   }
 
   _formatCurrent(value) {
-    if (!Number.isFinite(value)) {
-      return "0.0 A";
-    }
-    return `${value.toFixed(1)} A`;
+    return formatHassNumber(this._hass, Number.isFinite(value) ? value : 0, { digits: 1, unit: "A" });
   }
 
   _formatOptionalCurrent(value) {
     const number = Number(value);
     if (!Number.isFinite(number)) {
-      return "n/a";
+      return UNAVAILABLE_TEXT;
     }
     return this._formatCurrent(number);
   }
@@ -473,28 +482,17 @@ class SmartEVSEFlowCard extends LitElement {
   _formatSeconds(value) {
     const seconds = Number.parseInt(value, 10);
     if (!Number.isFinite(seconds) || seconds <= 0) {
-      return "n/a";
+      return UNAVAILABLE_TEXT;
     }
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const rest = seconds % 60;
-    if (hours > 0) {
-      return `${hours}h ${String(minutes).padStart(2, "0")}m`;
-    }
-    if (minutes > 0) {
-      return `${minutes}m ${String(rest).padStart(2, "0")}s`;
-    }
-    return `${rest}s`;
+    return formatHassDuration(this._hass, seconds);
   }
 
   _formatMinutes(value) {
     const minutes = Number.parseInt(value, 10);
     if (!Number.isFinite(minutes) || minutes <= 0) {
-      return "n/a";
+      return UNAVAILABLE_TEXT;
     }
-    const hours = Math.floor(minutes / 60);
-    const rest = minutes % 60;
-    return `${hours}:${String(rest).padStart(2, "0")}`;
+    return formatHassDuration(this._hass, minutes * 60);
   }
 
   // 60 % and above is healthy (green), 20-59 % a warning (yellow), below 20 % low (red).
@@ -516,33 +514,36 @@ class SmartEVSEFlowCard extends LitElement {
     return Math.max(0, Math.min(100, Math.round(numeric)));
   }
 
-  _homeAssistantDateTimeFormatOptions() {
-    const locale = this._hass?.locale;
-    const timeFormat = String(locale?.time_format || "").toLowerCase();
-    const options: Intl.DateTimeFormatOptions = {
-      weekday: "short",
-      hour: "2-digit",
-      minute: "2-digit",
-    };
-    if (timeFormat === "12") {
-      options.hour12 = true;
+  // Weekday and clock time in the HA profile's language, clock and time zone.
+  _formatDateTime(value) {
+    const time = formatHassTime(this._hass, value);
+    if (time === UNAVAILABLE_TEXT) {
+      return time;
     }
-    if (timeFormat === "24") {
-      options.hour12 = false;
+    try {
+      const weekday = new Intl.DateTimeFormat(this._hass?.locale?.language || "en", {
+        weekday: "short",
+        timeZone: hassTimeZone(this._hass),
+      }).format(new Date(value));
+      return `${weekday} ${time}`;
+    } catch {
+      return time;
     }
-    return { locale: locale?.language, options };
   }
 
-  _formatDateTime(value) {
-    if (!value) {
-      return "n/a";
-    }
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) {
-      return "n/a";
-    }
-    const { locale, options } = this._homeAssistantDateTimeFormatOptions();
-    return new Intl.DateTimeFormat(locale, options).format(date);
+  // String twin of the shared notice(), with the tone's severity icon.
+  _notice(tone: Tone, message: string, role: "status" | "alert" = tone === "error" ? "alert" : "status") {
+    const icon = TONE_ICONS[tone];
+    return `<div class="family-notice" data-tone="${tone}" role="${role}">${icon ? `<ha-icon class="family-notice-icon" icon="${icon}" aria-hidden="true"></ha-icon>` : ""}<div class="family-notice-content"><span class="family-notice-message">${this._safe(message)}</span></div></div>`;
+  }
+
+  // Overview status while a write continues after its dialog was dismissed.
+  _pendingNote(message: string) {
+    return `<div class="family-async-state pending-note" role="status">${PENDING_INDICATOR}<span>${this._safe(message)}</span></div>`;
+  }
+
+  _isPendingControl(key: string) {
+    return this._writePending && this._pendingControl === key;
   }
 
   _wledVisuals(attrs) {
@@ -674,7 +675,7 @@ class SmartEVSEFlowCard extends LitElement {
       connectedEvName,
       connected,
       state: state || "Idle",
-      mode: mode || "n/a",
+      mode: mode || UNAVAILABLE_TEXT,
       battery,
       chargeCurrent: Number.isFinite(chargeCurrent) ? chargeCurrent : 0,
       maxCurrent: Number.isFinite(maxCurrent) ? maxCurrent : 0,
@@ -686,32 +687,6 @@ class SmartEVSEFlowCard extends LitElement {
       tone,
       visual,
     };
-  }
-
-  _controlTile({ entityId, icon, label, value, tone = "default", state = "off", action = "toggle" }) {
-    if (!entityId) {
-      return "";
-    }
-    const normalizedState = String(state || "off").toLowerCase();
-    return `
-      <div class="control-tile-wrap tone-${this._safe(tone)} state-${this._safe(normalizedState)}">
-        <div class="glow-under control-glow" aria-hidden="true">
-          <div class="glow-overlay"></div>
-        </div>
-        <button
-          class="control-tile tone-${this._safe(tone)} state-${this._safe(normalizedState)}"
-          data-action="${this._safe(action)}"
-          data-entity="${this._safe(entityId)}"
-          type="button"
-        >
-          <div class="control-icon"><ha-icon icon="${this._safe(icon)}"></ha-icon></div>
-          <div class="control-copy">
-            <div class="control-label">${this._safe(label)}</div>
-            <div class="control-value">${this._safe(value)}</div>
-          </div>
-        </button>
-      </div>
-    `;
   }
 
   _editorMeta(entityId) {
@@ -863,6 +838,7 @@ class SmartEVSEFlowCard extends LitElement {
     }
     this._settingsError = "";
     this._settingsBusy = true;
+    this._pendingControl = `save:${entityId}`;
     this._render();
     try {
       await this._hass.callService(meta.serviceDomain, meta.service, serviceData);
@@ -879,6 +855,7 @@ class SmartEVSEFlowCard extends LitElement {
       this._settingsError = error instanceof Error ? error.message : "Unable to save this setting.";
     } finally {
       this._settingsBusy = false;
+      this._pendingControl = "";
       this._render();
     }
   }
@@ -892,6 +869,7 @@ class SmartEVSEFlowCard extends LitElement {
     this._updateEditorDraft(entityId, value);
     this._settingsError = "";
     this._settingsBusy = true;
+    this._pendingControl = `option:${value}`;
     this._render();
     try {
       await this._hass.callService(meta.serviceDomain, meta.service, { entity_id: entityId, option: value });
@@ -901,6 +879,7 @@ class SmartEVSEFlowCard extends LitElement {
       this._settingsError = error instanceof Error ? error.message : "Unable to save this setting.";
     } finally {
       this._settingsBusy = false;
+      this._pendingControl = "";
       this._render();
     }
   }
@@ -997,6 +976,7 @@ class SmartEVSEFlowCard extends LitElement {
       return;
     }
     const enabled = mode === "schedule" ? this._isSchedulePlanActive() : this._isForcePlanActive();
+    this._pendingControl = `plan:${mode}`;
     if (enabled) {
       await this._disableChargingPlan(mode);
       return;
@@ -1011,6 +991,7 @@ class SmartEVSEFlowCard extends LitElement {
     this._syncPlanPreferencesFromEntities();
     this._savePlanPreferences();
     this._forceWizardBusy = true;
+    this._pendingControl ||= `plan:${mode}`;
     this._forceWizardError = "";
     this._render();
     try {
@@ -1040,6 +1021,7 @@ class SmartEVSEFlowCard extends LitElement {
       this._forceWizardError = error instanceof Error ? error.message : "Unable to turn off the charging plan.";
     } finally {
       this._forceWizardBusy = false;
+      this._pendingControl = "";
       this._render();
     }
   }
@@ -1062,6 +1044,7 @@ class SmartEVSEFlowCard extends LitElement {
     this._forceWizardError = "";
     this._savePlanPreferences();
     if (this._isSchedulePlanActive()) {
+      this._pendingControl = "schedule-price";
       await this._applyForceMode("schedule");
       return;
     }
@@ -1085,6 +1068,7 @@ class SmartEVSEFlowCard extends LitElement {
     this._forceWizardError = "";
     this._savePlanPreferences();
     if (this._isForcePlanActive()) {
+      this._pendingControl = "force-timer";
       await this._applyForceMode(this._forceNowMode());
       return;
     }
@@ -1109,6 +1093,7 @@ class SmartEVSEFlowCard extends LitElement {
     this._forceWizardError = "";
     this._savePlanPreferences();
     if (this._isForcePlanActive()) {
+      this._pendingControl = "force-price";
       await this._applyForceMode(this._forceNowMode());
       return;
     }
@@ -1154,6 +1139,7 @@ class SmartEVSEFlowCard extends LitElement {
       return;
     }
     this._forceWizardBusy = true;
+    this._pendingControl = `number:${entityId}`;
     this._forceWizardError = "";
     this._render();
     try {
@@ -1162,6 +1148,7 @@ class SmartEVSEFlowCard extends LitElement {
       this._forceWizardError = error instanceof Error ? error.message : "Unable to save this charging setting.";
     } finally {
       this._forceWizardBusy = false;
+      this._pendingControl = "";
       this._render();
     }
   }
@@ -1179,6 +1166,7 @@ class SmartEVSEFlowCard extends LitElement {
     const priceDraft = this._editorDraft(config.acceptable_price_entity);
     const durationDraft = this._editorDraft(config.force_charge_duration_entity);
     this._forceWizardBusy = true;
+    this._pendingControl ||= mode === "schedule" ? "plan:schedule" : "plan:now";
     this._forceWizardError = "";
     this._render();
     try {
@@ -1259,6 +1247,7 @@ class SmartEVSEFlowCard extends LitElement {
       this._forceWizardError = error instanceof Error ? error.message : "Unable to apply the charging plan.";
     } finally {
       this._forceWizardBusy = false;
+      this._pendingControl = "";
       this._render();
     }
   }
@@ -1294,8 +1283,8 @@ class SmartEVSEFlowCard extends LitElement {
 
         <div class="dialog-panel settings-panel">
           <div class="dialog-content">${settingsControls}
-          ${this._settingsBusy ? `<p class="overview-note" role="status">Saving settings…</p>` : ""}
-          ${this._settingsError ? `<div class="wizard-error" role="alert">${this._safe(this._settingsError)}</div>` : ""}</div>
+          ${this._settingsBusy ? this._pendingNote("Saving settings…") : ""}
+          ${this._settingsError ? this._notice("error", this._settingsError) : ""}</div>
         </div>
     `;
   }
@@ -1303,14 +1292,15 @@ class SmartEVSEFlowCard extends LitElement {
   _forceWizardNumberField(entityId, label) {
     const meta = this._editorMeta(entityId);
     if (!meta.supported || meta.kind !== "number") {
-      return `<div class="wizard-error">The configured ${this._safe(label.toLowerCase())} entity is unavailable.</div>`;
+      return this._notice("warning", `The configured ${label.toLowerCase()} entity is unavailable.`);
     }
+    const pending = this._isPendingControl(`number:${entityId}`);
     const min = meta.min !== null ? `min="${this._safe(meta.min)}"` : "";
     const max = meta.max !== null ? `max="${this._safe(meta.max)}"` : "";
     const step = meta.step !== null ? `step="${this._safe(meta.step)}"` : "";
     return `
-      <label class="wizard-field">
-        <span class="wizard-field-label">${this._safe(label)}</span>
+      <label class="wizard-field" ${pending ? `aria-busy="true"` : ""}>
+        <span class="wizard-field-label">${this._safe(label)}${pending ? `<span class="control-pending">${PENDING_INDICATOR}Saving…</span>` : ""}</span>
         <span class="wizard-input-wrap">
           <input
             class="setting-input force-input"
@@ -1331,8 +1321,9 @@ class SmartEVSEFlowCard extends LitElement {
   _forceDurationField(entityId) {
     const meta = this._editorMeta(entityId);
     if (!meta.supported || meta.kind !== "number") {
-      return `<div class="wizard-error">The configured charging duration entity is unavailable.</div>`;
+      return this._notice("warning", "The configured charging duration entity is unavailable.");
     }
+    const pending = this._isPendingControl(`number:${entityId}`);
     const rawMinutes = Number.parseFloat(this._editorDraft(entityId));
     const totalMinutes = Number.isFinite(rawMinutes) ? Math.max(0, Math.round(rawMinutes)) : 0;
     const hours = Math.floor(totalMinutes / 60);
@@ -1342,8 +1333,8 @@ class SmartEVSEFlowCard extends LitElement {
       ? Number(meta.step)
       : 1;
     return `
-      <div class="wizard-field wizard-duration-field">
-        <span class="wizard-field-label">Charging duration</span>
+      <div class="wizard-field wizard-duration-field" ${pending ? `aria-busy="true"` : ""}>
+        <span class="wizard-field-label">Charging duration${pending ? `<span class="control-pending">${PENDING_INDICATOR}Saving…</span>` : ""}</span>
         <div class="wizard-duration-inputs">
           <label class="wizard-duration-part">
             <span class="wizard-duration-part-label">Hours</span>
@@ -1390,9 +1381,10 @@ class SmartEVSEFlowCard extends LitElement {
     }
 
     const busy = this._writePending;
-    const error = this._forceWizardError
-      ? `<div class="wizard-error" role="alert">${this._safe(this._forceWizardError)}</div>`
-      : "";
+    const error = this._forceWizardError ? this._notice("error", this._forceWizardError) : "";
+    // Visible progress sits on the triggering control; this announces it once.
+    const status = busy ? `<span class="family-visually-hidden" role="status">Updating charging plan…</span>` : "";
+    const pendingLine = `<span class="control-pending">${PENDING_INDICATOR}Updating…</span>`;
 
     if (this._forceWizardStep === "choose") {
       const scheduleEnabled = this._isSchedulePlanActive();
@@ -1428,9 +1420,14 @@ class SmartEVSEFlowCard extends LitElement {
               ${choices
                 .filter(choice => choice.available || choice.enabled)
                 .map((choice) => {
-                  const glowStyle = buildGlow(ACTIVE_GLOW, "pulse", choice.enabled).style;
+                  // Follow the WLED idle effect: a static WLED visual keeps the glow still.
+                  const glow = buildGlow(ACTIVE_GLOW, "static", choice.enabled).style;
+                  const glowStyle = glow
+                    ? `${glow} animation: var(--sdc-led-idle-glow-animation, none) var(--sdc-led-idle-glow-duration, 2.4s) ease-in-out infinite;`
+                    : "";
+                  const pending = this._isPendingControl(`plan:${choice.mode}`);
                   return `
-                    <div class="wizard-option-wrap ${choice.enabled ? "selected" : ""}">
+                    <div class="family-tile-wrap wizard-option-wrap ${choice.enabled ? "selected" : ""}">
                       <div class="glow-under wizard-option-glow" style="${this._safe(glowStyle)}" aria-hidden="true"><div class="glow-overlay"></div></div>
                       <div class="wizard-option ${choice.enabled ? "selected" : ""}">
                         <button
@@ -1443,7 +1440,7 @@ class SmartEVSEFlowCard extends LitElement {
                           <span class="wizard-option-icon"><ha-icon icon="${this._safe(choice.icon)}"></ha-icon></span>
                           <span class="wizard-option-copy">
                             <span class="wizard-option-title">${this._safe(choice.title)}</span>
-                            ${!choice.canToggle ? `<span class="control-unavailable">Unavailable</span>` : ""}
+                            ${pending ? pendingLine : !choice.canToggle ? `<span class="control-unavailable family-unavailable">${UNAVAILABLE_TEXT}</span>` : ""}
                           </span>
                           <ha-icon class="wizard-option-next" icon="mdi:chevron-right"></ha-icon>
                         </button>
@@ -1455,6 +1452,7 @@ class SmartEVSEFlowCard extends LitElement {
                           role="switch"
                           aria-checked="${choice.enabled ? "true" : "false"}"
                           aria-label="${this._safe(choice.title)}"
+                          ${pending ? `aria-busy="true"` : ""}
                           ${!choice.canToggle || (!choice.enabled && !this._isAvailable(this._config.controller_entity)) || busy ? "disabled" : ""}
                         >
                           <span class="wizard-plan-toggle-thumb"></span>
@@ -1466,7 +1464,7 @@ class SmartEVSEFlowCard extends LitElement {
                 .join("")}
             </div>
             ${this._entity(this._config.charge_policy_entity) || this._entity(this._config.duty_cycle_entity) ? `<button class="advanced-settings" data-action="open-settings" type="button" aria-haspopup="dialog"><ha-icon icon="${UI_ICONS.settings}" aria-hidden="true"></ha-icon><span>Settings</span><ha-icon icon="${UI_ICONS.next}" aria-hidden="true"></ha-icon></button>` : ""}
-            ${error}</div>
+            ${error}${status}</div>
           </div>
       `;
     }
@@ -1509,12 +1507,13 @@ class SmartEVSEFlowCard extends LitElement {
               type="button"
               role="switch"
               aria-checked="${this._schedulePriceGate ? "true" : "false"}"
+              ${this._isPendingControl("schedule-price") ? `aria-busy="true"` : ""}
               ${busy || (!priceReady && !this._schedulePriceGate) || (this._isSchedulePlanActive() && !this._isAvailable(this._schedulePriceEntity())) ? "disabled" : ""}
             >
               <span class="wizard-option-icon"><ha-icon icon="mdi:currency-eur"></ha-icon></span>
               <span class="wizard-toggle-copy">
                 <strong>Also require an acceptable price</strong>
-                ${!priceReady ? `<span class="control-unavailable">Unavailable</span>` : ""}
+                ${this._isPendingControl("schedule-price") ? pendingLine : !priceReady ? `<span class="control-unavailable family-unavailable">${UNAVAILABLE_TEXT}</span>` : ""}
               </span>
               <span class="wizard-toggle-state ${this._schedulePriceGate ? "selected" : ""}" aria-hidden="true">
                 <span class="wizard-toggle-state-thumb"></span>
@@ -1542,12 +1541,13 @@ class SmartEVSEFlowCard extends LitElement {
               type="button"
               role="switch"
               aria-checked="${this._forceNowTimer ? "true" : "false"}"
+              ${this._isPendingControl("force-timer") ? `aria-busy="true"` : ""}
               ${(!timerReady && !this._forceNowTimer) || busy || (this._isForcePlanActive() && !this._isAvailable(this._config.force_timer_entity)) ? "disabled" : ""}
             >
               <span class="wizard-option-icon"><ha-icon icon="mdi:timer-outline"></ha-icon></span>
               <span class="wizard-toggle-copy">
                 <strong>Stop after a set time</strong>
-                ${!timerReady ? `<span class="control-unavailable">Unavailable</span>` : ""}
+                ${this._isPendingControl("force-timer") ? pendingLine : !timerReady ? `<span class="control-unavailable family-unavailable">${UNAVAILABLE_TEXT}</span>` : ""}
               </span>
               <span class="wizard-toggle-state ${this._forceNowTimer ? "selected" : ""}" aria-hidden="true">
                 <span class="wizard-toggle-state-thumb"></span>
@@ -1568,12 +1568,13 @@ class SmartEVSEFlowCard extends LitElement {
               type="button"
               role="switch"
               aria-checked="${this._forceNowPrice ? "true" : "false"}"
+              ${this._isPendingControl("force-price") ? `aria-busy="true"` : ""}
               ${(!priceReady && !this._forceNowPrice) || busy || (this._isForcePlanActive() && !this._isAvailable(this._config.force_price_entity)) ? "disabled" : ""}
             >
               <span class="wizard-option-icon"><ha-icon icon="mdi:currency-eur"></ha-icon></span>
               <span class="wizard-toggle-copy">
                 <strong>Require an acceptable price</strong>
-                ${!priceReady ? `<span class="control-unavailable">Unavailable</span>` : ""}
+                ${this._isPendingControl("force-price") ? pendingLine : !priceReady ? `<span class="control-unavailable family-unavailable">${UNAVAILABLE_TEXT}</span>` : ""}
               </span>
               <span class="wizard-toggle-state ${this._forceNowPrice ? "selected" : ""}" aria-hidden="true">
                 <span class="wizard-toggle-state-thumb"></span>
@@ -1593,7 +1594,7 @@ class SmartEVSEFlowCard extends LitElement {
     return `
 
         <div class="dialog-panel force-wizard-panel wizard-step-panel">
-          <div class="dialog-content wizard-step-body">${field}${error}</div>
+          <div class="dialog-content wizard-step-body">${field}${error}${status}</div>
         </div>
     `;
   }
@@ -1602,25 +1603,28 @@ class SmartEVSEFlowCard extends LitElement {
     const meta = this._editorMeta(entityId);
     const draft = this._editorDraft(entityId);
     const content =
-      !meta.supported ? `<p class="overview-note">This setting is unavailable.</p>` : meta.kind === "select"
+      !meta.supported ? this._notice("warning", "This setting is unavailable.") : meta.kind === "select"
         ? `
-          <div class="modal-options">
+          <div class="modal-options" role="group" aria-label="${this._safe(this._dialogTitle())}">
             ${meta.optionItems
               .map((option) => {
                 const selected =
                   option.value === draft ||
                   (entityId === this._config.charge_policy_entity &&
                     option.label === this._chargePolicyDisplay(draft));
+                const pending = this._isPendingControl(`option:${option.value}`);
                 return `
                   <button
-                    class="modal-option ${selected ? "selected" : ""}"
+                    class="family-action family-toggle modal-option ${selected ? "selected" : ""}"
                     data-action="choose-option"
                     data-entity="${this._safe(entityId)}"
                     data-value="${this._safe(option.value)}"
+                    aria-pressed="${selected ? "true" : "false"}"
+                    aria-busy="${pending ? "true" : "false"}"
                     type="button" ${this._writePending ? "disabled" : ""}
                   >
                     <span class="modal-option-title">${this._safe(option.label)}</span>
-                    ${selected ? `<ha-icon class="modal-option-check" icon="mdi:check-circle"></ha-icon>` : ""}
+                    ${pending ? PENDING_INDICATOR : `<ha-icon class="family-toggle-check" icon="${UI_ICONS.check}" aria-hidden="true"></ha-icon>`}
                   </button>
                 `;
               })
@@ -1633,8 +1637,8 @@ class SmartEVSEFlowCard extends LitElement {
 
         <div class="dialog-panel settings-panel submenu-panel">
           <div class="dialog-content">${content}
-          ${this._settingsBusy ? `<p class="overview-note" role="status">Saving settings…</p>` : ""}
-          ${this._settingsError ? `<div class="wizard-error" role="alert">${this._safe(this._settingsError)}</div>` : ""}</div>
+          ${this._settingsBusy ? `<span class="family-visually-hidden" role="status">Saving settings…</span>` : ""}
+          ${this._settingsError ? this._notice("error", this._settingsError) : ""}</div>
         </div>
     `;
   }
@@ -1648,7 +1652,7 @@ class SmartEVSEFlowCard extends LitElement {
         <div class="setting-icon"><ha-icon icon="${this._safe(icon)}" aria-hidden="true"></ha-icon></div>
         <div class="setting-copy">
           <div class="setting-label">${this._safe(label)}</div>
-          <div class="setting-value">${meta.supported ? this._safe(value) : "Unavailable"}</div>
+          <div class="setting-value ${meta.supported ? "" : "family-unavailable"}">${meta.supported ? this._safe(value) : UNAVAILABLE_TEXT}</div>
         </div>
         <ha-icon class="setting-next" icon="${UI_ICONS.next}" aria-hidden="true"></ha-icon>
       </button>
@@ -1700,12 +1704,24 @@ class SmartEVSEFlowCard extends LitElement {
     return `
       <div class="setting-editor">
         ${control}
-        <div class="setting-editor-actions">
-          <button class="setting-editor-button tone-primary" data-action="save-edit" data-entity="${this._safe(entityId)}" type="button" ${this._writePending ? "disabled" : ""}>Apply</button>
-          <button class="setting-editor-button" data-action="cancel-edit" data-entity="${this._safe(entityId)}" type="button" ${this._writePending ? "disabled" : ""}>Cancel</button>
-        </div>
       </div>
     `;
+  }
+
+  // Apply/Cancel share the dialog's equal footer; Apply carries the pending state.
+  _settingEditorFooter() {
+    const entityId = this._settingsSubmenuEntity;
+    const meta = entityId ? this._editorMeta(entityId) : null;
+    if (!entityId || !meta?.supported || meta.kind === "select") return nothing;
+    const saving = this._isPendingControl(`save:${entityId}`);
+    return html`<button class="family-action" data-action="cancel-edit" data-entity=${entityId} type="button" ?disabled=${this._writePending}>Cancel</button><button
+        class="family-action primary"
+        data-action="save-edit"
+        data-entity=${entityId}
+        type="button"
+        aria-busy=${saving ? "true" : "false"}
+        ?disabled=${this._writePending}
+      >${saving ? html`${pendingIndicator()}Saving…` : "Apply"}</button>`;
   }
 
   _costData() {
@@ -1714,28 +1730,23 @@ class SmartEVSEFlowCard extends LitElement {
 
   _costAmount(record) {
     if (!record || !record.currency || typeof record.cost !== "number" || !Number.isFinite(record.cost)
-      || (record.energy_kwh > 0 && !(record.priced_kwh > 0))) return "Unavailable";
-    try {
-      return new Intl.NumberFormat(this._hass?.locale?.language || undefined, {
-        style: "currency", currency: record.currency, minimumFractionDigits: 2, maximumFractionDigits: 2,
-      }).format(record.cost);
-    } catch { return "Unavailable"; }
+      || (record.energy_kwh > 0 && !(record.priced_kwh > 0))) return UNAVAILABLE_TEXT;
+    return formatHassCurrency(this._hass, record.cost, { currency: record.currency, digits: 2 });
   }
 
   _costLabel(record) {
     const amount = this._costAmount(record);
-    return amount === "Unavailable" ? amount : `≈ ${amount}`;
+    return amount === UNAVAILABLE_TEXT ? amount : `≈ ${amount}`;
   }
 
   _costTime(value) {
-    const date = new Date(value);
-    return Number.isFinite(date.getTime()) ? date.toLocaleString(this._hass?.locale?.language || undefined,
-      { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "Time unavailable";
+    const time = formatHassDateTime(this._hass, value, { year: false });
+    return time === UNAVAILABLE_TEXT ? "Time unavailable" : time;
   }
 
   _chargingHistory() {
     const ledger = this._costData();
-    if (!ledger) return `<p class="cost-note">Charging history requires the updated SmartEVSE integration.</p>`;
+    if (!ledger) return this._notice("accent", "Charging history requires the updated SmartEVSE integration.");
     const attrs = this._entity(this._config.controller_entity)?.attributes || {};
     const issues = {
       restart_or_telemetry_gap: "Some time was not observed, including while Home Assistant was offline.",
@@ -1748,18 +1759,18 @@ class SmartEVSEFlowCard extends LitElement {
       start_not_observed: "Charging was already in progress when tracking started.",
     };
     return `<section class="cost-history" aria-label="Charging history">
-      ${ledger.error ? `<p role="alert" class="wizard-error">${this._safe(ledger.error)}</p>` : ""}
+      ${ledger.error ? this._notice("error", ledger.error) : ""}
       <p class="cost-note">Estimated from measured power and Real Electricity Price at the time of charging. Shared across all users; latest ${this._safe(ledger.history_limit || 100)} sessions per charger.</p>
       ${["smartevse_1", "smartevse_2"].map(key => {
         const records = ledger.chargers?.[key]?.history;
         return `<details class="cost-charger" data-charger="cost-${key}"><summary><ha-icon icon="mdi:ev-station" aria-hidden="true"></ha-icon><span class="cost-charger-name">${this._safe(attrs[key + "_name"] || key.replace("smartevse_", "SmartEVSE "))}</span><span class="cost-charger-count">${Array.isArray(records) ? records.length : 0} ${Array.isArray(records) && records.length === 1 ? "session" : "sessions"}</span><ha-icon class="cost-disclosure" icon="mdi:chevron-down" aria-hidden="true"></ha-icon></summary>
         ${Array.isArray(records) && records.length ? records.map(r => `<details class="cost-record" data-charger="cost-${this._safe(r.id)}">
-          <summary><span class="cost-record-copy"><strong>${this._safe(this._costTime(r.started_at))}</strong><small>${this._safe(r.vehicle && r.vehicle !== "unknown" ? r.vehicle : "Vehicle")} · ${this._safe(Number(r.energy_kwh || 0).toFixed(2))} kWh</small></span><span class="cost-record-value"><span class="cost-record-amount"><strong>${this._safe(this._costLabel(r))}</strong><ha-icon class="cost-disclosure" icon="mdi:chevron-down" aria-hidden="true"></ha-icon></span><small>${r.partial ? "Partial estimate" : this._safe(({charging:"Charging", paused:"Paused", complete:"Complete", finished:"Finished", unavailable:"Connection lost"})[r.status] || "Recorded")}</small></span></summary>
+          <summary><span class="cost-record-copy"><strong>${this._safe(this._costTime(r.started_at))}</strong><small>${this._safe(r.vehicle && r.vehicle !== "unknown" ? r.vehicle : "Vehicle")} · ${this._safe(formatHassNumber(this._hass, Number(r.energy_kwh || 0), { digits: 2, unit: "kWh" }))}</small></span><span class="cost-record-value"><span class="cost-record-amount"><strong>${this._safe(this._costLabel(r))}</strong><ha-icon class="cost-disclosure" icon="mdi:chevron-down" aria-hidden="true"></ha-icon></span><small>${r.partial ? "Partial estimate" : this._safe(({charging:"Charging", paused:"Paused", complete:"Complete", finished:"Finished", unavailable:"Connection lost"})[r.status] || "Recorded")}</small></span></summary>
           <div class="cost-record-details">${r.ended_at ? `<p>Ended ${this._safe(this._costTime(r.ended_at))}</p>` : ""}
           ${r.priced_kwh > 0 ? `<p>Average ${this._safe(this._costAmount({...r, cost:r.cost/r.priced_kwh}))}/kWh</p>` : ""}
-          ${r.unpriced_kwh > 0 ? `<p>${this._safe(Number(r.unpriced_kwh).toFixed(3))} kWh without a price</p>` : ""}
+          ${r.unpriced_kwh > 0 ? `<p>${this._safe(formatHassNumber(this._hass, Number(r.unpriced_kwh), { digits: 3, unit: "kWh" }))} without a price</p>` : ""}
           ${(Array.isArray(r.issues) ? r.issues : []).map(i=>`<p>${this._safe(issues[i] || "Some measurements are missing.")}</p>`).join("")}</div>
-        </details>`).join("") : `<p class="cost-note">No charging sessions recorded yet. Tracking starts with the next charge; earlier sessions are not reconstructed.</p>`}</details>`;
+        </details>`).join("") : `<div class="family-async-state cost-empty" role="status"><span>No charging sessions recorded yet. Tracking starts with the next charge; earlier sessions are not reconstructed.</span></div>`}</details>`;
       }).join("")}</section>`;
   }
 
@@ -1768,12 +1779,21 @@ class SmartEVSEFlowCard extends LitElement {
     if (!ev) return "";
     return `<section class="dialog-panel diagnostics-panel">
       <div class="dialog-content"><dl class="charger-diagnostics">
-        <div><dt>State</dt><dd>${this._safe(ev.available ? ev.state : "Unavailable")}</dd></div>
-        <div><dt>Mode</dt><dd>${this._safe(ev.available ? ev.mode : "Unavailable")}</dd></div>
-        <div><dt>Current offered</dt><dd>${this._safe(ev.available ? this._formatCurrent(ev.chargeCurrent) : "Unavailable")}</dd></div>
-        <div><dt>Limit</dt><dd>${this._safe(ev.available ? this._formatCurrent(ev.maxCurrent) : "Unavailable")}</dd></div>
+        <div><dt>State</dt>${this._diagnosticValue(ev.available, ev.state)}</div>
+        <div><dt>Mode</dt>${this._diagnosticValue(ev.available, ev.mode)}</div>
+        <div><dt>Current offered</dt>${this._diagnosticValue(ev.available, this._formatCurrent(ev.chargeCurrent))}</div>
+        <div><dt>Limit</dt>${this._diagnosticValue(ev.available, this._formatCurrent(ev.maxCurrent))}</div>
       </dl></div>
     </section>`;
+  }
+
+  // Plan tones map onto the shared chip tones; "active" is the accent colour.
+  _chipTone(tone): Tone {
+    return tone === "active" ? "accent" : tone === "warn" ? "warning" : tone === "error" ? "error" : tone === "success" ? "success" : "neutral";
+  }
+
+  _diagnosticValue(available, value) {
+    return available ? `<dd>${this._safe(value)}</dd>` : `<dd class="family-unavailable">${UNAVAILABLE_TEXT}</dd>`;
   }
 
   _dialogGuard(intent: string) {
@@ -1798,9 +1818,9 @@ class SmartEVSEFlowCard extends LitElement {
 
   _closeActiveDialog() { this._flow.forceClose(); }
 
-  _dialogTitle(ev1, ev2) {
+  _dialogTitle(ev1?, ev2?) {
     if (this._flow.current === "history") return "Charging history";
-    if (this._chargerDetailsKey) return [ev1, ev2].find(ev => ev.key === this._chargerDetailsKey)?.smartevseName || "Charger details";
+    if (this._chargerDetailsKey) return [ev1, ev2].find(ev => ev?.key === this._chargerDetailsKey)?.smartevseName || "Charger details";
     if (this._settingsSubmenuEntity) return this._settingsSubmenuEntity === this._config.charge_policy_entity ? "Charge policy" : this._settingsSubmenuEntity === this._config.duty_cycle_entity ? "Duty cycle" : this._entity(this._settingsSubmenuEntity)?.attributes?.friendly_name || "Setting";
     if (this._settingsModalOpen) return "Settings";
     return this._forceWizardStep === "schedule" ? "Schedule" : this._forceWizardStep === "now" ? "Force charge" : "Charging plan";
@@ -1819,7 +1839,7 @@ class SmartEVSEFlowCard extends LitElement {
         Charger details<ha-icon icon="${UI_ICONS.details}" aria-hidden="true"></ha-icon>
       </button>` : "";
     return `
-      <div class="ev-node-wrap ${this._safe(ev.key)} tone-${this._safe(ev.tone)} visual-${this._safe(ev.visual)}"
+      <div class="family-tile-wrap ev-node-wrap ${this._safe(ev.key)} tone-${this._safe(ev.tone)} visual-${this._safe(ev.visual)}"
         style="${this._safe(this._wledNodeStyle(visual, ev.visual))}">
         <div class="glow-under ev-glow" aria-hidden="true"><div class="glow-overlay"></div></div>
         <section class="ev-node ${this._safe(ev.key)} tone-${this._safe(ev.tone)} visual-${this._safe(ev.visual)} ${!ev.connected ? "compact" : ""}"
@@ -1907,7 +1927,9 @@ class SmartEVSEFlowCard extends LitElement {
           : "off";
     const priceAccepted = price !== null && acceptablePrice !== null ? price <= acceptablePrice : false;
     const hasControllerError = controllerError && !["NONE", "None", "unknown", "unavailable"].includes(controllerError);
-    const acceptablePriceValue = acceptablePrice !== null ? `${acceptablePrice.toFixed(3)} ${this._currency}` : "n/a";
+    const acceptablePriceValue = acceptablePrice !== null
+      ? formatHassNumber(this._hass, acceptablePrice, { digits: 3, unit: this._currency })
+      : UNAVAILABLE_TEXT;
     const priceLimitLabel = acceptablePrice === null ? "Price limit unavailable" : price === null
       ? `≤ ${acceptablePriceValue} · price unavailable` : `≤ ${acceptablePriceValue}`;
     const forcePlanActive = this._isForcePlanActive();
@@ -1997,9 +2019,9 @@ class SmartEVSEFlowCard extends LitElement {
     const scheduleTimingPill = (() => {
       const nextEvent = this._formatDateTime(scheduleNextEvent);
       if (scheduleState === "on") {
-        return nextEvent === "n/a" ? "End unavailable" : `Ends ${nextEvent}`;
+        return nextEvent === UNAVAILABLE_TEXT ? "End unavailable" : `Ends ${nextEvent}`;
       }
-      return nextEvent === "n/a" ? "Start unavailable" : nextEvent;
+      return nextEvent === UNAVAILABLE_TEXT ? "Start unavailable" : nextEvent;
     })();
     const scheduleControlAvailable = Boolean(this._entity(this._config.schedule_switch_entity));
     const scheduleEntityAvailable = Boolean(this._entity(this._config.schedule_entity));
@@ -2009,7 +2031,7 @@ class SmartEVSEFlowCard extends LitElement {
         this._entity(this._config.force_price_entity),
     );
     const rotationPolicy = String(attrs.charge_policy || this._state(this._config.charge_policy_entity)).toLowerCase();
-    const heroRuntimePills = activeEv?.isCharging && [ev1, ev2].every(ev => ev.available && ev.connected && !ev.sessionComplete && !ev.hasError) && rotationPolicy.includes("first") && dutyLabel !== "n/a"
+    const heroRuntimePills = activeEv?.isCharging && [ev1, ev2].every(ev => ev.available && ev.connected && !ev.sessionComplete && !ev.hasError) && rotationPolicy.includes("first") && dutyLabel !== UNAVAILABLE_TEXT
       ? [{ label: `Switch charger in ${dutyLabel}`, tone: "neutral" }]
       : [];
 
@@ -2062,7 +2084,7 @@ class SmartEVSEFlowCard extends LitElement {
     }
     if (forceControlAvailable && forcePlanActive) {
       if (forceTimerOn) {
-        const timerValue = timerLabel !== "n/a" ? `${timerLabel} left` : forceDuration === null ? "Timer unavailable" : this._formatMinutes(forceDuration);
+        const timerValue = timerLabel !== UNAVAILABLE_TEXT ? `${timerLabel} left` : forceDuration === null ? "Timer unavailable" : this._formatMinutes(forceDuration);
         addHeroPill(
           "force-charge",
           "Force charge",
@@ -2094,14 +2116,14 @@ class SmartEVSEFlowCard extends LitElement {
       .map(
         (group) => `
           <div class="status-pill-group" data-plan-group="${this._safe(group.id)}">
-            <span class="status-pill-group-label tone-${this._safe(group.tone)}" aria-label="${this._safe(group.label)} enabled" title="${this._safe(group.label)} enabled"><ha-icon class="status-pill-icon" icon="mdi:toggle-switch" aria-hidden="true"></ha-icon>${this._safe(group.label)}</span>
-            ${group.id === "use-schedule" && forcePlanActive ? `<span class="plan-note">Resumes after force charge</span>` : ""}
+            <span class="family-chip status-pill-group-label" data-tone="${this._chipTone(group.tone)}" aria-label="${this._safe(group.label)} enabled" title="${this._safe(group.label)} enabled"><ha-icon class="status-pill-icon" icon="mdi:toggle-switch" aria-hidden="true"></ha-icon>${this._safe(group.label)}</span>
+            ${group.id === "use-schedule" && forcePlanActive ? `<span class="family-chip plan-note" data-tone="neutral">Resumes after force charge</span>` : ""}
             <span class="status-pill-group-items">
               ${group.pills
                 .sort((left, right) => left.priority - right.priority)
                 .map(
                   (pill) =>
-                    `<span class="status-pill tone-${this._safe(pill.tone)}"${pill.description ? ` aria-label="${this._safe(pill.description)}" title="${this._safe(pill.description)}"` : ""}>${pill.icon ? `<ha-icon class="status-pill-icon" icon="${this._safe(pill.icon)}" aria-hidden="true"></ha-icon>` : ""}${this._safe(pill.label)}</span>`,
+                    `<span class="family-chip status-pill" data-tone="${this._chipTone(pill.tone)}"${pill.description ? ` aria-label="${this._safe(pill.description)}" title="${this._safe(pill.description)}"` : ""}>${pill.icon ? `<ha-icon class="status-pill-icon" icon="${this._safe(pill.icon)}" aria-hidden="true"></ha-icon>` : ""}${this._safe(pill.label)}</span>`,
                 )
                 .join("")}
             </span>
@@ -2114,7 +2136,7 @@ class SmartEVSEFlowCard extends LitElement {
           ${heroRuntimePills
             .map(
               (pill) =>
-                `<span class="status-pill status-runtime-pill tone-${this._safe(pill.tone)}">${this._safe(pill.label)}</span>`,
+                `<span class="family-chip status-pill status-runtime-pill" data-tone="${this._chipTone(pill.tone)}">${this._safe(pill.label)}</span>`,
             )
             .join("")}
         </div>`
@@ -2143,9 +2165,9 @@ class SmartEVSEFlowCard extends LitElement {
 
       <ha-card style="${this._safe(wledStyleVars)}">
         <div class="wrap">
-          <div class="flow-stage">
+          <div class="flow-stage family-tile-group">
             <section class="house-node">
-              <div class="status-hero-wrap visual-${this._safe(heroVisual)}">
+              <div class="family-tile-wrap status-hero-wrap visual-${this._safe(heroVisual)}">
                 <div class="glow-under status-glow" style="${this._safe(heroGlowStyle)}" aria-hidden="true">
                   <div class="glow-overlay"></div>
                 </div>
@@ -2166,10 +2188,10 @@ class SmartEVSEFlowCard extends LitElement {
               </div>
             </section>
 
-            ${!this._settingsModalOpen && this._settingsBusy ? `<p class="overview-note" role="status">Saving settings…</p>` : ""}
-            ${!this._settingsModalOpen && this._settingsError ? `<p class="wizard-error" role="alert">${this._safe(this._settingsError)}</p>` : ""}
-            ${!this._forceWizardOpen && this._forceWizardBusy ? `<p class="overview-note" role="status">Updating charging plan…</p>` : ""}
-            ${!this._forceWizardOpen && this._forceWizardError ? `<p class="wizard-error" role="alert">${this._safe(this._forceWizardError)}</p>` : ""}
+            ${!this._settingsModalOpen && this._settingsBusy ? this._pendingNote("Saving settings…") : ""}
+            ${!this._settingsModalOpen && this._settingsError ? this._notice("error", this._settingsError) : ""}
+            ${!this._forceWizardOpen && this._forceWizardBusy ? this._pendingNote("Updating charging plan…") : ""}
+            ${!this._forceWizardOpen && this._forceWizardError ? this._notice("error", this._forceWizardError) : ""}
             <div class="ev-row">
               ${this._evNode(ev1)}
               ${this._evNode(ev2)}
@@ -2183,9 +2205,12 @@ class SmartEVSEFlowCard extends LitElement {
 
     const dialogMarkup = this._flow.current === "history" ? this._chargingHistory() : this._chargerDetailsKey ? this._chargerDetails(ev1, ev2) : this._forceWizardModal() ||
       this._settingsModal(this._settingsControls({ policy, dutyCycleMinutes: this._numberState(this._config.duty_cycle_entity) }));
+    // Pending state is announced on the triggering control, not the whole page.
     return html`${unsafeHTML(markup)}${renderFamilyDialog(this._flow, {
       title: this._dialogTitle(ev1, ev2),
-      content: html`<div style=${wledStyleVars} aria-busy=${String(this._writePending)}>${unsafeHTML(dialogMarkup)}</div>`,
+      content: html`<div style=${wledStyleVars}>${unsafeHTML(dialogMarkup)}</div>`,
+      footer: this._settingEditorFooter(),
+      footerLayout: "equal",
     })}`;
   }
 
