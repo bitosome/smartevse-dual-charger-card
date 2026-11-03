@@ -377,6 +377,14 @@ ha-card {
   opacity: 0.55;
 }
 
+/* The control whose write is in flight stays readable while the others dim. */
+.wizard-option-main[aria-busy="true"]:disabled,
+.wizard-plan-toggle[aria-busy="true"]:disabled,
+.wizard-toggle[aria-busy="true"]:disabled {
+  cursor: progress;
+  opacity: 1;
+}
+
 .wizard-option-icon {
   display: grid;
   place-items: center;

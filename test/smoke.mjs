@@ -1066,6 +1066,12 @@ check('a pending plan toggle carries aria-busy and a visible indicator beside it
   !!pendingPlanToggle.closest('.wizard-option')?.querySelector('.control-pending .family-pending-indicator') &&
   root.querySelector('[data-action="toggle-charging-plan"][data-mode="schedule"]')?.getAttribute('aria-busy') !== 'true' &&
   !root.querySelector('dialog .family-dialog-body > div[aria-busy="true"]'));
+const pendingPlanMain = pendingPlanToggle?.closest('.wizard-option')?.querySelector('.wizard-option-main');
+const idlePlanMain = root.querySelector('[data-action="choose-force-mode"][data-mode="schedule"]');
+check('the pending plan row stays fully opaque while the other row dims',
+  pendingPlanMain?.disabled && pendingPlanMain.getAttribute('aria-busy') === 'true' &&
+  getComputedStyle(pendingPlanMain).opacity === '1' && getComputedStyle(pendingPlanToggle).opacity === '1' &&
+  idlePlanMain?.disabled && getComputedStyle(idlePlanMain).opacity === '0.55');
 hass.callService = workingCallService;
 while (queuedPlanCalls.length) queuedPlanCalls.shift()();
 await planTogglePending;

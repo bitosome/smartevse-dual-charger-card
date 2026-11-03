@@ -1435,6 +1435,7 @@ class SmartEVSEFlowCard extends LitElement {
                           data-action="choose-force-mode"
                           data-mode="${this._safe(choice.mode)}"
                           type="button"
+                          ${pending ? `aria-busy="true"` : ""}
                           ${!choice.available || busy ? "disabled" : ""}
                         >
                           <span class="wizard-option-icon"><ha-icon icon="${this._safe(choice.icon)}"></ha-icon></span>
