@@ -85,6 +85,13 @@ export const OVERVIEW_CSS = `
   /* The bar is the shared levelMeter(); the card only places it. */
   .battery-meter { margin-top: 18px; }
   .charger-message { font-size: 12px; line-height: 1.5; margin: var(--large-gap) 0 0; color: var(--secondary-text-color); overflow-wrap: anywhere; }
+  /* Intelligent plan facts: quiet 12px lines under the meter; no glow, no extra € in the totals column. */
+  .charger-plan { display: grid; gap: 2px; margin: var(--large-gap) 0 0; }
+  .charger-plan-line { margin: 0; font-size: 12px; line-height: 1.5; color: var(--secondary-text-color); overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+  /* A warning line reads in the primary text colour; the shared warning glyph carries the tone. */
+  .charger-plan-line[data-tone="warning"] { color: var(--primary-text-color); }
+  .plan-tone-icon { --mdc-icon-size: 14px; width: 14px; height: 14px; margin-inline-end: 4px; vertical-align: -2px; color: var(--family-tone, var(--family-warning)); }
+  .compact .charger-plan { margin-top: var(--medium-gap); }
   .compact { padding-bottom: 18px; }
   .compact .charger-status { margin-top: 3px; }
   .charger-details { display: flex; justify-content: space-between; align-items: center; width: 100%; min-height: 44px; margin-top: var(--medium-gap); padding: 0; border: 0; background: none; font: inherit; font-size: 12px; color: var(--secondary-text-color); cursor: pointer; }

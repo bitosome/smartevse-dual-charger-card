@@ -2,7 +2,7 @@
 
 Standalone Lovelace card for the SmartEVSE Dual Charger Home Assistant integration.
 
-Version: `0.0.52`
+Version: `0.3.0`
 
 This repository contains only the frontend card and local preview assets.
 
@@ -14,7 +14,7 @@ This repository contains only the frontend card and local preview assets.
 - Expandable **Charger details** for State, Mode, Current offered and Limit. Offered current is the charger pilot setting, not measured current or power consumption.
 - Space Hub shared surfaces, radii, theme colors and underglow helpers. Glow colors and effects follow the controller's physical WLED configuration.
 - Responsive layout: stacked charger tiles on narrow cards, two columns on wider cards.
-- Two-path charging-plan editor with schedule, immediate charging, timer and acceptable-price controls. Unsupported options are omitted; temporarily unavailable controls are identified and guarded.
+- Charging-plan editor with schedule, immediate charging, timer and acceptable-price controls, plus **Intelligent charging** with integration 0.0.9.0+. Unsupported options are omitted; temporarily unavailable controls are identified and guarded.
 - Keyboard focus management, Escape/back navigation, visible focus, touch-sized controls and reduced-motion support. Expanded details survive live state updates.
 - Local interactive preview backed by mocked Home Assistant services.
 
@@ -158,6 +158,67 @@ npm run build      # bundles src/ -> dist/smartevse-dual-charger-card.js
 npm test           # headless smoke test (happy-dom)
 npm run typecheck  # tsc --noEmit
 ```
+
+### Intelligent charging
+
+With SmartEVSE Dual Charger integration 0.0.9.0+, the plan chooser shows a third tile,
+**Intelligent charging** (`mdi:brain`). The integration plans the cheapest charging that
+gets each connected car to its minimum by its ready-by time; the card only renders the
+controller sensor's `intelligent` attribute and edits the integration's entities. It
+computes no slots, energy, costs or savings itself.
+
+- **Standing plans.** Intelligent charging and Schedule are independent: switching one
+  never changes the other. While both are on, Intelligent has priority (the Schedule
+  tile says so), and the schedule takes over again when Intelligent is turned off.
+  Force charge still overrides both; the Intelligent group then reads "Resumes after force charge".
+- **Hero.** An enabled-only "Intelligent charging" group with one time pill: the next
+  planned start, or "Until 22:00" during a planned block. Warnings such as "Not enough
+  time for Volvo EX30" (or "… for both" when two cars compete for the time) and "Check
+  Volvo XC40" appear as warning pills. No money in the hero. When nothing is left to charge,
+  the title reads "Minimum charge reached" only when every planned car is at its minimum;
+  otherwise it says why ("Volvo XC40 isn’t accepting charge", "Charging complete"). A car
+  that the charge policy leaves out reads "Waiting for the selected vehicle".
+- **Charger tiles.** A connected charger shows its target and the deadline the plan
+  targets ("80% by 07:00 · starts Mon 21:00") and the session estimate with the saving
+  ("≈ €4.91 · saving ≈ €1.29"). Forecast-based money is marked "forecast" without a saving,
+  partial money is omitted and an estimated plan (battery level unknown) names the energy
+  it plans instead of a target ("≈ 30 kWh by 07:00"), on the tile, in the per-car summary
+  and in the page totals. Warning lines keep the normal text colour and carry the shared
+  warning glyph. The battery meter marks the effective minimum. A disconnected charger
+  shows "Last charge saved ≈ €1.25" until the next plug-in. History records show the
+  saving vs charging at plug-in, or "Force charge used" when the session was mixed; a
+  plug-in that spans several nights combines them.
+- **Intelligent page.** The plan first: chronological blocks per car (top-up marked),
+  a per-car summary, totals with "Saving vs charging at plug-in", which charger charges
+  first (opens Charge policy), the price horizon and learning progress. Then per-vehicle
+  **Ready by** (native time input) and **Minimum charge** fields, a learned departure
+  suggestion ("Usually leaves 07:30" · "Use 07:15"), and **Top up when price is low** with
+  its own **Top up below** price. An unidentified car's battery level is never known, so
+  the integration plans it by energy: its section says "Battery level unknown · planned by
+  energy", and its Minimum charge does not change that plan. Times and numbers save on
+  blur or Enter, never per edited segment or spinner step; a value entered while its
+  field is saving is written next. A saving field shows its own pending state while the
+  other controls and Back stay usable.
+  Nothing here starts or stops charging.
+- **Notices.** Non-blocking controller warnings (prices or plan unavailable, the car's
+  own charging timer, vehicle data) read as warning notices; raw identifiers are never shown.
+
+Entities come from the controller's `intelligent.entities` by default. Optional overrides:
+
+```yaml
+intelligent_charge_entity: switch.smartevse_dual_charger_intelligent_charging
+intelligent_top_up_entity: switch.smartevse_dual_charger_intelligent_top_up
+intelligent_top_up_price_entity: number.smartevse_dual_charger_intelligent_top_up_price
+vehicle_1_ready_by_entity: time.smartevse_dual_charger_volvo_xc40_ready_by
+vehicle_1_minimum_charge_entity: number.smartevse_dual_charger_volvo_xc40_minimum_charge
+vehicle_2_ready_by_entity: time.smartevse_dual_charger_volvo_ex30_ready_by
+vehicle_2_minimum_charge_entity: number.smartevse_dual_charger_volvo_ex30_minimum_charge
+other_vehicle_ready_by_entity: time.smartevse_dual_charger_unidentified_vehicle_ready_by
+```
+
+The ids above are examples; the integration publishes the real ones. Without the
+Intelligent switch entity the feature is hidden entirely, so older integrations look
+exactly as before. A price chart on the Intelligent page follows in 0.3.1.
 
 ### Session costs
 

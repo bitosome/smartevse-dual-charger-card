@@ -1320,5 +1320,941 @@ check('enabled plan labels are shared accent chips that keep their on-state icon
   !/Enabled/.test(enabledScheduleLabel.textContent) &&
   [...root.querySelectorAll('.status-pill')].every((pill) => pill.classList.contains('family-chip') && pill.dataset.tone));
 
+// ---------------------------------------------------------------------------
+// Intelligent charging (card 0.3.0). The base fixture above has no Intelligent
+// entities, so the feature stays hidden there; this block mounts a second card
+// against its own synthetic integration payload. No device is contacted.
+check('without the Intelligent switch the base card shows no Intelligent tile, group or plan line',
+  !root.querySelector('[data-mode="intelligent"]') && !root.querySelector('[data-plan-group="intelligent"]') &&
+  !root.querySelector('.charger-plan'));
+
+const FIXED_NOW = Date.parse('2026-11-09T18:00:00Z');
+const realDateNow = Date.now;
+Date.now = () => FIXED_NOW;
+const wait = (ms = 30) => new Promise((r) => setTimeout(r, ms));
+const clone = (value) => JSON.parse(JSON.stringify(value));
+const iEntities = {
+  intelligent_charge: 'switch.ic', intelligent_top_up: 'switch.ic_top_up', intelligent_top_up_price: 'number.ic_top_up_price',
+  vehicle_1: { ready_by: 'time.v1_ready_by', minimum_charge: 'number.v1_minimum' },
+  vehicle_2: { ready_by: 'time.v2_ready_by', minimum_charge: 'number.v2_minimum' },
+  other: { ready_by: 'time.other_ready_by', minimum_charge: 'number.other_minimum' },
+  status: 'sensor.ic_status', planned_cost: 'sensor.ic_cost', planned_saving: 'sensor.ic_saving', next_charge: 'sensor.ic_next',
+};
+const priceSlots = [];
+for (let h = 18; h < 31; h++) {
+  const start = new Date(Date.UTC(2026, 10, 9, h)).toISOString();
+  const end = new Date(Date.UTC(2026, 10, 9, h + 1)).toISOString();
+  priceSlots.push({ start, end, price: h < 25 ? 0.19 + (h % 3) / 100 : 0.2, kind: h < 25 ? 'known' : 'forecast',
+    smartevse_1_minutes: 0, smartevse_2_minutes: 0, expected_kw: 10.5 });
+}
+const xc40Plan = () => ({
+  vehicle: 'vehicle_1', vehicle_name: 'Volvo XC40', settings_key: 'vehicle_1', soc: 53, soc_source: 'vehicle',
+  minimum: 80, target: 80, car_limit: 90, limited_by_car: false, ready_by: '07:00', deadline: '2026-11-10T07:00:00+00:00',
+  status: 'planned', feasible: true, estimated: false, projected_soc: 80, need_kwh: 21.5,
+  blocks: [{ start: '2026-11-09T21:00:00+00:00', end: '2026-11-09T22:00:00+00:00', top_up: false },
+    { start: '2026-11-09T23:00:00+00:00', end: '2026-11-10T00:00:00+00:00', top_up: false }],
+  next_start: '2026-11-09T21:00:00+00:00', session_cost: 4.91, saving: 1.29, includes_forecast: false, partial: false,
+  overrun: false, not_accepting: false, car_timer: false, queue_after: null, top_up: false, top_up_cost: null,
+});
+const ex30Plan = () => ({
+  vehicle: 'vehicle_2', vehicle_name: 'Volvo EX30', settings_key: 'vehicle_2', soc: 30, soc_source: 'vehicle',
+  minimum: 80, target: 80, car_limit: 100, limited_by_car: false, ready_by: '07:00', deadline: '2026-11-10T07:00:00+00:00',
+  status: 'planned', feasible: true, estimated: false, projected_soc: 80, need_kwh: 25,
+  blocks: [{ start: '2026-11-10T02:00:00+00:00', end: '2026-11-10T04:00:00+00:00', top_up: false },
+    { start: '2026-11-10T04:00:00+00:00', end: '2026-11-10T04:30:00+00:00', top_up: true }],
+  next_start: '2026-11-10T02:00:00+00:00', session_cost: 1.19, saving: 0.05, includes_forecast: false, partial: false,
+  overrun: false, not_accepting: false, car_timer: false, queue_after: null, top_up: true, top_up_cost: 0.2,
+});
+const basePayload = () => ({
+  enabled: true, status: 'planned', reason: 'intelligent_waiting_for_planned_slot', overridden_by: null,
+  connected_count: 2, currency: 'EUR', known_until: '2026-11-10T01:00:00+00:00', forecast_used: true, baseline_kind: 'plug_in',
+  model_error: null, planner_error: null,
+  totals: { cost: 6.1, saving: 1.34, energy_kwh: 46.5, includes_forecast: false, partial: false },
+  next_charge: '2026-11-09T21:00:00+00:00', order: ['smartevse_1', 'smartevse_2'],
+  chargers: { smartevse_1: xc40Plan(), smartevse_2: ex30Plan() },
+  vehicles: {
+    vehicle_1: { name: 'Volvo XC40', ready_by: '07:00', minimum: 80, suggested_ready_by: '06:15', learned_sessions: 12,
+      model: { kwh_per_pct: 0.71, kwh_per_pct_source: 'learned', cap_kw: 10.9 } },
+    vehicle_2: { name: 'Volvo EX30', ready_by: '07:00', minimum: 80, suggested_ready_by: null, learned_sessions: 2,
+      model: { kwh_per_pct: 0.55, kwh_per_pct_source: 'capacity', cap_kw: 10.9 } },
+    other: { name: 'Unidentified vehicle', ready_by: '07:00', minimum: 80 },
+  },
+  household: { learned_days: 3, night_expected_kw: 9.1 },
+  slots: priceSlots,
+  sessions: [
+    { ledger_id: 'ex30-last', outlet: 'smartevse_2', vehicle_name: 'Volvo EX30', closed: true, energy_kwh: 14.2, cost: 2.4, baseline_cost: 3.65, saving: 1.25, mixed: false, partial: false },
+    { ledger_id: 'xc40-forced', outlet: 'smartevse_1', vehicle_name: 'Volvo XC40', closed: true, energy_kwh: 9.1, cost: 2.9, baseline_cost: 2.5, saving: -0.4, mixed: true, partial: false },
+  ],
+  top_up: { enabled: false, price: 0.16 },
+  entities: clone(iEntities),
+});
+const ledgerRecord = (id, vehicle) => ({ id, started_at: '2026-11-08T21:00:00Z', ended_at: '2026-11-09T05:00:00Z', currency: 'EUR',
+  cost: 2.4, energy_kwh: 14.2, priced_kwh: 14.2, unpriced_kwh: 0, status: 'finished', partial: false, issues: [], vehicle });
+const timeAttrs = {};
+const percentAttrs = { min: 10, max: 100, step: 1, unit_of_measurement: '%' };
+const iStates = {
+  'sensor.ctl': { state: 'intelligent', attributes: {
+    charge_allowed: false, charge_reason: 'intelligent_waiting_for_planned_slot', active_smartevse_raw: '', controller_error: null,
+    smartevse_1_available: true, smartevse_1_connected_ev: 'Volvo XC40', smartevse_1_battery: '53', smartevse_1_mode: 'Off',
+    smartevse_1_charge_current: 16, smartevse_1_max_current: 16, smartevse_1_state: 'Ready to Charge', smartevse_1_plug_state: 'Connected', smartevse_1_error: 'None',
+    smartevse_2_available: true, smartevse_2_connected_ev: 'Volvo EX30', smartevse_2_battery: '30', smartevse_2_mode: 'Off',
+    smartevse_2_charge_current: 16, smartevse_2_max_current: 16, smartevse_2_state: 'Ready to Charge', smartevse_2_plug_state: 'Connected', smartevse_2_error: 'None',
+    charging_costs: { version: 1, history_limit: 100, chargers: {
+      smartevse_1: { session: ledgerRecord('xc40-forced', 'Volvo XC40'), history: [ledgerRecord('xc40-forced', 'Volvo XC40')] },
+      smartevse_2: { session: ledgerRecord('ex30-last', 'Volvo EX30'), history: [ledgerRecord('ex30-last', 'Volvo EX30')] } } },
+    intelligent: basePayload(),
+  } },
+  'sensor.current_price': { state: '0.21', attributes: {} },
+  'schedule.charging': { state: 'off', attributes: { friendly_name: 'EV overnight schedule', next_event: '2026-11-10T00:00:00+00:00' } },
+  'switch.schedule': { state: 'on', attributes: {} },
+  'switch.schedule_price': { state: 'on', attributes: {} },
+  'switch.force': { state: 'off', attributes: {} },
+  'switch.force_price': { state: 'off', attributes: {} },
+  'switch.force_timer': { state: 'off', attributes: {} },
+  'select.policy': { state: 'SmartEVSE 1 first', attributes: { options: ['SmartEVSE 1 first', 'SmartEVSE 2 first', 'SmartEVSE 1 only', 'SmartEVSE 2 only'] } },
+  'number.price': { state: '0.12', attributes: { min: 0, max: 1, step: 0.01, unit_of_measurement: 'EUR/kWh' } },
+  'number.duration': { state: '60', attributes: { min: 5, max: 720, step: 5, unit_of_measurement: 'min' } },
+  'number.duty': { state: '30', attributes: { min: 5, max: 240, step: 5, unit_of_measurement: 'min' } },
+  'sensor.duty_remaining': { state: '600', attributes: {} },
+  'sensor.timer_remaining': { state: '0', attributes: {} },
+  'switch.ic': { state: 'off', attributes: {} },
+  'switch.ic_top_up': { state: 'off', attributes: {} },
+  'number.ic_top_up_price': { state: '0.16', attributes: { min: -1, max: 5, step: 0.001, unit_of_measurement: 'EUR/kWh' } },
+  'time.v1_ready_by': { state: '07:00:00', attributes: timeAttrs },
+  'number.v1_minimum': { state: '80', attributes: percentAttrs },
+  'time.v2_ready_by': { state: '07:00:00', attributes: timeAttrs },
+  'number.v2_minimum': { state: '80', attributes: percentAttrs },
+  'time.other_ready_by': { state: '07:00:00', attributes: timeAttrs },
+  'number.other_minimum': { state: '80', attributes: percentAttrs },
+  'sensor.ic_status': { state: 'planned', attributes: {} },
+  'sensor.ic_cost': { state: '6.1', attributes: {} },
+  'sensor.ic_saving': { state: '1.34', attributes: {} },
+  'sensor.ic_next': { state: '2026-11-09T21:00:00+00:00', attributes: {} },
+};
+const iCalls = [];
+const applyCall = (domain, service, data) => {
+  iCalls.push([domain, service, data]);
+  const entity = iStates[data?.entity_id];
+  if (!entity) return Promise.resolve();
+  if (domain === 'homeassistant') entity.state = service === 'turn_on' ? 'on' : 'off';
+  if (domain === 'number' && service === 'set_value') entity.state = String(data.value);
+  if (domain === 'time' && service === 'set_value') entity.state = String(data.time);
+  return Promise.resolve();
+};
+let iService = applyCall;
+const iHass = {
+  states: iStates,
+  locale: { language: 'en-GB', number_format: 'language', time_format: '24', time_zone: 'server' },
+  config: { time_zone: 'UTC', currency: 'EUR' },
+  callService: (...args) => iService(...args),
+};
+const iAttrs = iStates['sensor.ctl'].attributes;
+const savedSwitch = iStates['switch.ic'];
+delete iStates['switch.ic'];
+
+// Happy DOM cannot resolve a second shadow root's activeElement while focus sits in another card.
+root.activeElement?.blur();
+const el2 = document.createElement(tag);
+el2.setConfig(config);
+el2.hass = iHass;
+document.body.appendChild(el2);
+await wait(60);
+const root2 = el2.shadowRoot;
+const t7 = el2._formatClock('07:00');
+const t615 = el2._formatClock('06:15');
+const push = async () => { el2.hass = iHass; await wait(); };
+const click2 = async (selector) => {
+  root2.querySelector(selector)?.dispatchEvent(new win.MouseEvent('click', { bubbles: true, composed: true }));
+  await wait();
+};
+const openPlan2 = async () => {
+  el2._closeActiveDialog(); await el2.updateComplete;
+  el2._openForceWizard(); await el2.updateComplete; await wait(10);
+};
+const text2 = (selector) => root2.querySelector(selector)?.textContent.replace(/\s+/g, ' ').trim() || '';
+const planText = (key) => [...root2.querySelectorAll(`.ev-node.${key} .charger-plan-line`)].map((node) => node.textContent.trim());
+
+// Missing switch: the payload alone does not enable the feature.
+await openPlan2();
+check('Intelligent stays hidden while its switch entity is missing, even with a payload',
+  root2.querySelectorAll('[data-action="choose-force-mode"]').length === 2 &&
+  !root2.querySelector('[data-mode="intelligent"]') && !root2.querySelector('.charger-plan'));
+el2._closeActiveDialog(); await el2.updateComplete;
+iStates['switch.ic'] = savedSwitch;
+await push();
+
+// Chooser: a third tile with the brain icon and the same switch/glow pattern.
+await openPlan2();
+const intelligentMain = root2.querySelector('[data-action="choose-force-mode"][data-mode="intelligent"]');
+const intelligentToggle = root2.querySelector('[data-action="toggle-charging-plan"][data-mode="intelligent"]');
+check('the chooser adds a titled Intelligent charging tile with the brain icon and a plan switch',
+  root2.querySelectorAll('[data-action="choose-force-mode"]').length === 3 &&
+  intelligentMain?.querySelector('.wizard-option-icon ha-icon')?.getAttribute('icon') === 'mdi:brain' &&
+  intelligentMain?.textContent.includes('Intelligent charging') &&
+  intelligentToggle?.getAttribute('role') === 'switch' && intelligentToggle?.getAttribute('aria-checked') === 'false' &&
+  intelligentToggle?.getAttribute('aria-label') === 'Intelligent charging');
+
+// Enabling Intelligent leaves Schedule and its price option alone (independent plans, 2026-11-10).
+const pendingIntelligent = [];
+iService = (...args) => new Promise((resolve) => pendingIntelligent.push(() => resolve(applyCall(...args))));
+let callStart = iCalls.length;
+const enableIntelligent = el2._toggleChargingPlan('intelligent');
+await el2.updateComplete;
+const busyToggle = root2.querySelector('[data-action="toggle-charging-plan"][data-mode="intelligent"]');
+check('the Intelligent toggle alone carries aria-busy and the pending indicator while it switches plans',
+  busyToggle?.getAttribute('aria-busy') === 'true' &&
+  !!busyToggle.closest('.wizard-option')?.querySelector('.control-pending .family-pending-indicator') &&
+  root2.querySelector('[data-action="toggle-charging-plan"][data-mode="schedule"]')?.getAttribute('aria-busy') !== 'true' &&
+  root2.querySelectorAll('.control-pending').length === 1);
+iService = applyCall;
+while (pendingIntelligent.length) {
+  pendingIntelligent.shift()();
+  await wait(5);
+}
+await enableIntelligent; await el2.updateComplete;
+let planCalls = iCalls.slice(callStart).map((c) => `${c[1]} ${c[2].entity_id}`);
+check('enabling Intelligent only turns Intelligent on; Schedule and its price option stay as they were',
+  JSON.stringify(planCalls) === JSON.stringify(['turn_on switch.ic']) &&
+  iStates['switch.ic'].state === 'on' && iStates['switch.schedule'].state === 'on' && iStates['switch.schedule_price'].state === 'on');
+check('the enabled Intelligent tile glows and reports its switch state',
+  !!root2.querySelector('.wizard-option-wrap.selected [data-mode="intelligent"]') &&
+  root2.querySelector('[data-action="toggle-charging-plan"][data-mode="intelligent"]')?.getAttribute('aria-checked') === 'true');
+
+// Enabling Schedule from its switch leaves Intelligent on.
+iStates['switch.schedule'].state = 'off'; await push();
+el2._schedulePriceGate = false;
+callStart = iCalls.length;
+await el2._toggleChargingPlan('schedule'); await el2.updateComplete;
+planCalls = iCalls.slice(callStart).map((c) => `${c[1]} ${c[2].entity_id}`);
+check('enabling Schedule turns the schedule on and leaves Intelligent on',
+  planCalls[0] === 'turn_on switch.schedule' && !planCalls.some((c) => c.endsWith('switch.ic')) &&
+  iStates['switch.schedule'].state === 'on' && iStates['switch.ic'].state === 'on');
+// Editing the schedule's price option never touches Intelligent.
+iStates['switch.ic'].state = 'on'; await push();
+callStart = iCalls.length;
+await el2._applyForceMode('schedule'); await el2.updateComplete;
+check('re-applying schedule options leaves an enabled Intelligent plan alone',
+  !iCalls.slice(callStart).some((c) => c[2].entity_id === 'switch.ic') && iStates['switch.ic'].state === 'on');
+iStates['switch.schedule'].state = 'off'; iStates['switch.schedule_price'].state = 'off';
+await push();
+callStart = iCalls.length;
+await el2._toggleChargingPlan('intelligent'); await el2.updateComplete;
+check('the Intelligent switch turns only Intelligent off',
+  JSON.stringify(iCalls.slice(callStart).map((c) => `${c[1]} ${c[2].entity_id}`)) === JSON.stringify(['turn_off switch.ic']));
+iStates['switch.ic'].state = 'on';
+el2._closeActiveDialog(); await el2.updateComplete;
+await push();
+
+// Hero: one enabled-only group with one time pill, no money, described to assistive technology.
+const intelligentGroup = root2.querySelector('[data-plan-group="intelligent"]');
+const intelligentLabel = intelligentGroup?.querySelector('.status-pill-group-label');
+const intelligentPills = [...(intelligentGroup?.querySelectorAll('.status-pill') || [])];
+check('the hero shows an accent Intelligent charging group with its next start time pill',
+  intelligentLabel?.textContent.trim() === 'Intelligent charging' && intelligentLabel.dataset.tone === 'accent' &&
+  intelligentLabel.querySelector('ha-icon')?.getAttribute('icon') === 'mdi:toggle-switch' &&
+  intelligentPills.length === 1 && intelligentPills[0].textContent.trim() === el2._formatDateTime('2026-11-09T21:00:00+00:00') &&
+  intelligentPills[0].querySelector('ha-icon')?.getAttribute('icon') === 'mdi:clock-start' &&
+  !/€/.test(intelligentGroup.textContent));
+check('waiting for a planned slot reads as a plan, not as paused charging',
+  text2('.status-title') === 'Waiting for planned charge');
+const heroButton = root2.querySelector('[data-action="open-force-wizard"]');
+const heroDescription = root2.getElementById ? root2.getElementById(heroButton?.getAttribute('aria-describedby')) : root2.querySelector(`#${heroButton?.getAttribute('aria-describedby')}`);
+check('the hero button describes its status title and time pill for screen readers',
+  heroButton?.getAttribute('aria-label') === 'Edit charging plan' &&
+  /Waiting for planned charge/.test(heroDescription?.textContent || '') &&
+  (heroDescription?.textContent || '').includes(el2._formatDateTime('2026-11-09T21:00:00+00:00')));
+iAttrs.smartevse_1_state = 'Charging';
+iAttrs.active_smartevse_raw = 'smartevse_1';
+iAttrs.intelligent.status = 'charging';
+iAttrs.intelligent.chargers.smartevse_1.status = 'charging';
+iAttrs.intelligent.chargers.smartevse_1.blocks[0] = { start: '2026-11-09T17:45:00+00:00', end: '2026-11-09T22:00:00+00:00', top_up: false };
+iAttrs.charge_allowed = true; iAttrs.charge_reason = 'intelligent_charging';
+await push();
+const chargingPill = root2.querySelector('[data-plan-group="intelligent"] .status-pill');
+check('while charging the time pill reads "Until" the end of the current block',
+  chargingPill?.textContent.trim() === 'Until 22:00' && chargingPill.querySelector('ha-icon')?.getAttribute('icon') === 'mdi:clock-end' &&
+  text2('.status-title') === 'Charging Volvo XC40');
+check('a charging tile reads its target and the end of the current block',
+  planText('smartevse_1')[0] === `80% by ${t7} · charging until 22:00` && planText('smartevse_1')[1] === '≈ €4.91 · saving ≈ €1.29');
+iAttrs.smartevse_1_state = 'Ready to Charge'; iAttrs.active_smartevse_raw = ''; iAttrs.charge_allowed = false;
+iAttrs.charge_reason = 'intelligent_waiting_for_planned_slot';
+iAttrs.intelligent = basePayload();
+iStates['switch.force'].state = 'on';
+await push();
+const groupOrder = [...root2.querySelectorAll('.status-pill-group')].map((node) => node.dataset.planGroup);
+check('Force sorts first and the Intelligent group shows only "Resumes after force charge"',
+  groupOrder[0] === 'force-charge' && groupOrder[1] === 'intelligent' &&
+  /Resumes after force charge/.test(text2('[data-plan-group="intelligent"]')) &&
+  !root2.querySelector('[data-plan-group="intelligent"] .status-pill') && planText('smartevse_1').length === 0);
+iStates['switch.force'].state = 'off';
+iStates['switch.schedule'].state = 'on';
+await push();
+const order3 = [...root2.querySelectorAll('.status-pill-group')].map((node) => node.dataset.planGroup);
+check('Intelligent sorts before an also-enabled Schedule', order3[0] === 'intelligent' && order3[1] === 'use-schedule');
+iStates['switch.schedule'].state = 'off';
+const heroWarnings = () => [...root2.querySelectorAll('[data-plan-group="intelligent"] .status-pill[data-tone="warning"]')].map((node) => node.textContent.trim());
+// Two cars compete: the EX30 is short because it waits behind the XC40, which still charges.
+iAttrs.intelligent.chargers.smartevse_2.status = 'at_risk';
+iAttrs.intelligent.chargers.smartevse_2.projected_soc = 40.4;
+iAttrs.intelligent.chargers.smartevse_2.queue_after = 'smartevse_1';
+await push();
+check('the hero warns "Not enough time for both" when the short car waits behind a car that still charges',
+  JSON.stringify(heroWarnings()) === JSON.stringify(['Not enough time for both']));
+// "Both" depends on which cars still need time, not on how many are plugged in.
+const bothCases = [
+  ['the other car reached its minimum', (c1, c2) => { Object.assign(c1, { status: 'reached', soc: 85, blocks: [], need_kwh: 0 }); c2.queue_after = null; }, 'Not enough time for Volvo EX30'],
+  ['the other car is queued after the short one', (c1, c2) => { c2.queue_after = null; c1.queue_after = 'smartevse_2'; }, 'Not enough time for Volvo EX30'],
+  ['the car in front refuses charge', (c1) => { Object.assign(c1, { status: 'not_accepting', not_accepting: true }); }, 'Not enough time for Volvo EX30'],
+  ['the car in front is done below its target', (c1) => { Object.assign(c1, { status: 'done', soc: 60, blocks: [] }); }, 'Not enough time for Volvo EX30'],
+  ['both cars are short', (c1, c2) => { Object.assign(c1, { status: 'at_risk', projected_soc: 70 }); c2.queue_after = null; }, 'Not enough time for both'],
+  ['the car in front is catching up', (c1) => { c1.status = 'catch_up'; }, 'Not enough time for both'],
+];
+const wrongBoth = [];
+for (const [name, mutate, expected] of bothCases) {
+  iAttrs.intelligent = basePayload();
+  Object.assign(iAttrs.intelligent.chargers.smartevse_2, { status: 'at_risk', projected_soc: 40.4, queue_after: 'smartevse_1' });
+  mutate(iAttrs.intelligent.chargers.smartevse_1, iAttrs.intelligent.chargers.smartevse_2);
+  await push();
+  if (!heroWarnings().includes(expected) || heroWarnings().includes(expected === 'Not enough time for both' ? 'Not enough time for Volvo EX30' : 'Not enough time for both')) {
+    wrongBoth.push(`${name}: ${JSON.stringify(heroWarnings())}`);
+  }
+}
+check('the hero says "both" only when two cars compete for the time, otherwise it names the short car', wrongBoth.length === 0);
+if (wrongBoth.length) console.log(wrongBoth);
+iAttrs.intelligent = basePayload();
+iAttrs.intelligent.chargers.smartevse_2.status = 'at_risk';
+iAttrs.intelligent.chargers.smartevse_2.projected_soc = 40.4;
+iAttrs.intelligent.chargers.smartevse_2.queue_after = 'smartevse_1';
+iAttrs.intelligent.chargers.smartevse_1.not_accepting = true;
+iAttrs.intelligent.chargers.smartevse_1.status = 'not_accepting';
+await push();
+check('a refusing car reads "Check Volvo XC40" and the car behind it is short on its own',
+  JSON.stringify(heroWarnings()) === JSON.stringify(['Not enough time for Volvo EX30', 'Check Volvo XC40']));
+check('a car that refuses charge and a queued infeasible car read as warning lines on their tiles',
+  planText('smartevse_1')[0] === 'Car isn’t accepting charge' &&
+  root2.querySelector('.ev-node.smartevse_1 .charger-plan-line')?.dataset.tone === 'warning' &&
+  planText('smartevse_2')[0] === `Below 80% at ${t7} · ≈ 40% · after Volvo XC40`);
+iAttrs.intelligent = basePayload();
+await push();
+
+// Reason titles, including the three earlier mismatches.
+const reasonTitles = {
+  intelligent_waiting_for_planned_slot: 'Waiting for planned charge',
+  intelligent_waiting_for_connected_ev: 'Waiting for a vehicle',
+  waiting_for_connected_ev: 'Waiting for a vehicle',
+  intelligent_identifying_vehicle: 'Identifying vehicle',
+  intelligent_planned_outlet_unavailable: 'Charger connection unavailable',
+  intelligent_no_price_data: 'Charging without price data',
+  smartevse_1_only_selected_ev_already_complete: 'Selected vehicle’s session complete',
+  smartevse_2_api_unavailable: 'Charger connection unavailable',
+};
+const wrongTitles = [];
+for (const [reason, title] of Object.entries(reasonTitles)) {
+  iAttrs.charge_reason = reason;
+  // Like the integration (_controller_error_for_reason), a lost connection is also the controller_error.
+  iAttrs.controller_error = reason.endsWith('_api_unavailable') ? reason : null;
+  await push();
+  if (text2('.status-title') !== title) wrongTitles.push(`${reason}: ${text2('.status-title')}`);
+}
+check('Intelligent and fixed reasons map to their titles', wrongTitles.length === 0);
+if (wrongTitles.length) console.log(wrongTitles);
+// "Targets reached" only means no car needs more; the title says why, from the car statuses.
+const reachedCar = (c, soc = 82) => Object.assign(c, { status: 'reached', soc, blocks: [], need_kwh: 0, top_up: false });
+const restCases = [
+  ['every car at its minimum', 'intelligent_targets_reached', (c1, c2) => { reachedCar(c1); reachedCar(c2); }, 'Minimum charge reached'],
+  ['the only car at its minimum', 'intelligent_targets_reached', (c1, c2, p) => { reachedCar(c1); p.chargers.smartevse_2 = null; }, 'Minimum charge reached'],
+  ['a car at 53% not accepting charge', 'intelligent_targets_reached', (c1, c2, p) => { Object.assign(c1, { status: 'not_accepting', not_accepting: true, blocks: [] }); p.chargers.smartevse_2 = null; }, 'Volvo XC40 isn’t accepting charge'],
+  ['one car reached, the other refusing', 'intelligent_targets_reached', (c1, c2) => { reachedCar(c1); Object.assign(c2, { status: 'not_accepting', not_accepting: true, blocks: [] }); }, 'Volvo EX30 isn’t accepting charge'],
+  ['both cars refusing', 'intelligent_targets_reached', (c1, c2) => { Object.assign(c1, { status: 'not_accepting', not_accepting: true, blocks: [] }); Object.assign(c2, { status: 'not_accepting', not_accepting: true, blocks: [] }); }, 'Vehicles aren’t accepting charge'],
+  ['done below the minimum after retries', 'intelligent_targets_reached', (c1, c2) => { reachedCar(c1); Object.assign(c2, { status: 'done', soc: 40, blocks: [], need_kwh: 0 }); }, 'Charging complete'],
+  ['done at the minimum', 'intelligent_targets_reached', (c1, c2) => { reachedCar(c1); Object.assign(c2, { status: 'done', soc: 81, blocks: [], need_kwh: 0 }); }, 'Minimum charge reached'],
+  ['unknown battery level, done', 'intelligent_targets_reached', (c1, c2, p) => { Object.assign(c1, { vehicle: null, vehicle_name: null, settings_key: 'other', soc: null, estimated: true, status: 'done', blocks: [], need_kwh: 0 }); p.chargers.smartevse_2 = null; }, 'Charging complete'],
+  ['car limit below the minimum', 'intelligent_targets_reached', (c1, c2, p) => { reachedCar(c1, 75); Object.assign(c1, { target: 75, car_limit: 75, limited_by_car: true }); p.chargers.smartevse_2 = null; }, 'Charging complete'],
+  ['an excluded car does not count', 'intelligent_targets_reached', (c1, c2) => { reachedCar(c1); c2.status = 'excluded'; c2.soc = 30; }, 'Minimum charge reached'],
+  ['no per-car payload', 'intelligent_targets_reached', (c1, c2, p) => { p.chargers = { smartevse_1: null, smartevse_2: null }; }, 'Charging complete'],
+  ['statuses still planned', 'intelligent_targets_reached', () => {}, 'Charging complete'],
+  ['the only connected car excluded by policy', 'intelligent_waiting_for_connected_ev', (c1, c2, p) => { p.chargers.smartevse_1 = null; c2.status = 'excluded'; }, 'Waiting for the selected vehicle'],
+  ['no car connected', 'intelligent_waiting_for_connected_ev', (c1, c2, p) => { p.chargers = { smartevse_1: null, smartevse_2: null }; }, 'Waiting for a vehicle'],
+  // Dedicated ids a newer integration may publish for the same cases.
+  ['dedicated not-accepting reason', 'intelligent_vehicle_not_accepting', (c1, c2, p) => { Object.assign(c1, { status: 'not_accepting', not_accepting: true, blocks: [] }); p.chargers.smartevse_2 = null; }, 'Volvo XC40 isn’t accepting charge'],
+  ['dedicated not-accepting reason without per-car payload', 'intelligent_not_accepting', (c1, c2, p) => { p.chargers = { smartevse_1: null, smartevse_2: null }; }, 'Car isn’t accepting charge'],
+  ['dedicated complete reason', 'intelligent_charging_complete', (c1, c2) => { reachedCar(c1); Object.assign(c2, { status: 'done', soc: 40, blocks: [] }); }, 'Charging complete'],
+  ['dedicated policy reason', 'intelligent_excluded_by_policy', (c1, c2, p) => { p.chargers.smartevse_1 = null; c2.status = 'excluded'; }, 'Waiting for the selected vehicle'],
+  ['an unknown idle reason with a refusing car', 'intelligent_future_reason', (c1, c2, p) => { Object.assign(c1, { status: 'not_accepting', not_accepting: true, blocks: [] }); p.chargers.smartevse_2 = null; }, 'Volvo XC40 isn’t accepting charge'],
+];
+const wrongRest = [];
+for (const [name, reason, mutate, title] of restCases) {
+  iAttrs.intelligent = basePayload();
+  const p = iAttrs.intelligent;
+  mutate(p.chargers.smartevse_1, p.chargers.smartevse_2, p);
+  iAttrs.charge_reason = reason; iAttrs.controller_error = null;
+  await push();
+  if (text2('.status-title') !== title) wrongRest.push(`${name}: ${text2('.status-title')}`);
+}
+check('a finished plan reads "Minimum charge reached" only when every planned car is at its minimum', wrongRest.length === 0);
+if (wrongRest.length) console.log(wrongRest);
+iAttrs.intelligent = basePayload();
+const heroDesc = () => root2.querySelector('#sdc-hero-description')?.textContent || '';
+iAttrs.charge_reason = 'smartevse_2_api_unavailable'; iAttrs.controller_error = 'smartevse_2_api_unavailable';
+await push();
+check('a lost charger connection reads as its own title, names the charger and is described to screen readers',
+  text2('.status-title') === 'Charger connection unavailable' && text2('.status-copy .overview-note') === 'SmartEVSE 2 connection unavailable' &&
+  heroDesc().startsWith('Charger connection unavailable. SmartEVSE 2 connection unavailable.') && !root2.textContent.includes('smartevse_2_api_unavailable'));
+iAttrs.charge_reason = 'smartevse_api_unavailable'; iAttrs.controller_error = 'smartevse_api_unavailable';
+await push();
+check('losing both chargers reads once, without repeating the title as a note',
+  text2('.status-title') === 'Charger connection unavailable' && !root2.querySelector('.status-copy .overview-note'));
+iAttrs.controller_error = null;
+iAttrs.charge_reason = 'intelligent_charging'; iAttrs.charge_allowed = true;
+iAttrs.smartevse_1_state = 'Charging'; iAttrs.active_smartevse_raw = 'smartevse_1';
+await push();
+check('active Intelligent reasons fall through to the charging title', text2('.status-title') === 'Charging Volvo XC40');
+iAttrs.charge_reason = 'intelligent_waiting_for_planned_slot'; iAttrs.charge_allowed = false;
+iAttrs.smartevse_1_state = 'Ready to Charge'; iAttrs.active_smartevse_raw = '';
+
+// Warning-level controller_error values become readable notices; ids are never printed.
+const warningCases = {
+  intelligent_price_data_unavailable: 'Prices unavailable · charging by deadline',
+  intelligent_planner_failed: 'Plan unavailable · charging by deadline',
+  smartevse_2_vehicle_timer_blocks_charging: 'Car’s own charging timer is on',
+};
+const badWarnings = [];
+for (const [id, message] of Object.entries(warningCases)) {
+  iAttrs.controller_error = id;
+  await push();
+  const notice = root2.querySelector('.flow-stage > .family-notice[data-tone="warning"]');
+  if (text2('.status-title') === 'Controller error' || notice?.textContent.trim() !== message || root2.textContent.includes(id)) badWarnings.push(id);
+}
+check('warning-level controller errors show readable notices without "Controller error" or raw ids', badWarnings.length === 0);
+if (badWarnings.length) console.log(badWarnings);
+iAttrs.controller_error = 'mains_data_unavailable';
+await push();
+check('blocking controller errors keep the error title but read as text, not ids',
+  text2('.status-title') === 'Controller error' && text2('.overview-note') === 'Mains data unavailable' &&
+  !root2.textContent.includes('mains_data_unavailable'));
+check('the hero description names the error, not only "Controller error"',
+  heroDesc().startsWith('Controller error. Mains data unavailable. Intelligent charging enabled.'));
+iAttrs.controller_error = null;
+await push();
+iStates['switch.ic'].state = 'off';
+await push();
+check('with no plan enabled the hero description says so, as the hero does',
+  text2('.status-copy .overview-note') === 'No charging plan enabled' && heroDesc().endsWith('No charging plan enabled'));
+iStates['switch.ic'].state = 'on';
+iStates['switch.force'].state = 'on';
+await push();
+check('the hero description includes the plan notes it shows',
+  /Intelligent charging enabled\. Resumes after force charge/.test(heroDesc()));
+iStates['switch.force'].state = 'off';
+iStates['switch.schedule'].state = 'on';
+await push();
+check('a schedule behind Intelligent charging is described with its priority note',
+  /Schedule enabled\. Intelligent charging has priority/.test(heroDesc()));
+iStates['switch.schedule'].state = 'off';
+await push();
+
+// Charger tile plan lines and money rules.
+check('a planned tile states target and time, then cost and saving',
+  JSON.stringify(planText('smartevse_1')) === JSON.stringify([`80% by ${t7} · 21:00–22:00 +1 more`, '≈ €4.91 · saving ≈ €1.29']));
+check('a plan starting tomorrow names the day; a saving under €0.10 is hidden',
+  planText('smartevse_2')[0] === `80% by ${t7} · starts ${el2._formatDateTime('2026-11-10T02:00:00+00:00')} +1 more` &&
+  planText('smartevse_2')[1] === '≈ €1.19');
+const meter = root2.querySelector('.ev-node.smartevse_1 .battery-meter');
+check('the battery meter marks the effective minimum and speaks it',
+  !!meter?.querySelector('.family-level-target') && meter.getAttribute('aria-valuetext') === '53%, minimum 80%');
+check('plan lines add no second amount to the totals column and no new glow',
+  !root2.querySelector('.charger-totals .charger-plan') && !root2.querySelector('.charger-plan .glow-under'));
+const tileCases = [
+  ['identifying', (c) => { c.status = 'identifying'; }, ['Identifying vehicle']],
+  ['excluded', (c) => { c.status = 'excluded'; }, ['Not planned · charge policy']],
+  ['car timer', (c) => { c.car_timer = true; }, ['Car’s own charging timer is on']],
+  ['car limit', (c) => { c.target = 75; c.car_limit = 75; c.limited_by_car = true; c.blocks = c.blocks.slice(0, 1); }, [`75% by ${t7} (car limit) · 21:00–22:00`, '≈ €4.91 · saving ≈ €1.29']],
+  ['reached', (c) => { c.status = 'reached'; c.soc = 80; c.blocks = []; c.saving = 1.25; }, ['80% reached', '≈ €4.91 · saved ≈ €1.25']],
+  ['top-up', (c) => { c.status = 'reached'; c.top_up = true; c.blocks = [{ start: '2026-11-10T03:00:00+00:00', end: '2026-11-10T04:00:00+00:00', top_up: true }]; }, [`Topping up to 90% · starts ${el2._formatDateTime('2026-11-10T03:00:00+00:00')}`, '≈ €4.91 · saved ≈ €1.29']],
+  ['forecast', (c) => { c.includes_forecast = true; }, [`80% by ${t7} · 21:00–22:00 +1 more`, '≈ €4.91 forecast']],
+  ['partial', (c) => { c.partial = true; }, [`80% by ${t7} · 21:00–22:00 +1 more`]],
+  ['unidentified estimate', (c) => { c.vehicle = null; c.vehicle_name = null; c.settings_key = 'other'; c.soc = null; c.estimated = true; c.need_kwh = 30; }, [`Unidentified vehicle · ≈ 30\u202fkWh by ${t7} · 21:00–22:00 +1 more`]],
+  ['unidentified estimate, minimum 100%', (c) => { c.vehicle = null; c.vehicle_name = null; c.settings_key = 'other'; c.soc = null; c.estimated = true; c.need_kwh = 30; c.minimum = 100; c.target = 100; }, [`Unidentified vehicle · ≈ 30\u202fkWh by ${t7} · 21:00–22:00 +1 more`]],
+  ['estimate at risk', (c) => { c.soc = null; c.estimated = true; c.need_kwh = 30; c.status = 'at_risk'; c.projected_soc = null; }, [`Not enough time for ≈ 30\u202fkWh by ${t7} · 21:00–22:00 +1 more`]],
+  ['estimate catching up', (c) => { c.soc = null; c.estimated = true; c.need_kwh = 8.4; c.status = 'catch_up'; c.projected_soc = null; }, [`Catching up ≈ 8.4\u202fkWh after ${t7} · 21:00–22:00 +1 more`]],
+  ['at risk, charging', (c) => { c.status = 'at_risk'; c.projected_soc = 77; }, [`Below 80% at ${t7} · ≈ 77% · charging now`, '≈ €4.91 · saving ≈ €1.29'], { smartevse_1_state: 'Charging' }],
+  // Ready-by moved to 06:00 within two hours of the 07:00 deadline: the plan still targets 07:00.
+  ['deadline kept after a late ready-by edit', (c) => { c.ready_by = '06:00'; }, [`80% by ${t7} · 21:00–22:00 +1 more`, '≈ €4.91 · saving ≈ €1.29']],
+  ['at risk against the kept deadline', (c) => { c.ready_by = '06:00'; c.status = 'at_risk'; c.projected_soc = 73; }, [`Below 80% at ${t7} · ≈ 73% · 21:00–22:00 +1 more`, '≈ €4.91 · saving ≈ €1.29']],
+  ['done below the target', (c) => { c.status = 'done'; c.soc = 76; c.blocks = []; }, ['Charging complete', '≈ €4.91 · saved ≈ €1.29']],
+];
+const wrongTiles = [];
+for (const [name, mutate, expected, attrs = {}] of tileCases) {
+  iAttrs.intelligent = basePayload();
+  mutate(iAttrs.intelligent.chargers.smartevse_1);
+  Object.assign(iAttrs, { smartevse_1_state: 'Ready to Charge' }, attrs);
+  await push();
+  if (JSON.stringify(planText('smartevse_1')) !== JSON.stringify(expected)) wrongTiles.push(`${name}: ${JSON.stringify(planText('smartevse_1'))}`);
+}
+check('each plan status reads as its target · time clause with the money rules', wrongTiles.length === 0);
+if (wrongTiles.length) console.log(wrongTiles);
+iAttrs.smartevse_1_state = 'Ready to Charge';
+iAttrs.intelligent = basePayload();
+iAttrs.smartevse_1_error = 'Ground fault';
+await push();
+check('a charger error hides its plan line', planText('smartevse_1').length === 0 && planText('smartevse_2').length === 2);
+iAttrs.smartevse_1_error = 'None';
+
+// Disconnected tile: last realised saving until the next plug-in; History shows it too.
+iAttrs.smartevse_2_plug_state = 'Disconnected'; iAttrs.smartevse_2_state = 'Disconnected';
+iAttrs.intelligent.chargers.smartevse_2 = null;
+await push();
+check('a disconnected tile shows one line with the last realised saving',
+  JSON.stringify(planText('smartevse_2')) === JSON.stringify(['Last charge saved ≈ €1.25']) &&
+  root2.querySelector('.ev-node.smartevse_2')?.classList.contains('compact'));
+iAttrs.intelligent.sessions[0].mixed = true;
+await push();
+check('a session that used Force charge claims no saving on the tile', planText('smartevse_2').length === 0);
+iAttrs.intelligent.sessions[0].mixed = false;
+await push();
+root2.querySelector('.charging-history-launcher')?.dispatchEvent(new win.MouseEvent('click', { bubbles: true, composed: true }));
+await wait();
+const historySavings = [...root2.querySelectorAll('.cost-record-saving')].map((node) => node.textContent.trim());
+check('History records read the saving vs charging at plug-in, or that Force charge was used',
+  historySavings.includes('Saved ≈ €1.25 vs charging at plug-in') && historySavings.includes('Force charge used'));
+el2._closeActiveDialog(); await el2.updateComplete;
+
+// One plug-in can span several realised windows sharing its ledger id: a deadline roll before
+// the car leaves opens an empty newest window (backend Sim: plug-in 18:00, charge 21:00–22:00,
+// ready-by 07:00, unplug 07:30), and a car left plugged in has one window per night.
+const realised = (energy, saving, extra = {}) => ({ ledger_id: 'ex30-last', outlet: 'smartevse_2', vehicle_name: 'Volvo EX30', closed: true,
+  energy_kwh: energy, cost: 2.47, baseline_cost: saving === null ? null : 2.47 + saving, saving, mixed: false, partial: false, ...extra });
+const ex30Record = iAttrs.charging_costs.chargers.smartevse_2.session;
+const realisedCases = [
+  ['empty window after the deadline roll', [realised(0, null), realised(10.2, 1.99)], ['Last charge saved ≈ €1.99'], 'Saved ≈ €1.99 vs charging at plug-in'],
+  ['a weekend: two nights and the empty roll window', [realised(0, null), realised(8, 1.2), realised(6, 0.8)], ['Last charge saved ≈ €2.00'], 'Saved ≈ €2.00 vs charging at plug-in'],
+  ['Force charge used on one night', [realised(8, null, { mixed: true }), realised(6, 0.8)], [], 'Force charge used'],
+  ['one night without a realised saving', [realised(8, null), realised(6, 0.8)], [], ''],
+  ['one partial night', [realised(8, 1, { partial: true }), realised(6, 0.8)], [], ''],
+  ['only an empty window', [realised(0, null)], [], ''],
+];
+const wrongRealised = [];
+for (const [name, sessions, tile, history] of realisedCases) {
+  iAttrs.intelligent.sessions = sessions;
+  await push();
+  if (JSON.stringify(planText('smartevse_2')) !== JSON.stringify(tile) || el2._historySaving(ex30Record) !== history) {
+    wrongRealised.push(`${name}: ${JSON.stringify(planText('smartevse_2'))} / ${JSON.stringify(el2._historySaving(ex30Record))}`);
+  }
+}
+check('realised windows sharing a ledger id combine, and an empty window never hides the saving', wrongRealised.length === 0);
+if (wrongRealised.length) console.log(wrongRealised);
+iAttrs.intelligent.sessions = realisedCases[0][1];
+await push();
+root2.querySelector('.charging-history-launcher')?.dispatchEvent(new win.MouseEvent('click', { bubbles: true, composed: true }));
+await wait();
+check('History shows the saving of a session whose newest window is empty',
+  [...root2.querySelectorAll('.cost-record-saving')].some((node) => node.textContent.trim() === 'Saved ≈ €1.99 vs charging at plug-in'));
+el2._closeActiveDialog(); await el2.updateComplete;
+iAttrs.smartevse_2_plug_state = 'Connected'; iAttrs.smartevse_2_state = 'Ready to Charge';
+iAttrs.intelligent = basePayload();
+await push();
+
+// An identical payload never re-renders, so a field being edited is never replaced.
+let renderRequests = 0;
+const originalRequestUpdate = el2.requestUpdate.bind(el2);
+el2.requestUpdate = (...args) => { renderRequests++; return originalRequestUpdate(...args); };
+el2.hass = { ...iHass, states: clone(iStates) };
+await wait();
+const identicalRenders = renderRequests;
+el2.hass = iHass;
+await wait();
+iAttrs.intelligent.totals.cost = 6.2;
+el2.hass = iHass;
+await wait();
+check('an identical Intelligent payload causes no re-render while a changed one does',
+  identicalRenders === 0 && renderRequests > 0);
+el2.requestUpdate = originalRequestUpdate;
+iAttrs.intelligent = basePayload();
+await push();
+
+// The Intelligent page: plan first, then per-vehicle settings.
+await openPlan2();
+await click2('[data-action="choose-force-mode"][data-mode="intelligent"]');
+const page = root2.querySelector('.intelligent-page');
+check('the Intelligent route opens a named page with the plan before the settings',
+  root2.querySelector('dialog')?.getAttribute('aria-label') === 'Intelligent charging' && !!page &&
+  page.querySelector('.intelligent-plan') && page.querySelector('.intelligent-settings') &&
+  (page.querySelector('.intelligent-plan').compareDocumentPosition(page.querySelector('.intelligent-settings')) & 4) === 4);
+const blockRows = [...root2.querySelectorAll('.intelligent-block')].map((node) => node.textContent.replace(/\s+/g, ' ').trim());
+check('the plan lists chronological blocks per car with top-up marked',
+  text2('.intelligent-section-title') === 'Tonight' &&
+  JSON.stringify(blockRows) === JSON.stringify(['21:00–22:00 · Volvo XC40', `23:00–${el2._formatClock('00:00')} · Volvo XC40`,
+    `${el2._formatDateTime('2026-11-10T02:00:00+00:00')}–${el2._formatClock('04:00')} · Volvo EX30`,
+    `${el2._formatDateTime('2026-11-10T04:00:00+00:00')}–${el2._formatClock('04:30')} · Volvo EX30 · top-up`]));
+const carLines = [...root2.querySelectorAll('.intelligent-car-line')].map((node) => node.textContent.trim());
+check('each car summarises SoC, minimum, deadline, cost and saving',
+  carLines[0] === `53% → 80% by ${t7} · ≈ €4.91 · saving ≈ €1.29` && carLines[1] === `30% → 80% by ${t7} · ≈ €1.19`);
+check('the page labels the saving baseline once and shows the price horizon and learning facts',
+  (page.textContent.match(/Saving vs charging at plug-in/g) || []).length === 1 &&
+  page.textContent.includes(`Prices until ${el2._formatDateTime('2026-11-10T01:00:00+00:00')}`) &&
+  page.textContent.includes('Hours without prices are used only if needed') && page.textContent.includes('Learning household load (3 of 7 days)') &&
+  page.textContent.includes('Learned from 12 charges'));
+const chargesFirst = root2.querySelector('.intelligent-order[data-action="open-submenu"][data-entity="select.policy"]');
+check('two cars show which charges first as a row opening the charge policy',
+  /Charges first/.test(chargesFirst?.textContent || '') && /SmartEVSE 1/.test(chargesFirst?.textContent || ''));
+await click2('.intelligent-order');
+const policyOpened = root2.querySelector('dialog')?.getAttribute('aria-label') === 'Charge policy' &&
+  !!root2.querySelector('[data-action="choose-option"][data-entity="select.policy"]');
+await click2('dialog [aria-label="Back"]');
+check('Charges first opens the Charge policy page and Back returns to the plan',
+  policyOpened && el2._forceWizardStep === 'intelligent');
+
+const v1Time = root2.querySelector('.intelligent-time-input[data-entity="time.v1_ready_by"]');
+const v1Minimum = root2.querySelector('.force-input[data-entity="number.v1_minimum"]');
+check('vehicle settings use a native time input and a % field with vehicle-named labels',
+  v1Time?.type === 'time' && v1Time.value === '07:00' && v1Time.getAttribute('aria-label') === 'Volvo XC40 ready by' &&
+  v1Minimum?.getAttribute('aria-label') === 'Volvo XC40 minimum charge' && v1Minimum.value === '80' &&
+  [...root2.querySelectorAll('.intelligent-vehicle-name')].map((node) => node.textContent.trim()).join('|') === 'Volvo XC40|Volvo EX30|Unidentified vehicle');
+const pageCss = [...root2.querySelectorAll('style')].map((node) => node.textContent).join('\n');
+check('vehicle fields form a two-column grid that becomes one column below 300px, with 16px inputs',
+  /\.intelligent-vehicle-fields \{\s*display: grid;\s*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/.test(pageCss) &&
+  /@container intelligent-page \(max-width: 299px\)/.test(pageCss) &&
+  /\.setting-input, \.setting-select \{ font-size: 16px; min-height: 44px;/.test(pageCss));
+
+// Time inputs commit on blur or Enter only; HH:MM and HH:MM:SS compare equal.
+callStart = iCalls.length;
+v1Time.focus();
+v1Time.value = '06:30';
+v1Time.dispatchEvent(new win.Event('input', { bubbles: true, composed: true }));
+v1Time.dispatchEvent(new win.Event('change', { bubbles: true, composed: true }));
+await wait();
+const noCallWhileEditing = iCalls.length === callStart;
+const timeService = [];
+iService = (...args) => new Promise((resolve) => timeService.push(() => resolve(applyCall(...args))));
+v1Time.dispatchEvent(new win.FocusEvent('focusout', { bubbles: true, composed: true }));
+// The blur commit runs on the next task, after any click that moved focus.
+await wait(0); await el2.updateComplete;
+const pendingTimeField = root2.querySelector('.intelligent-time-input[data-entity="time.v1_ready_by"]');
+check('a ready-by edit sends nothing per change and saves once on blur',
+  noCallWhileEditing && timeService.length === 1);
+check('the saving time field shows its own pending state and stays enabled',
+  pendingTimeField?.closest('label')?.getAttribute('aria-busy') === 'true' &&
+  !!pendingTimeField.closest('label')?.querySelector('.control-pending .family-pending-indicator') && !pendingTimeField.disabled);
+check('a field save leaves the other controls enabled and Back usable',
+  !root2.querySelector('[data-action="toggle-intelligent-top-up"]')?.disabled &&
+  !root2.querySelector('.force-input[data-entity="number.v1_minimum"]')?.disabled &&
+  root2.querySelectorAll('.control-pending').length === 1 &&
+  el2._dialogGuard('back').pending === false && el2._dialogGuard('back').dirty === false);
+iService = applyCall;
+timeService.shift()();
+await wait();
+let timeCalls = iCalls.slice(callStart);
+check('blur saves the time with time.set_value',
+  timeCalls.length === 1 && timeCalls[0][0] === 'time' && timeCalls[0][1] === 'set_value' &&
+  timeCalls[0][2].entity_id === 'time.v1_ready_by' && timeCalls[0][2].time === '06:30:00');
+callStart = iCalls.length;
+root2.querySelector('.intelligent-time-input[data-entity="time.v1_ready_by"]')?.dispatchEvent(new win.FocusEvent('focusout', { bubbles: true, composed: true }));
+await wait();
+check('an unchanged time (06:30 against 06:30:00) is not saved again and is not dirty',
+  iCalls.length === callStart && !el2._dialogGuard('close').dirty);
+const v2Time = root2.querySelector('.intelligent-time-input[data-entity="time.v2_ready_by"]');
+v2Time.value = '06:45';
+v2Time.dispatchEvent(new win.Event('input', { bubbles: true, composed: true }));
+check('an uncommitted time draft is protected by the dialog guard', el2._dialogGuard('close').dirty === true);
+v2Time.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, composed: true }));
+await wait();
+timeCalls = iCalls.slice(callStart);
+check('Enter commits the time with time.set_value',
+  timeCalls.length === 1 && timeCalls[0][2].entity_id === 'time.v2_ready_by' && timeCalls[0][2].time === '06:45:00' &&
+  !el2._dialogGuard('close').dirty);
+
+// The press that blurs a ready-by field must reach its control: the commit waits for that
+// press to deliver its click, so the control is neither replaced nor disabled first.
+const press = (node, type) => node.dispatchEvent(new win.PointerEvent(type, { bubbles: true, composed: true }));
+callStart = iCalls.length;
+const v1Edit = root2.querySelector('.intelligent-time-input[data-entity="time.v1_ready_by"]');
+v1Edit.focus();
+v1Edit.value = '06:20';
+v1Edit.dispatchEvent(new win.Event('input', { bubbles: true, composed: true }));
+const topUpPressed = root2.querySelector('[data-action="toggle-intelligent-top-up"]');
+press(topUpPressed, 'pointerdown');
+v1Edit.dispatchEvent(new win.FocusEvent('focusout', { bubbles: true, composed: true }));
+await Promise.resolve(); await el2.updateComplete; await wait(0);
+const pressedSurvives = root2.querySelector('[data-action="toggle-intelligent-top-up"]') === topUpPressed && !topUpPressed.disabled &&
+  iCalls.length === callStart && !el2._dialogGuard('close').dirty;
+press(topUpPressed, 'pointerup');
+topUpPressed.dispatchEvent(new win.MouseEvent('click', { bubbles: true, composed: true }));
+await wait();
+check('a press that blurs a ready-by field still reaches its control, and the time is saved after it',
+  pressedSurvives && JSON.stringify(iCalls.slice(callStart).map((c) => `${c[1]} ${c[2].entity_id}`)) ===
+    JSON.stringify(['turn_on switch.ic_top_up', 'set_value time.v1_ready_by']) && iStates['time.v1_ready_by'].state === '06:20:00');
+// Without a pointer (keyboard, Safari's unfocused buttons) the commit still waits one task.
+callStart = iCalls.length;
+const v1Again = root2.querySelector('.intelligent-time-input[data-entity="time.v1_ready_by"]');
+v1Again.value = '06:25';
+v1Again.dispatchEvent(new win.Event('input', { bubbles: true, composed: true }));
+const topUpTapped = root2.querySelector('[data-action="toggle-intelligent-top-up"]');
+v1Again.dispatchEvent(new win.FocusEvent('focusout', { bubbles: true, composed: true }));
+await Promise.resolve(); await el2.updateComplete;
+const tappedSurvives = root2.querySelector('[data-action="toggle-intelligent-top-up"]') === topUpTapped && !topUpTapped.disabled;
+topUpTapped.dispatchEvent(new win.MouseEvent('click', { bubbles: true, composed: true }));
+await wait();
+check('a tap whose events arrive together is not swallowed by the blur commit',
+  tappedSurvives && JSON.stringify(iCalls.slice(callStart).map((c) => `${c[1]} ${c[2].entity_id}`)) ===
+    JSON.stringify(['turn_off switch.ic_top_up', 'set_value time.v1_ready_by']) && iStates['switch.ic_top_up'].state === 'off');
+
+// Edit, then Back: the page closes at once (no wait notice, no discard prompt) and the time is saved.
+const backService = [];
+iService = (...args) => new Promise((resolve) => backService.push(() => resolve(applyCall(...args))));
+callStart = iCalls.length;
+const v2Edit = root2.querySelector('.intelligent-time-input[data-entity="time.v2_ready_by"]');
+v2Edit.focus();
+v2Edit.value = '06:10';
+v2Edit.dispatchEvent(new win.Event('input', { bubbles: true, composed: true }));
+const backButton = root2.querySelector('dialog [aria-label="Back"]');
+press(backButton, 'pointerdown');
+v2Edit.dispatchEvent(new win.FocusEvent('focusout', { bubbles: true, composed: true }));
+await Promise.resolve(); await el2.updateComplete;
+press(backButton, 'pointerup');
+backButton.dispatchEvent(new win.MouseEvent('click', { bubbles: true, composed: true }));
+await el2.updateComplete; await wait();
+const leftAtOnce = el2._flow.current === 'plan' && !el2._flow.confirmation && !el2._flow.notice &&
+  !root2.querySelector('.family-dialog-body > .family-notice');
+iService = applyCall;
+while (backService.length) { backService.shift()(); await wait(5); }
+await wait();
+check('Back after editing a ready-by leaves the page at once and the time is still saved',
+  leftAtOnce && JSON.stringify(iCalls.slice(callStart).map((c) => [c[2].entity_id, c[2].time])) === JSON.stringify([['time.v2_ready_by', '06:10:00']]) &&
+  iStates['time.v2_ready_by'].state === '06:10:00');
+await click2('[data-action="choose-force-mode"][data-mode="intelligent"]');
+// A press whose release never arrives does not hold the value back for long.
+callStart = iCalls.length;
+const v1Held = root2.querySelector('.intelligent-time-input[data-entity="time.v1_ready_by"]');
+v1Held.focus();
+v1Held.value = '06:35';
+v1Held.dispatchEvent(new win.Event('input', { bubbles: true, composed: true }));
+press(root2.querySelector('.force-input[data-entity="number.v1_minimum"]'), 'pointerdown');
+v1Held.dispatchEvent(new win.FocusEvent('focusout', { bubbles: true, composed: true }));
+await wait(100);
+const heldBack = iCalls.length === callStart && !el2._dialogGuard('close').dirty;
+await wait(2000);
+check('a blur commit held by a press without a release is still saved after a short delay',
+  heldBack && iCalls.slice(callStart).some((c) => c[2].entity_id === 'time.v1_ready_by' && c[2].time === '06:35:00'));
+press(root2.querySelector('.force-input[data-entity="number.v1_minimum"]'), 'pointerup');
+await wait();
+
+// Minimum charge saves through number.set_value on blur or Enter, never per change event
+// (a desktop spinner fires change on every step).
+callStart = iCalls.length;
+const minimumInput = root2.querySelector('.force-input[data-entity="number.v1_minimum"]');
+for (const step of ['81', '82', '85']) {
+  minimumInput.value = step;
+  minimumInput.dispatchEvent(new win.Event('input', { bubbles: true, composed: true }));
+  minimumInput.dispatchEvent(new win.Event('change', { bubbles: true, composed: true }));
+  await Promise.resolve();
+}
+await wait();
+const noMinimumCallPerChange = iCalls.length === callStart;
+root2.querySelector('.force-input[data-entity="number.v1_minimum"]')?.dispatchEvent(new win.FocusEvent('focusout', { bubbles: true, composed: true }));
+await wait();
+const minimumCalls = iCalls.slice(callStart).filter((c) => c[2].entity_id === 'number.v1_minimum');
+check('minimum charge saves once with number.set_value when the field loses focus',
+  noMinimumCallPerChange && minimumCalls.length === 1 && minimumCalls[0][0] === 'number' && minimumCalls[0][1] === 'set_value' &&
+  minimumCalls[0][2].value === 85 && iStates['switch.ic'].state === 'on');
+
+// A value entered while the field is still saving is written after that save, not dropped.
+const minimumService = [];
+iService = (...args) => new Promise((resolve) => minimumService.push(() => resolve(applyCall(...args))));
+callStart = iCalls.length;
+const minimumField = () => root2.querySelector('.force-input[data-entity="number.v1_minimum"]');
+minimumField().value = '86';
+minimumField().dispatchEvent(new win.Event('input', { bubbles: true, composed: true }));
+minimumField().dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, composed: true }));
+await wait();
+const minimumPending = minimumService.length === 1 && minimumField()?.closest('label')?.getAttribute('aria-busy') === 'true' && !minimumField()?.disabled;
+minimumField().value = '88';
+minimumField().dispatchEvent(new win.Event('input', { bubbles: true, composed: true }));
+minimumField().dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, composed: true }));
+await wait();
+const queuedWhilePending = minimumService.length === 1 && el2._dialogGuard('close').dirty === false;
+iService = applyCall;
+minimumService.shift()();
+await wait();
+const queuedMinimum = iCalls.slice(callStart).filter((c) => c[2].entity_id === 'number.v1_minimum').map((c) => c[2].value);
+check('Enter saves the minimum and a newer value entered during that save is written next',
+  minimumPending && queuedWhilePending && JSON.stringify(queuedMinimum) === JSON.stringify([86, 88]) &&
+  iStates['number.v1_minimum'].state === '88' && minimumField()?.value === '88' && !el2._dialogGuard('close').dirty);
+callStart = iCalls.length;
+minimumField().value = '5';
+minimumField().dispatchEvent(new win.Event('input', { bubbles: true, composed: true }));
+minimumField().dispatchEvent(new win.FocusEvent('focusout', { bubbles: true, composed: true }));
+await wait();
+check('an out-of-range minimum is reported and not sent',
+  iCalls.length === callStart && /Value must be at least 10/.test(text2('.intelligent-page')) &&
+  el2._dialogGuard('close').dirty === true);
+minimumField().value = '88';
+minimumField().dispatchEvent(new win.Event('input', { bubbles: true, composed: true }));
+minimumField().dispatchEvent(new win.FocusEvent('focusout', { bubbles: true, composed: true }));
+await wait();
+check('restoring the saved minimum sends nothing and clears its error',
+  iCalls.length === callStart && !el2._dialogGuard('close').dirty && !/Value must be at least/.test(text2('.intelligent-page')));
+
+// Learned suggestion: fact plus a quiet action pill that writes the ready-by time.
+iStates['time.v1_ready_by'].state = '07:00:00';
+await push();
+const suggestion = root2.querySelector('[data-action="use-suggested-ready-by"][data-entity="time.v1_ready_by"]');
+check('the learned departure is a quiet pill with a verb, a named action and a warning when earlier',
+  suggestion?.textContent.trim() === `Use ${t615}` && suggestion.classList.contains('family-action') &&
+  suggestion.getAttribute('aria-label') === `Set Volvo XC40 ready by to ${t615}` &&
+  suggestion.closest('.intelligent-suggestion')?.dataset.tone === 'warning' &&
+  /Usually leaves earlier/.test(suggestion.closest('.intelligent-suggestion')?.textContent || '') &&
+  !root2.querySelector('[data-action="use-suggested-ready-by"][data-entity="time.v2_ready_by"]'));
+iAttrs.intelligent.vehicles.vehicle_1.usually_leaves = '06:30';
+await push();
+const learnedLeave = root2.querySelector('[data-action="use-suggested-ready-by"][data-entity="time.v1_ready_by"]')?.closest('.intelligent-suggestion');
+check('the suggestion states the learned departure time it is based on',
+  learnedLeave?.querySelector('.intelligent-fact')?.textContent.trim() === `Usually leaves ${el2._formatClock('06:30')}` &&
+  learnedLeave.dataset.tone === 'warning' && learnedLeave.querySelector('.intelligent-suggestion-pill')?.textContent.trim() === `Use ${t615}`);
+check('an earlier learned departure marks its fact with the shared warning glyph, not orange text',
+  learnedLeave?.querySelector('.intelligent-fact .plan-tone-icon')?.getAttribute('icon') === 'mdi:alert-outline' &&
+  learnedLeave.querySelector('.intelligent-fact .plan-tone-icon')?.getAttribute('aria-hidden') === 'true');
+const suggestionService = [];
+iService = (...args) => new Promise((resolve) => suggestionService.push(() => resolve(applyCall(...args))));
+callStart = iCalls.length;
+await click2('[data-action="use-suggested-ready-by"][data-entity="time.v1_ready_by"]');
+const pendingSuggestion = root2.querySelector('[data-action="use-suggested-ready-by"]');
+check('the suggestion pill shows its own pending indicator with aria-busy',
+  pendingSuggestion?.getAttribute('aria-busy') === 'true' && !!pendingSuggestion.querySelector('.family-pending-indicator') &&
+  /Saving/.test(pendingSuggestion.textContent));
+iService = applyCall;
+suggestionService.shift()();
+await wait();
+check('using the suggestion saves the ready-by time and the pill disappears',
+  iCalls.slice(callStart).some((c) => c[0] === 'time' && c[2].entity_id === 'time.v1_ready_by' && c[2].time === '06:15:00') &&
+  !root2.querySelector('[data-action="use-suggested-ready-by"][data-entity="time.v1_ready_by"]'));
+
+// Top-up has its own switch and dedicated price.
+callStart = iCalls.length;
+await click2('[data-action="toggle-intelligent-top-up"]');
+check('the top-up switch saves its entity and reveals the dedicated "Top up below" price',
+  iCalls.slice(callStart).some((c) => c[1] === 'turn_on' && c[2].entity_id === 'switch.ic_top_up') &&
+  root2.querySelector('[data-action="toggle-intelligent-top-up"]')?.getAttribute('aria-checked') === 'true' &&
+  !!root2.querySelector('.force-input[data-entity="number.ic_top_up_price"]') &&
+  /Top up below/.test(root2.querySelector('.intelligent-top-up')?.textContent || '') &&
+  !root2.querySelector('.intelligent-top-up .force-input[data-entity="number.price"]'));
+// Prices are known only until 01:00 while the deadline is 07:00: the cheap night hours may still qualify.
+check('while hours before the deadline are unpriced, the top-up fact speaks only for the known hours',
+  root2.querySelector('.intelligent-top-up-fact')?.textContent.trim() === 'No known hours below 0.160\u202fEUR/kWh yet');
+iAttrs.intelligent.known_until = '2026-11-10T07:00:00+00:00';
+iAttrs.intelligent.slots = iAttrs.intelligent.slots.map((slot) => ({ ...slot, price: Math.max(slot.price, 0.19), kind: 'known' }));
+await push();
+check('once every hour before the deadline is priced, the page states that none is below the top-up price',
+  root2.querySelector('.intelligent-top-up-fact')?.textContent.trim() === `No hours below 0.160\u202fEUR/kWh before ${t7}`);
+iAttrs.intelligent = basePayload();
+iAttrs.intelligent.prices_expected_at = '2026-11-09T13:00:00+00:00';
+await push();
+check('while tomorrow\'s prices are pending the page says the plan waits for them and updates then',
+  /Waiting for tomorrow's prices \(about 13:00\) · plan updates then/.test(root2.textContent) &&
+  !root2.textContent.includes('Hours without prices are used only if needed'));
+iAttrs.intelligent = basePayload();
+await push();
+callStart = iCalls.length;
+const topUpPrice = root2.querySelector('.force-input[data-entity="number.ic_top_up_price"]');
+topUpPrice.value = '0.21';
+topUpPrice.dispatchEvent(new win.Event('input', { bubbles: true, composed: true }));
+topUpPrice.dispatchEvent(new win.Event('change', { bubbles: true, composed: true }));
+await wait();
+const noTopUpPriceCallPerChange = iCalls.length === callStart;
+root2.querySelector('.force-input[data-entity="number.ic_top_up_price"]')?.dispatchEvent(new win.FocusEvent('focusout', { bubbles: true, composed: true }));
+await wait();
+check('the top-up price saves on blur to its own number entity, not the acceptable price',
+  noTopUpPriceCallPerChange &&
+  iCalls.slice(callStart).some((c) => c[1] === 'set_value' && c[2].entity_id === 'number.ic_top_up_price' && c[2].value === 0.21) &&
+  !iCalls.slice(callStart).some((c) => c[2].entity_id === 'number.price') && !root2.querySelector('.intelligent-top-up-fact'));
+
+// Missing entities are omitted rather than shown as broken controls.
+const removed = { v2: iStates['time.v2_ready_by'], v2min: iStates['number.v2_minimum'], topUp: iStates['switch.ic_top_up'] };
+delete iStates['time.v2_ready_by']; delete iStates['number.v2_minimum']; delete iStates['switch.ic_top_up'];
+await push();
+check('vehicles and top-up without entities are omitted from the page',
+  !root2.querySelector('[data-vehicle="vehicle_2"]') && !!root2.querySelector('[data-vehicle="vehicle_1"]') &&
+  !root2.querySelector('[data-action="toggle-intelligent-top-up"]'));
+Object.assign(iStates, { 'time.v2_ready_by': removed.v2, 'number.v2_minimum': removed.v2min, 'switch.ic_top_up': removed.topUp });
+await push();
+check('the Intelligent page adds no explanatory-copy classes',
+  !root2.querySelector('.modal-subtitle, .wizard-option-detail, .wizard-field-helper, .wizard-rule, .setting-detail'));
+el2._closeActiveDialog(); await el2.updateComplete;
+check('browsing the Intelligent page and plan sends no charging-plan command',
+  !iCalls.slice(callStart).some((c) => ['switch.ic', 'switch.schedule', 'switch.force'].includes(c[2].entity_id)));
+
+// Plan details on the page follow what the integration plans, not the settings alone.
+const openIntelligent2 = async () => { await openPlan2(); await click2('[data-action="choose-force-mode"][data-mode="intelligent"]'); };
+const pageCarLines = () => [...root2.querySelectorAll('.intelligent-car-line')].map((node) => node.textContent.trim());
+// Unknown battery level, planned against the default budget: energy, not money, also in the totals.
+iAttrs.intelligent = basePayload();
+Object.assign(iAttrs.intelligent.chargers.smartevse_1, { soc: null, soc_source: 'unknown', estimated: true, need_kwh: 30, session_cost: 7.5, saving: 3.1 });
+iAttrs.intelligent.chargers.smartevse_2 = null;
+iAttrs.intelligent.order = ['smartevse_1'];
+iAttrs.intelligent.totals = { cost: 7.5, saving: 3.1, energy_kwh: 30, includes_forecast: false, partial: false };
+await push();
+await openIntelligent2();
+check('an estimated plan shows planned energy in the page totals and claims no cost or saving',
+  JSON.stringify([...root2.querySelectorAll('.intelligent-totals dt')].map((node) => node.textContent.trim())) === JSON.stringify(['Planned energy']) &&
+  root2.querySelector('.intelligent-totals dd')?.textContent.trim() === '≈ 30\u202fkWh' && pageCarLines()[0] === `≈ 30\u202fkWh by ${t7}` &&
+  !/€/.test(text2('.intelligent-plan')));
+// The deadline the plan keeps after a late ready-by edit; "done" below the target is not "reached".
+iAttrs.intelligent = basePayload();
+iAttrs.intelligent.chargers.smartevse_1.ready_by = '06:00';
+Object.assign(iAttrs.intelligent.chargers.smartevse_2, { status: 'done', soc: 76, blocks: [], top_up: false });
+await push();
+const keptAndDone = pageCarLines();
+Object.assign(iAttrs.intelligent.chargers.smartevse_2, { vehicle: null, vehicle_name: null, settings_key: 'other', soc: null, soc_source: 'unknown', estimated: true, need_kwh: 0 });
+await push();
+check('per-car lines use the planned deadline and say "Charging complete" when done below the target or level unknown',
+  keptAndDone[0] === `53% → 80% by ${t7} · ≈ €4.91 · saving ≈ €1.29` && keptAndDone[1] === 'Charging complete · ≈ €1.19' &&
+  pageCarLines()[1] === 'Charging complete' && !pageCarLines().some((line) => /reached/.test(line)));
+// An unidentified car's level is never known: the page says it is planned by energy, and an
+// estimate that is short of time speaks of energy, not of a % it cannot know.
+iAttrs.intelligent = basePayload();
+Object.assign(iAttrs.intelligent.chargers.smartevse_2, { vehicle: null, vehicle_name: null, settings_key: 'other', soc: null, soc_source: 'unknown',
+  estimated: true, need_kwh: 30, minimum: 100, target: 100, status: 'at_risk', projected_soc: null, queue_after: 'smartevse_1' });
+await push();
+check('an estimated plan short of time names its energy and the Unidentified vehicle settings say it is planned by energy',
+  pageCarLines()[1] === `Not enough time for ≈ 30\u202fkWh by ${t7}` && !/100%/.test(text2('.intelligent-cars')) &&
+  root2.querySelector('[data-vehicle="other"] .intelligent-vehicle-head .intelligent-fact')?.textContent.trim() === 'Battery level unknown · planned by energy' &&
+  !root2.querySelector('[data-vehicle="vehicle_1"] .intelligent-vehicle-head .intelligent-fact')?.textContent.includes('Battery level unknown'));
+// Warning plan lines stay readable: primary text colour, and the shared warning glyph carries the tone.
+iAttrs.intelligent = basePayload();
+Object.assign(iAttrs.intelligent.chargers.smartevse_2, { status: 'at_risk', projected_soc: 40.4, queue_after: 'smartevse_1' });
+await push();
+const planCss = [...root2.querySelectorAll('style')].map((node) => node.textContent).join('\n');
+const warningRules = (planCss.match(/[^{}]*\[data-tone="warning"\][^{}]*\{[^}]*\}/g) || [])
+  .filter((rule) => /charger-plan-line|intelligent-car-line|intelligent-suggestion/.test(rule));
+const glyphOf = (selector) => root2.querySelector(selector);
+check('warning plan lines keep primary-coloured text and mark the tone with the aria-hidden warning glyph',
+  warningRules.length >= 2 && warningRules.every((rule) => /color:\s*var\(--primary-text-color\)/.test(rule) && !/(^|[^-])color:\s*var\(--family-warning\)/.test(rule)) &&
+  /\.plan-tone-icon\s*\{[^}]*color:\s*var\(--family-tone/.test(planCss) &&
+  glyphOf('.intelligent-car[data-charger="smartevse_2"] .intelligent-car-line[data-tone="warning"] .plan-tone-icon')?.getAttribute('icon') === 'mdi:alert-outline' &&
+  glyphOf('.intelligent-car[data-charger="smartevse_2"] .plan-tone-icon')?.getAttribute('aria-hidden') === 'true' &&
+  !glyphOf('.intelligent-car[data-charger="smartevse_1"] .plan-tone-icon') &&
+  glyphOf('.ev-node.smartevse_2 .charger-plan-line[data-tone="warning"] .plan-tone-icon')?.getAttribute('icon') === 'mdi:alert-outline' &&
+  !glyphOf('.ev-node.smartevse_1 .plan-tone-icon') &&
+  planText('smartevse_2')[0] === `Below 80% at ${t7} · ≈ 40% · after Volvo XC40`);
+// After midnight a block that began before midnight is still tonight's plan.
+Date.now = () => Date.parse('2026-11-10T00:30:00Z');
+iAttrs.intelligent = basePayload();
+iAttrs.intelligent.chargers.smartevse_2 = null;
+iAttrs.intelligent.order = ['smartevse_1'];
+Object.assign(iAttrs.intelligent.chargers.smartevse_1, { status: 'charging', blocks: [
+  { start: '2026-11-09T23:00:00+00:00', end: '2026-11-10T01:00:00+00:00', top_up: false },
+  { start: '2026-11-10T03:00:00+00:00', end: '2026-11-10T04:00:00+00:00', top_up: false }] });
+await push();
+check('after midnight a running block keeps the heading "Tonight" and later blocks need no weekday',
+  text2('.intelligent-section-title') === 'Tonight' &&
+  JSON.stringify([...root2.querySelectorAll('.intelligent-block')].map((node) => node.textContent.replace(/\s+/g, ' ').trim())) ===
+    JSON.stringify([`23:00–${el2._formatClock('01:00')} · Volvo XC40`, `${el2._formatClock('03:00')}–${el2._formatClock('04:00')} · Volvo XC40`]));
+check('tomorrow morning reads "Tonight" only when seen from the day before',
+  el2._intelligentPlanHeading(Date.parse('2026-11-10T03:00:00Z'), FIXED_NOW) === 'Tonight' &&
+  el2._intelligentPlanHeading(Date.parse('2026-11-11T03:00:00Z'), Date.parse('2026-11-10T00:30:00Z')) !== 'Tonight');
+Date.now = () => FIXED_NOW;
+el2._closeActiveDialog(); await el2.updateComplete;
+el2.remove();
+Date.now = realDateNow;
+
 console.log(ok ? '\nSMOKE TEST OK' : '\nSMOKE TEST FAILED');
 process.exit(ok ? 0 : 1);

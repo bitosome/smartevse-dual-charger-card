@@ -619,6 +619,183 @@ ha-card {
   margin-left: 8px;
 }
 
+/* Intelligent charging page: plan first (read-only), then per-vehicle settings. */
+.intelligent-page {
+  container: intelligent-page / inline-size;
+}
+
+.intelligent-plan,
+.intelligent-vehicle {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: var(--medium-gap);
+  min-width: 0;
+  padding: var(--tile-padding-large);
+  border-radius: var(--tile-border-radius);
+  background: var(--sdc-surface-control);
+  box-shadow: var(--tile-shadow-default);
+}
+
+.intelligent-section-title,
+.intelligent-vehicle-name {
+  margin: 0;
+  font-size: var(--sdc-font-value);
+  font-weight: var(--sdc-weight-strong);
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.intelligent-blocks,
+.intelligent-cars {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.intelligent-block {
+  font-size: var(--sdc-font-value);
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.intelligent-block-time {
+  font-weight: var(--sdc-weight-medium);
+}
+
+.intelligent-block-tag {
+  color: var(--sdc-text-muted);
+}
+
+.intelligent-cars {
+  gap: var(--medium-gap);
+  padding-top: var(--medium-gap);
+  border-top: 1px solid color-mix(in srgb, var(--sdc-text-muted) 22%, transparent);
+}
+
+.intelligent-car {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.intelligent-car-name {
+  font-size: var(--sdc-font-body);
+  font-weight: var(--sdc-weight-medium);
+  overflow-wrap: anywhere;
+}
+
+.intelligent-car-line,
+.intelligent-fact {
+  margin: 0;
+  color: var(--sdc-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+/* Warning plan facts stay readable (an orange 12px text is ~1.8:1 on a light surface); the
+   shared warning glyph in front carries the tone, as on a family notice. */
+.intelligent-car-line[data-tone="warning"],
+.intelligent-suggestion[data-tone="warning"] .intelligent-fact {
+  color: var(--primary-text-color);
+}
+
+.intelligent-totals {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  font-size: var(--sdc-font-body);
+}
+
+.intelligent-totals div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--large-gap);
+}
+
+.intelligent-totals dt {
+  min-width: 0;
+  color: var(--sdc-text-muted);
+}
+
+.intelligent-totals dd {
+  margin: 0;
+  text-align: right;
+  font-weight: var(--sdc-weight-medium);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.intelligent-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px var(--large-gap);
+}
+
+.setting-tile.intelligent-order {
+  grid-template-columns: 28px minmax(0, 1fr) 18px;
+  align-items: center;
+  min-height: 48px;
+  padding: var(--tile-padding);
+  background: var(--chip-background-color);
+  box-shadow: none;
+}
+
+.intelligent-settings {
+  display: grid;
+  gap: var(--medium-gap);
+}
+
+.intelligent-vehicle-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 2px var(--large-gap);
+}
+
+.intelligent-vehicle-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--medium-gap);
+}
+
+.intelligent-vehicle .wizard-field {
+  padding: 0;
+  background: transparent;
+  min-width: 0;
+}
+
+.intelligent-suggestion {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2px var(--large-gap);
+}
+
+.intelligent-suggestion-pill {
+  font: inherit;
+  font-size: var(--sdc-font-body);
+  font-weight: var(--sdc-weight-medium);
+  font-variant-numeric: tabular-nums;
+}
+
+.intelligent-top-up-fact {
+  padding: 0 var(--tile-padding) var(--tile-padding);
+}
+
+@container intelligent-page (max-width: 299px) {
+  .intelligent-vehicle-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .flow-stage {
   position: relative;
   display: grid;
