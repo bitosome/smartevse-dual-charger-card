@@ -131,44 +131,17 @@ export const OVERVIEW_CSS = `
     .charger-totals { max-width: 44%; }
     .battery-value { font-size: 25px; }
   }
-  /* ---- Plan layout (0.4.0): night timeline, car gauges with an LED ring, totals. ----
-     Colours of blocks, rings and glows are the WLED state colours (--sdc-led-*, --node-*). */
+  /* ---- Plan layout (0.4.0, chart in 0.5.0): plan chart, car gauges with an LED ring, totals. ----
+     Colours of plan periods, rings and glows are the WLED state colours (--sdc-led-*, --node-*). */
   .layout-choice { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-top: var(--large-gap); }
   .layout-options { display: flex; flex-wrap: wrap; gap: 6px; }
   .layout-option { cursor: pointer; font: inherit; }
   .layout-option[aria-pressed="true"] { box-shadow: inset 0 0 0 1px var(--primary-color); }
   .layout-plan { --sdc-quiet: color-mix(in srgb, var(--primary-text-color) 16%, transparent); --sdc-quiet-strong: color-mix(in srgb, var(--primary-text-color) 38%, transparent); --sdc-panel: color-mix(in srgb, var(--primary-text-color) 4%, transparent); }
-  .plan-timeline { margin: 0; padding: 12px 12px 8px; border-radius: var(--ha-card-border-radius, 16px);
-    background: var(--sdc-panel); border: 1px solid var(--sdc-quiet); }
-  /* The drawing is sized from the measured width of .tl-canvas (1 unit = 1 CSS px), so its
-     labels stay 11px at every card width. */
-  .tl-canvas { min-width: 0; }
-  .plan-timeline svg { display: block; width: 100%; height: auto; overflow: visible; }
-  .tl-price { fill: var(--sdc-quiet); }
-  .tl-price.cheap { fill: var(--sdc-quiet-strong); }
-  .tl-hatch { fill: var(--sdc-quiet); }
-  .tl-unpriced { fill: url(#sdc-hatch); opacity: 0.7; }
-  .tl-tick { font: 400 11px ui-monospace, "SF Mono", Menlo, Consolas, monospace; fill: var(--secondary-text-color); }
-  .tl-lane { font-size: 11px; font-weight: 500; fill: var(--secondary-text-color); }
-  .tl-zero { stroke: var(--sdc-quiet-strong); stroke-width: 1; }
-  .tl-track { fill: none; stroke: var(--sdc-quiet); }
-  .tl-block { fill: rgba(var(--sdc-led-idle-rgb, 0, 100, 255), 0.75); }
-  .tl-block.top-up { opacity: 0.5; }
-  .tl-block.risk { fill: var(--family-warning, var(--warning-color, #ff9800)); }
-  .tl-block.charging { fill: rgb(var(--sdc-led-charging-rgb, 0, 200, 80)); animation: sdcBreathe var(--sdc-led-charging-glow-duration, 2.4s) ease-in-out infinite; }
-  /* Force charge overrides the plan: its blocks stay as a faint reminder. */
-  .tl-block.paused { opacity: 0.28; animation: none; }
-  .tl-now { stroke: var(--primary-text-color); stroke-width: 1.2; stroke-dasharray: 2 3; }
-  .tl-ready { stroke: var(--primary-color); stroke-width: 1.6; }
-  .plan-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 6px 0 0; padding: 0; list-style: none; font-size: 11px; color: var(--secondary-text-color); }
-  .plan-legend .swatch { display: inline-block; width: 12px; height: 7px; border-radius: 3px; margin-right: 5px; }
-  .swatch.planned { background: rgba(var(--sdc-led-idle-rgb, 0, 100, 255), 0.75); }
-  .swatch.charging { background: rgb(var(--sdc-led-charging-rgb, 0, 200, 80)); }
-  .swatch.price { background: var(--sdc-quiet-strong); }
-  .swatch.risk { background: var(--family-warning, var(--warning-color, #ff9800)); }
-  .swatch.top-up { background: rgba(var(--sdc-led-idle-rgb, 0, 100, 255), 0.38); }
-  .plan-legend .legend-note { color: var(--primary-text-color); }
-  .swatch.ready { background: var(--primary-color); width: 3px; height: 10px; vertical-align: -1px; }
+  /* The plan chart is the shared time-series chart (@bitosome/ha-card-ui); the card only places
+     it, quiets the price bars and, in the card's inline style, maps the period tones to the
+     charger's LED colours. */
+  .flow-stage > .plan-chart { position: relative; z-index: 1; --sdc-chart-price: color-mix(in srgb, var(--primary-text-color) 34%, transparent); }
   .layout-plan .ev-row { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; }
   .layout-plan .ev-node-wrap, .layout-plan .ev-pod { height: 100%; box-sizing: border-box; }
   /* A charger without a car keeps its own short height beside a tall car tile. */
@@ -188,6 +161,13 @@ export const OVERVIEW_CSS = `
   .layout-plan .ev-pod .pod-icon { display: inline-flex; }
   .ev-pod.empty { align-content: center; }
   .ev-pod .charger-plan-line { text-align: center; }
+  /* Plan facts: label left, value right. In a narrow tile the value moves under its label. */
+  .ev-pod .charger-plan { width: 100%; gap: 6px; }
+  .plan-rows { display: grid; gap: 5px; margin: 0; text-align: left; }
+  .plan-row { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0 10px; min-width: 0; }
+  .plan-row dt { flex: none; white-space: nowrap; font-size: 12px; line-height: 1.45; color: var(--secondary-text-color); }
+  .plan-row dd { margin: 0; flex: 1 1 auto; min-width: 0; text-align: right; font-size: 13px; line-height: 1.4; color: var(--primary-text-color);
+    font-variant-numeric: tabular-nums; overflow-wrap: break-word; }
   .ev-pod .session-cost { align-items: center; text-align: center; }
   .pod-gauge-wrap { position: relative; width: 100%; max-width: 150px; }
   .pod-gauge { display: block; width: 100%; height: auto; }
@@ -201,6 +181,8 @@ export const OVERVIEW_CSS = `
   .pod-arcs circle { fill: none; stroke-width: 7; stroke-linecap: round; }
   .pod-track { stroke: var(--sdc-quiet); }
   .pod-projected { stroke: var(--secondary-text-color); opacity: 0.45; }
+  /* Level reached with the extra charging while cheap: a thin, lighter arc under the others. */
+  .pod-arcs .pod-extra { stroke: var(--secondary-text-color); opacity: 0.4; stroke-width: 3; }
   .pod-projected.risk { stroke: var(--family-warning, var(--warning-color, #ff9800)); opacity: 0.9; }
   .pod-level { stroke: var(--primary-text-color); }
   .pod-min { stroke: var(--primary-color); stroke-width: 2; }
@@ -209,11 +191,20 @@ export const OVERVIEW_CSS = `
   .plan-totals div { padding: 8px; border-radius: 12px; border: 1px solid var(--sdc-quiet); background: var(--sdc-panel); min-width: 0; }
   .plan-totals dt { font: 500 10px ui-monospace, "SF Mono", Menlo, Consolas, monospace; letter-spacing: 0.04em; white-space: nowrap; text-transform: uppercase; color: var(--secondary-text-color); }
   .plan-totals dd { margin: 2px 0 0; font-size: 15px; font-weight: 500; font-variant-numeric: tabular-nums; color: var(--primary-text-color); }
+  /* Two tiles on a phone are too narrow for label and value side by side: every row stacks. */
+  @container charging-overview (max-width: 480px) {
+    .plan-rows { gap: 7px; }
+    .plan-row { display: grid; justify-content: normal; justify-items: center; gap: 0; }
+    .plan-row dt { font-size: 11px; }
+    .plan-row dd { text-align: center; }
+    /* A separator becomes the line break, so no line starts or ends with a dot. */
+    .ev-pod .sep { display: block; height: 0; overflow: hidden; font-size: 0; }
+  }
   @keyframes sdcBreathe { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
   @keyframes sdcChase { to { stroke-dashoffset: -88; } }
 
   @media (prefers-reduced-motion: reduce) {
-    .pod-ring, .tl-block.charging { animation: none !important; }
+    .pod-ring { animation: none !important; }
     .glow-under, .glow-overlay { animation: none !important; }
     *, *::before, *::after { transition: none !important; }
   }

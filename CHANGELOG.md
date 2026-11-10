@@ -1,5 +1,47 @@
 # Changelog
 
+## 0.5.0 — 2026-11-11
+
+The plan layout is redrawn on the shared chart and reworded so it can be read at a glance. It needs `@bitosome/ha-card-ui` 1.8.0. The new wording is for SmartEVSE Dual Charger integration 0.0.10.0; with 0.0.9.x the card keeps working and keeps the earlier top-up controls.
+
+What "minimum charge" means now: it is a floor, not a target. A car is guaranteed at least its minimum by its ready-by time. Above the minimum it keeps charging while electricity is cheap. The card calls that "extra while cheap".
+
+Plan chart:
+
+- The plan is drawn on the same chart as the electricity price card and the weather forecast, in place of the card's own drawing. Price bars per hour, with cheap hours in green and hours without a published price hatched.
+- Under the prices there is one lane per connected car with what is planned: Planned, Charging, Extra while cheap or Not enough time, and a tick at the ready-by time.
+- You can scrub the chart with a finger, the mouse or the arrow keys, also into hours that have no price yet. The head shows the time and the price. One line under the chart says what each car does at that time, for example "XC40 Charging · EX30 Planned".
+- The legend also explains the hatched hours ("No price yet"). It is kept short ("Extra") so it stays within two lines on a phone.
+- While Force charge overrides the plan, the lanes are greyed out, the legend says "Paused by Force charge" and the line under the chart reads "XC40 paused".
+- With no car connected the chart is titled "Electricity price" and shows prices only.
+
+Car tiles:
+
+- The free text under the car name is replaced by up to four short rows: Guaranteed ("80% by 07:00"), Extra ("to ≈ 96% while cheap" or "none tonight"), Next ("Starts 22:00", "Charging until 23:00", "After Volvo XC40", "Done") and Cost ("≈ €4.91 · saves ≈ €1.29").
+- A warning is one line above the rows, for example "Not enough time · ≈ 74% by 07:00".
+- The gauge shows the level reached with extra charging as a thin arc and reads it out ("…, minimum 80%, up to 96% while cheap").
+- On a phone each row puts its label above its value. On a wide card they share one line.
+
+Hero:
+
+- While Intelligent charging governs, the title is one plain sentence: "Charging Volvo XC40", "Next charge at 22:00", "Both cars ready", "Volvo XC40 ready" or "Waiting for a vehicle".
+- One line under it says when the cars are ready ("Ready by 07:00") and adds "then extra while cheap" when extra charging is planned.
+- The separate time pill of the Intelligent charging group is gone, because the title now says it. Warning pills and the other plan pills stay.
+
+Intelligent page:
+
+- "Minimum charge" is now labelled "At least", with the line "Charges to at least this level by the ready-by time."
+- A new block "Above the minimum" explains the extra charging. It shows the cheap price the integration has learned, or says that extra charging starts once five days of prices are known. There is nothing to set.
+- With integration 0.0.9.x the page still shows "Top up when price is low" and its price.
+
+Other:
+
+- "Top-up" is now "extra while cheap" everywhere the 0.0.10.0 path shows it, including the classic tiles and the plan list on the Intelligent page.
+- The card's own one-minute refresh is removed. The chart refreshes itself every 30 seconds and the rest of the card follows it.
+- A field you are editing on the Intelligent page (ready-by time, "At least", the 0.0.9.x top-up price) is no longer touched when the card redraws. The text you typed, the focus and the cursor position stay. Before, a redraw while typing could move the cursor to the start of a number.
+
+Validation: typecheck, production build and 314 offline smoke checks. The plan-layout checks were rewritten for the chart, the rows and the new wording (the 0.4.2 behaviour checks that still apply were kept and adapted). Browser check `npm run test:layout`: 90 of 90 states pass in Chromium and in WebKit (15 states at 320, 360 and 390 px, light and dark). Screenshots at 320 and 390 px in both themes were reviewed for no car, one car, two cars with extra charging, a charging car, not enough time, Force charge, a 0.0.9.x payload and the Intelligent page in both "Above the minimum" states. Typing into the "At least" and ready-by fields while the card redraws was also tried in Chromium and WebKit. Built and tested against a local build of `@bitosome/ha-card-ui` 1.8.0 before its release. Not checked on a real dashboard or a real phone.
+
 ## 0.4.2 — 2026-11-10
 
 Fixes for the plan layout after a review in Chromium and WebKit. `@bitosome/ha-card-ui` stays at 1.5.0.

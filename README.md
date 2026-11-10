@@ -2,7 +2,7 @@
 
 Standalone Lovelace card for the SmartEVSE Dual Charger Home Assistant integration.
 
-Version: `0.4.2`
+Version: `0.5.0`
 
 This repository contains only the frontend card and local preview assets.
 
@@ -168,21 +168,52 @@ gets each connected car to its minimum by its ready-by time; the card only rende
 controller sensor's `intelligent` attribute and edits the integration's entities. It
 computes no slots, energy, costs or savings itself.
 
-- **Layouts (0.4.0).** `layout: plan` shows a night timeline (prices, planned blocks per car, now, ready-by), car gauges inside an LED-style ring and a totals row. `layout: classic` keeps the earlier charger tiles. Without the option the card uses `plan` when the integration supports Intelligent charging. Settings → Card layout switches it on the current device (Plan or Classic), and Auto returns to the card option or the default. The default stays `plan` while the controller is unavailable, for example during a restart.
+**The minimum is a floor, not a target (integration 0.0.10.0+).** The car is guaranteed at
+least its minimum by its ready-by time. Above the minimum it keeps charging, up to its own
+limit, in hours at or below a cheap price the integration learns from your prices. The card
+calls this **extra while cheap**. With integration 0.0.9.x the card keeps the earlier
+**Top up when price is low** switch and its price instead.
+
+- **Plan chart (0.5.0).** In the plan layout the plan is drawn on the shared time-series chart
+  of `@bitosome/ha-card-ui` (1.8.0): price bars per hour, with hours at or below the learned
+  cheap price in green and hours without a published price hatched ("No price yet", also
+  named in the legend); under it one lane per connected car with its periods (Planned,
+  Charging, Extra while cheap, Not enough time) and a tick at its ready-by time. The now
+  marker moves by itself. The chart is a slider: scrub it with a finger, the mouse or the
+  arrow keys, also into hours without a price. The head shows the time and price, and one
+  line under the chart says what each car does at that time ("XC40 Charging · EX30
+  Planned"). The legend is kept short ("Extra") so it stays within two lines on a phone.
+  While Force charge overrides the plan the lanes are grey, the legend says "Paused by Force
+  charge" and the line reads "XC40 paused". With no car connected the chart is titled
+  "Electricity price" and shows prices only. A field being edited on the Intelligent page
+  is not disturbed when the chart redraws the card every 30 seconds.
+
+- **Layouts (0.4.0).** `layout: plan` shows the plan chart, car gauges inside an LED-style ring with labelled plan rows, and a totals row. `layout: classic` keeps the earlier charger tiles. Without the option the card uses `plan` when the integration supports Intelligent charging. Settings → Card layout switches it on the current device (Plan or Classic), and Auto returns to the card option or the default. The default stays `plan` while the controller is unavailable, for example during a restart.
 - **Standing plans.** Intelligent charging and Schedule are independent: switching one
   never changes the other. While both are on, Intelligent has priority (the Schedule
   tile says so), and the schedule takes over again when Intelligent is turned off.
   Force charge still overrides both; the Intelligent group then reads "Resumes after force charge".
-- **Hero.** An enabled-only "Intelligent charging" group with one time pill: the next
-  planned start, or "Until 22:00" during a planned block. Warnings such as "Not enough
-  time for Volvo EX30" (or "… for both" when two cars compete for the time) and "Check
-  Volvo XC40" appear as warning pills. No money in the hero. When nothing is left to charge,
-  the title reads "Minimum charge reached" only when every planned car is at its minimum;
-  otherwise it says why ("Volvo XC40 isn’t accepting charge", "Charging complete"). A car
-  that the charge policy leaves out reads "Waiting for the selected vehicle".
-- **Charger tiles.** A connected charger shows its target and the deadline the plan
-  targets ("80% by 07:00 · starts Mon 21:00") and the session estimate with the saving
-  ("≈ €4.91 · saving ≈ €1.29"). Forecast-based money is marked "forecast" without a saving,
+- **Hero.** While Intelligent charging governs, the title is one plain sentence: "Charging
+  Volvo XC40", "Next charge at 22:00" (or "Next charge Tue 22:00"), "Both cars ready" or
+  "Volvo XC40 ready" when every planned car has its minimum and nothing more is planned, or
+  "Waiting for a vehicle". One line under it says when the cars are ready ("Ready by 07:00",
+  or each car with its time when they differ) and adds "then extra while cheap" when extra
+  charging is planned. The enabled-only "Intelligent charging" group has no time pill any
+  more. Warnings such as "Not enough time for Volvo EX30" (or "… for both" when two cars
+  compete for the time) and "Check Volvo XC40" appear as warning pills. No money in the hero.
+  Other states keep their titles ("Volvo XC40 isn’t accepting charge", "Charging complete",
+  "Waiting for the selected vehicle", errors).
+- **Car tiles (plan layout).** Under the gauge, at most four short labelled rows:
+  **Guaranteed** ("80% by 07:00", "≈ 30 kWh by 07:00" for a car with an unknown level, or
+  "Reached · 82%"), **Extra** ("to ≈ 96% while cheap", or "none tonight" when a cheap price
+  is known but no extra charging is planned), **Next** ("Starts 22:00", "Charging until
+  23:00", "After Volvo XC40", "Done") and **Cost** ("≈ €4.91 · saves ≈ €1.29"). A warning is
+  one line above the rows ("Not enough time · ≈ 74% by 07:00"). On a phone each row puts its
+  label above its value; on a wide card label and value share a line. The gauge shows the
+  minimum as a tick and the extra level as a thin arc.
+- **Charger tiles (classic layout).** A connected charger shows its target and the deadline
+  the plan targets ("80% by 07:00 · starts Mon 21:00") and the session estimate with the
+  saving ("≈ €4.91 · saving ≈ €1.29"). Forecast-based money is marked "forecast" without a saving,
   partial money is omitted and an estimated plan (battery level unknown) names the energy
   it plans instead of a target ("≈ 30 kWh by 07:00"), on the tile, in the per-car summary
   and in the page totals. Warning lines keep the normal text colour and carry the shared
@@ -190,14 +221,19 @@ computes no slots, energy, costs or savings itself.
   shows "Last charge saved ≈ €1.25" until the next plug-in. History records show the
   saving vs charging at plug-in, or "Force charge used" when the session was mixed; a
   plug-in that spans several nights combines them.
-- **Intelligent page.** The plan first: chronological blocks per car (top-up marked),
-  a per-car summary, totals with "Saving vs charging at plug-in", which charger charges
-  first (opens Charge policy), the price horizon and learning progress. Then per-vehicle
-  **Ready by** (native time input) and **Minimum charge** fields, a learned departure
-  suggestion ("Usually leaves 07:30" · "Use 07:15"), and **Top up when price is low** with
-  its own **Top up below** price. An unidentified car's battery level is never known, so
-  the integration plans it by energy: its section says "Battery level unknown · planned by
-  energy", and its Minimum charge does not change that plan. Times and numbers save on
+- **Intelligent page.** The plan first: chronological blocks per car (extra charging
+  marked "extra while cheap"), a per-car summary, totals with "Saving vs charging at
+  plug-in", which charger charges first (opens Charge policy), the price horizon and
+  learning progress. Then per-vehicle **Ready by** (native time input) and **At least**
+  (the minimum, in %) fields with the line "Charges to at least this level by the ready-by
+  time.", and a learned departure suggestion ("Usually leaves 07:30" · "Use 07:15"). The
+  block **Above the minimum** explains the extra charging and has nothing to set: either
+  the learned cheap price ("… in hours at or below ≈ €0.26 per kWh"), or that extra
+  charging starts once five days of prices are known. With integration 0.0.9.x the page
+  shows **Top up when price is low** with its own **Top up below** price instead. An
+  unidentified car's battery level is never known, so the integration plans it by energy:
+  its section says "Battery level unknown · planned by energy", and its minimum does not
+  change that plan. Times and numbers save on
   blur or Enter, never per edited segment or spinner step; a value entered while its
   field is saving is written next. A saving field shows its own pending state while the
   other controls and Back stay usable.
@@ -209,6 +245,7 @@ Entities come from the controller's `intelligent.entities` by default. Optional 
 
 ```yaml
 intelligent_charge_entity: switch.smartevse_dual_charger_intelligent_charging
+# Integration 0.0.9.x only (0.0.10.0 has no top-up entities):
 intelligent_top_up_entity: switch.smartevse_dual_charger_intelligent_top_up
 intelligent_top_up_price_entity: number.smartevse_dual_charger_intelligent_top_up_price
 vehicle_1_ready_by_entity: time.smartevse_dual_charger_volvo_xc40_ready_by

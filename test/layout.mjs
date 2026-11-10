@@ -1,4 +1,4 @@
-// Browser layout checks for the plan layout (card 0.4.2). Not part of `npm test`: they need
+// Browser layout checks for the plan layout (card 0.5.0: shared chart and labelled plan rows). Not part of `npm test`: they need
 // Playwright with a Chromium build, which this repository does not install.
 //   npm run build && npm run test:layout
 // Optional environment:
@@ -65,6 +65,7 @@ const LONG_NAME = 'Supercalifragilisticexpialidocious123'; // 37 characters, no 
 // Each state starts from the preview's "intelligent" scenario (two cars, a planned night) and
 // edits the mock state in the page. `ctx` = { attrs, plan, states, hour, now, locale }.
 const STATES = {
+  // Two cars, both planned; the XC40 also has extra charging while cheap.
   'two-cars': () => {},
   'one-car': (ctx) => {
     ctx.attrs.smartevse_2_plug_state = 'Disconnected';
@@ -78,6 +79,7 @@ const STATES = {
       ctx.attrs[`${key}_state`] = 'Disconnected';
     }
     Object.assign(ctx.plan, { chargers: {}, status: 'no_ev', next_charge: null, connected_count: 0 });
+    ctx.attrs.charge_reason = 'intelligent_waiting_for_connected_ev';
   },
   charging: (ctx) => {
     Object.assign(ctx.attrs, { smartevse_1_state: 'Charging', smartevse_1_charge_current: 16, active_smartevse_raw: 'smartevse_1',
@@ -85,6 +87,27 @@ const STATES = {
     ctx.plan.status = 'charging';
     ctx.plan.chargers.smartevse_1.status = 'charging';
     ctx.plan.chargers.smartevse_1.blocks[0] = { start: new Date(ctx.now - ctx.hour / 2).toISOString(), end: new Date(ctx.now + ctx.hour).toISOString(), top_up: false };
+  },
+  'at-risk': (ctx) => {
+    ctx.plan.status = 'at_risk';
+    Object.assign(ctx.plan.chargers.smartevse_2, { status: 'at_risk', feasible: false, projected_soc: 74 });
+  },
+  // Every period tone at once: the longest legend and readout the chart can show.
+  'charging-at-risk': (ctx) => {
+    Object.assign(ctx.attrs, { smartevse_1_state: 'Charging', smartevse_1_charge_current: 16, active_smartevse_raw: 'smartevse_1',
+      charge_allowed: true, charge_reason: 'intelligent_charging' });
+    ctx.plan.status = 'at_risk';
+    ctx.plan.chargers.smartevse_1.status = 'charging';
+    ctx.plan.chargers.smartevse_1.blocks[0] = { start: new Date(ctx.now - ctx.hour / 2).toISOString(), end: new Date(ctx.now + ctx.hour).toISOString(), top_up: false };
+    Object.assign(ctx.plan.chargers.smartevse_2, { status: 'at_risk', feasible: false, projected_soc: 74 });
+  },
+  'both-ready': (ctx) => {
+    for (const key of ['smartevse_1', 'smartevse_2']) {
+      Object.assign(ctx.plan.chargers[key], { status: 'reached', soc: 82, blocks: [], need_kwh: 0, top_up: false, extra_soc: null });
+      ctx.attrs[`${key}_battery`] = '82%';
+    }
+    Object.assign(ctx.plan, { status: 'reached', next_charge: null });
+    ctx.attrs.charge_reason = 'intelligent_targets_reached';
   },
   'charger-error': (ctx) => {
     ctx.attrs.smartevse_2_error = 'Residual current monitor tripped, check the cable';
@@ -107,6 +130,16 @@ const STATES = {
     ctx.plan.overridden_by = 'force';
     Object.assign(ctx.attrs, { charge_allowed: true, charge_reason: 'force_charge' });
   },
+  // Integration 0.0.9.x: a top-up switch and price, no learned limit and no extra_soc.
+  'legacy-0-0-9': (ctx) => {
+    const topUp = 'switch.smartevse_dual_charger_intelligent_top_up';
+    const topUpPrice = 'number.smartevse_dual_charger_intelligent_top_up_price';
+    ctx.states[topUp] = { state: 'on', attributes: {} };
+    ctx.states[topUpPrice] = { state: '0.200', attributes: { min: -1, max: 5, step: 0.001, unit_of_measurement: 'EUR/kWh' } };
+    Object.assign(ctx.plan.entities, { intelligent_top_up: topUp, intelligent_top_up_price: topUpPrice });
+    ctx.plan.top_up = { enabled: true, price: 0.2 };
+    for (const charger of Object.values(ctx.plan.chargers)) delete charger.extra_soc;
+  },
   'negative-prices': (ctx) => {
     const known = ctx.plan.slots.filter((slot) => slot.kind === 'known');
     known.forEach((slot, index) => { slot.price = [0.12, 0.04, 0, -0.03, -0.08, 0.02, 0.15][index % 7]; });
@@ -120,7 +153,14 @@ const STATES = {
 const failures = [];
 let checks = 0;
 const page = await browser.newPage({ viewport: { width: 1100, height: 1500 }, deviceScaleFactor: 2 });
-page.on('pageerror', (error) => failures.push(`page error: ${error.message}`));
+const notes = new Set();
+page.on('pageerror', (error) => {
+  // WebKit reports this benign notice as an error when the shared chart re-measures its width in
+  // the frame it was first drawn in. It is noted, not counted.
+  if (/ResizeObserver loop/.test(error.message)) { notes.add(error.message); return; }
+  console.log(`FAIL: page error — ${error.message}`);
+  failures.push(`page error: ${error.message}`);
+});
 const screenshotDir = process.env.LAYOUT_SCREENSHOT_DIR;
 if (screenshotDir) await mkdir(screenshotDir, { recursive: true });
 
@@ -159,15 +199,18 @@ for (const theme of THEMES) {
         const inside = (inner, outer, slack = 1) => inner.left >= outer.left - slack && inner.right <= outer.right + slack &&
           inner.top >= outer.top - slack && inner.bottom <= outer.bottom + slack;
         const describe = (node) => `${node.parentElement?.getAttribute('class') || node.parentElement?.localName}: "${node.textContent.trim().slice(0, 40)}"`;
-        // 1. No text leaves its tile, the timeline panel or the card.
+        // 1. No text leaves its tile, the chart frame or the card.
         const walker = document.createTreeWalker(haCard, NodeFilter.SHOW_TEXT);
         let texts = 0;
         for (let node = walker.nextNode(); node; node = walker.nextNode()) {
           const parent = node.parentElement;
           if (!node.textContent.trim() || !parent || parent.closest('style, .family-visually-hidden')) continue;
           const svgText = parent.closest('text');
+          // The period line under the chart cuts text that does not fit with an ellipsis.
+          const clipped = parent.closest('.family-chart-periods');
           let rect;
           if (svgText) rect = svgText.getBoundingClientRect();
+          else if (clipped) rect = clipped.getBoundingClientRect();
           else {
             const range = document.createRange();
             range.selectNodeContents(node);
@@ -176,7 +219,7 @@ for (const theme of THEMES) {
           if (!rect.width || !rect.height) continue;
           texts++;
           if (!inside(rect, cardRect)) problems.push(`text leaves the card — ${describe(node)}`);
-          const box = parent.closest('.ev-pod, .plan-timeline, .status-hero, .plan-totals > div');
+          const box = parent.closest('.ev-pod, .family-chart-frame, .status-hero, .plan-totals > div');
           if (box && !inside(rect, box.getBoundingClientRect())) problems.push(`text leaves its tile — ${describe(node)}`);
         }
         if (!texts) problems.push('no visible text was found');
@@ -194,20 +237,42 @@ for (const theme of THEMES) {
           const elementWidth = element.getBoundingClientRect().width;
           if (elementWidth < 40 && tops.size > 3) problems.push(`"${text.slice(0, 30)}" is ${Math.round(elementWidth)}px wide on ${tops.size} lines`);
         }
-        // 3. Timeline and gauge labels are a constant, readable size, and hour labels do not touch.
-        const svg = shadow.querySelector('.plan-timeline svg');
+        // 2b. Plan rows: the label stays on one line; the value never breaks inside a word.
+        for (const row of shadow.querySelectorAll('.plan-row')) {
+          const label = row.querySelector('dt');
+          const value = row.querySelector('dd');
+          if (label.getClientRects().length !== 1 || label.getBoundingClientRect().height > 22) problems.push(`row label "${label.textContent}" wraps`);
+          const range = document.createRange();
+          range.selectNodeContents(value);
+          const lines = new Set([...range.getClientRects()].map((line) => Math.round(line.top))).size;
+          const words = value.textContent.trim().split(/\s+/).length;
+          if (lines > words) problems.push(`row value "${value.textContent}" breaks inside a word (${lines} lines)`);
+          if (lines > 3) problems.push(`row value "${value.textContent}" takes ${lines} lines`);
+        }
+        // 3. Chart and gauge labels are a constant, readable size, and time labels do not touch.
+        const svg = shadow.querySelector('.family-chart-frame svg.family-chart');
         if (svg) {
           const scale = svg.getBoundingClientRect().width / svg.viewBox.baseVal.width;
           for (const label of svg.querySelectorAll('text')) {
             const size = Number.parseFloat(getComputedStyle(label).fontSize) * scale;
-            if (!(size >= 10.5)) problems.push(`timeline label "${label.textContent}" is ${size.toFixed(1)}px`);
+            if (!(size >= 10.5)) problems.push(`chart label "${label.textContent}" is ${size.toFixed(1)}px`);
           }
-          const ticks = [...svg.querySelectorAll('.tl-tick:not(.tl-note)')].map((tick) => tick.getBoundingClientRect()).sort((a, b) => a.left - b.left);
-          if (!ticks.length) problems.push('the timeline has no hour labels');
+          const ticks = [...svg.querySelectorAll('.family-chart-time')].map((tick) => tick.getBoundingClientRect()).sort((a, b) => a.left - b.left);
+          if (!ticks.length) problems.push('the chart has no time labels');
           ticks.forEach((tick, index) => {
-            if (index && tick.left < ticks[index - 1].right + 1) problems.push(`hour labels ${index - 1} and ${index} overlap`);
+            if (index && tick.left < ticks[index - 1].right + 1) problems.push(`time labels ${index - 1} and ${index} overlap`);
           });
-        }
+          const legend = shadow.querySelector('.family-chart-legend');
+          const legendLines = new Set([...legend.children].map((entry) => Math.round(entry.getBoundingClientRect().top))).size;
+          if (legendLines > 2) problems.push(`the chart legend takes ${legendLines} lines`);
+          const head = shadow.querySelector('.family-chart-head');
+          if (head.getBoundingClientRect().height > 30) problems.push(`the chart head takes ${Math.round(head.getBoundingClientRect().height)}px (more than one line)`);
+          // The line under the chart: there with lanes, always one line, so the frame never jumps.
+          const periodLine = shadow.querySelector('.family-chart-periods');
+          const hasLanes = !!svg.querySelector('.family-chart-lane');
+          if (hasLanes !== !!periodLine) problems.push(hasLanes ? 'the period line under the chart is missing' : 'a period line is shown without lanes');
+          if (periodLine && periodLine.getBoundingClientRect().height > 24) problems.push(`the period line is ${Math.round(periodLine.getBoundingClientRect().height)}px tall`);
+        } else problems.push('the plan chart is missing');
         for (const unit of shadow.querySelectorAll('.pod-unit')) {
           const size = Number.parseFloat(getComputedStyle(unit).fontSize);
           if (!(size >= 10.5)) problems.push(`gauge caption is ${size.toFixed(1)}px`);
@@ -227,5 +292,6 @@ for (const theme of THEMES) {
 
 await browser.close();
 server.close();
+for (const note of notes) console.log(`NOTE: the page reported "${note}"`);
 console.log(failures.length ? `\nLAYOUT TEST FAILED (${failures.length} of ${checks})` : `\nLAYOUT TEST OK (${checks} states)`);
 process.exit(failures.length ? 1 : 0);

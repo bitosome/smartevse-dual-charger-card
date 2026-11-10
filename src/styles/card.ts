@@ -790,6 +790,24 @@ ha-card {
   padding: 0 var(--tile-padding) var(--tile-padding);
 }
 
+/* "Above the minimum": a read-only explanation, set like the plan section. */
+.intelligent-extra {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: var(--small-gap, 6px);
+  min-width: 0;
+  padding: var(--tile-padding-large);
+  border-radius: var(--tile-border-radius);
+  background: var(--sdc-surface-control);
+  box-shadow: var(--tile-shadow-default);
+}
+
+.intelligent-minimum-help {
+  margin: 0;
+  padding: 0 var(--tile-padding);
+}
+
 @container intelligent-page (max-width: 299px) {
   .intelligent-vehicle-fields {
     grid-template-columns: minmax(0, 1fr);
