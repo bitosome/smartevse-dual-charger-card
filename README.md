@@ -2,7 +2,7 @@
 
 Standalone Lovelace card for the SmartEVSE Dual Charger Home Assistant integration.
 
-Version: `0.5.0`
+Version: `0.5.1`
 
 This repository contains only the frontend card and local preview assets.
 
@@ -175,7 +175,7 @@ calls this **extra while cheap**. With integration 0.0.9.x the card keeps the ea
 **Top up when price is low** switch and its price instead.
 
 - **Plan chart (0.5.0).** In the plan layout the plan is drawn on the shared time-series chart
-  of `@bitosome/ha-card-ui` (1.8.0): price bars per hour, with hours at or below the learned
+  of `@bitosome/ha-card-ui` (1.8.0): a stepped price line per hour, with hours at or below the learned
   cheap price in green and hours without a published price hatched ("No price yet", also
   named in the legend); under it one lane per connected car with its periods (Planned,
   Charging, Extra while cheap, Not enough time) and a tick at its ready-by time. The now

@@ -11,7 +11,7 @@ import {
 } from "@bitosome/ha-card-ui";
 import { buildGlow, type PulseColors } from "./shared/glow";
 
-const CARD_VERSION = "0.5.0";
+const CARD_VERSION = "0.5.1";
 
 // String twin of the shared pendingIndicator(); this card renders through unsafeHTML.
 const PENDING_INDICATOR = `<span class="family-pending-indicator" aria-hidden="true"></span>`;
@@ -1083,7 +1083,10 @@ class SmartEVSEFlowCard extends LitElement {
   _planChart(data: PlanChartData, now = Date.now()) {
     const HOUR = 3600000;
     const series = [{
-      id: "price", label: "Price", kind: "bar" as const, intervalMs: data.intervalMs, points: data.points, extremes: false,
+      // A stepped line with its area: each price covers its whole hour, so it lines up with
+      // the periods underneath (bars are narrow and centred in their hour).
+      id: "price", label: "Price", kind: "line" as const, curve: "step" as const, colorBlend: "hard" as const,
+      intervalMs: data.intervalMs, points: data.points, extremes: false,
       // Hours at or below the learned cheap limit read in the success colour.
       colorAt: (point: ChartPoint) => data.cheap !== null && point.v !== null && point.v <= data.cheap ? CHART_CHEAP : CHART_NEUTRAL,
       format: (value: number) => `${this._formatChartPrice(value, data.currency, data.digits)}/kWh`,

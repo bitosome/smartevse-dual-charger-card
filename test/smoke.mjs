@@ -2316,8 +2316,17 @@ check('each connected car is a lane with its planned and extra periods and a rea
     { id: 'smartevse_1', label: 'XC40', tones: ['planned', 'planned'], marker: true, muted: false },
     { id: 'smartevse_2', label: 'EX30', tones: ['planned', 'extra'], marker: true, muted: false }]) &&
   all3('.family-chart-period-hatch[data-pattern="hatch"]').length === 1 && !root3.querySelector('.family-chart-period-hatch[data-pattern="bars"]'));
-const barFills = () => all3('.family-chart-bar').map((bar) => bar.getAttribute('style') || '');
-check('known prices are bars, cheap hours take the success colour, hours without a price are one hatched band',
+// The price is a stepped line (0.5.1): one colour per priced interval, read from the line's
+// gradient (two stops per interval). Bars were narrow and centred, so they did not line up
+// with the periods underneath.
+const barFills = () => all3('stop').filter((stop) => /stroke/.test(stop.parentNode?.getAttribute?.('id') || ''))
+  .map((stop) => stop.getAttribute('stop-color') || '').filter((_, index) => index % 2 === 0);
+const priceLines = () => all3('.family-chart-line[data-series="price"]');
+check('the price is a stepped line over each whole interval, never centred bars',
+  priceLines().length >= 1 && !root3.querySelector('.family-chart-bar') &&
+  priceLines().every((line) => /^M [\d.-]+ [\d.-]+ L /.test(line.getAttribute('d') || '') && !/NaN/.test(line.getAttribute('d') || '')) &&
+  !!root3.querySelector('.family-chart-area[data-series="price"]'));
+check('known prices are drawn per hour, cheap hours take the success colour, hours without a price are one hatched band',
   barFills().length === 7 && barFills().filter((fill) => fill.includes('--family-success')).length === 4 &&
   barFills().filter((fill) => fill.includes('--sdc-chart-price')).length === 3 &&
   all3('.family-chart-band').length === 1 && root3.querySelector('.family-chart-band')?.getAttribute('data-pattern') === 'hatched' &&
@@ -2716,8 +2725,8 @@ const withPrices = (prices, kinds = null) => priceSlots.map((slot, index) => ({ 
 iAttrs.intelligent.slots = withPrices([0.2, -0.05, 0, 0.1, -0.1, 0.05, 0.15]);
 await push3();
 const axisLabels = () => all3('.family-chart-axis').map((node) => node.textContent);
-check('negative and zero prices draw as bars and are mentioned in the description',
-  barFills().length === 7 && all3('.family-chart-bar').every((bar) => Number(bar.getAttribute('height')) >= 0 && Number.isFinite(Number(bar.getAttribute('y')))) &&
+check('negative and zero prices are drawn and mentioned in the description',
+  barFills().length === 7 && priceLines().length >= 1 && priceLines().every((line) => !/NaN|Infinity/.test(line.getAttribute('d') || '')) &&
   desc3().includes('Some prices are below zero') && axisLabels().some((label) => /[-−]/.test(label)) &&
   barFills().filter((fill) => fill.includes('--family-success')).length === 7);
 iAttrs.intelligent.slots = withPrices(cheapPrices, (index) => (index === 2 || index > 6 ? 'forecast' : 'known'));
@@ -2736,7 +2745,7 @@ iAttrs.intelligent.slots = priceSlots10.flatMap((slot) => {
 await push3();
 const evA = el3._evData(iAttrs, 'smartevse_1', 'SmartEVSE 1');
 const evB = el3._evData(iAttrs, 'smartevse_2', 'SmartEVSE 2');
-check('slots shorter than an hour become narrower bars', barFills().length === 14 && el3._planChartData(evA, evB).intervalMs === 1800000);
+check('slots shorter than an hour become shorter steps', barFills().length === 14 && el3._planChartData(evA, evB).intervalMs === 1800000);
 iAttrs.intelligent.slots = priceSlots10;
 await push3();
 check('the chart prices carry the payload currency per kWh',

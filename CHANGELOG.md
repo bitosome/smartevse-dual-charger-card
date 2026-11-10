@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.1 — 2026-11-11
+
+- The price in the plan chart is now a stepped line with a filled area that covers each whole hour. Before, each price was a narrow bar centred in its hour, so a charging period that started on the hour began to the left of its price bar and the hour labels sat between bars. Prices, hour labels and charging periods now share the same time scale.
+
+Validation: typecheck, production build, 315 offline smoke checks (1 new) and the browser layout run of 90 state, width and theme combinations in Chromium; the two-car plan was looked at in dark theme at 390 px.
+
 ## 0.5.0 — 2026-11-11
 
 The plan layout is redrawn on the shared chart and reworded so it can be read at a glance. It needs `@bitosome/ha-card-ui` 1.8.0. The new wording is for SmartEVSE Dual Charger integration 0.0.10.0; with 0.0.9.x the card keeps working and keeps the earlier top-up controls.
