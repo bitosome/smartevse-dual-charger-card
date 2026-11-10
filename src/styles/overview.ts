@@ -131,7 +131,64 @@ export const OVERVIEW_CSS = `
     .charger-totals { max-width: 44%; }
     .battery-value { font-size: 25px; }
   }
+  /* ---- Plan layout (0.4.0): night timeline, car gauges with an LED ring, totals. ----
+     Colours of blocks, rings and glows are the WLED state colours (--sdc-led-*, --node-*). */
+  .layout-choice { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-top: var(--large-gap); }
+  .layout-options { display: flex; gap: 6px; }
+  .layout-option { cursor: pointer; font: inherit; }
+  .layout-option[aria-pressed="true"] { box-shadow: inset 0 0 0 1px var(--primary-color); }
+  .layout-plan { --sdc-quiet: color-mix(in srgb, var(--primary-text-color) 16%, transparent); --sdc-quiet-strong: color-mix(in srgb, var(--primary-text-color) 38%, transparent); --sdc-panel: color-mix(in srgb, var(--primary-text-color) 4%, transparent); }
+  .plan-timeline { margin: 0; padding: 12px 12px 8px; border-radius: var(--ha-card-border-radius, 16px);
+    background: var(--sdc-panel); border: 1px solid var(--sdc-quiet); }
+  .plan-timeline svg { display: block; width: 100%; height: auto; }
+  .tl-price { fill: var(--sdc-quiet); }
+  .tl-price.cheap { fill: var(--sdc-quiet-strong); }
+  .tl-hatch { fill: var(--sdc-quiet); }
+  .tl-unpriced { fill: url(#sdc-hatch); opacity: 0.7; }
+  .tl-tick, .pod-unit { font: 400 9.5px ui-monospace, "SF Mono", Menlo, Consolas, monospace; fill: var(--secondary-text-color); }
+  .tl-lane { font-size: 9.5px; font-weight: 500; fill: var(--secondary-text-color); }
+  .tl-track { fill: none; stroke: var(--sdc-quiet); }
+  .tl-block { fill: rgba(var(--sdc-led-idle-rgb, 0, 100, 255), 0.75); }
+  .tl-block.top-up { opacity: 0.5; }
+  .tl-block.risk { fill: var(--family-warning, var(--warning-color, #ff9800)); }
+  .tl-block.charging { fill: rgb(var(--sdc-led-charging-rgb, 0, 200, 80)); animation: sdcBreathe var(--sdc-led-charging-glow-duration, 2.4s) ease-in-out infinite; }
+  .tl-now { stroke: var(--primary-text-color); stroke-width: 1.2; stroke-dasharray: 2 3; }
+  .tl-ready { stroke: var(--primary-color); stroke-width: 1.6; }
+  .plan-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 6px 0 0; padding: 0; list-style: none; font-size: 11px; color: var(--secondary-text-color); }
+  .plan-legend .swatch { display: inline-block; width: 12px; height: 7px; border-radius: 3px; margin-right: 5px; }
+  .swatch.planned { background: rgba(var(--sdc-led-idle-rgb, 0, 100, 255), 0.75); }
+  .swatch.charging { background: rgb(var(--sdc-led-charging-rgb, 0, 200, 80)); }
+  .swatch.price { background: var(--sdc-quiet-strong); }
+  .swatch.ready { background: var(--primary-color); width: 3px; height: 10px; vertical-align: -1px; }
+  .layout-plan .ev-row { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; }
+  .layout-plan .ev-node-wrap, .layout-plan .ev-pod { height: 100%; box-sizing: border-box; }
+  .ev-pod { align-content: start; }
+  .ev-pod { display: grid; justify-items: center; text-align: center; gap: 4px; }
+  .ev-pod .pod-copy { display: grid; gap: 1px; justify-items: center; min-width: 0; }
+  .ev-pod .charger-status { justify-content: center; }
+  .ev-pod .charger-plan-line { text-align: center; }
+  .ev-pod .session-cost { align-items: center; text-align: center; }
+  .pod-gauge { width: 100%; max-width: 150px; height: auto; }
+  .pod-ring { fill: none; stroke: rgb(var(--node-rgb, 148, 163, 184)); stroke-width: 3; stroke-linecap: round; stroke-dasharray: 3 8; }
+  .pod-ring.breathe { animation: sdcBreathe var(--node-glow-duration, 2.8s) ease-in-out infinite; }
+  .pod-ring.chase { stroke-dasharray: 22 22; animation: sdcChase var(--node-glow-duration, 2.4s) linear infinite; }
+  .pod-ring.static { opacity: 0.4; }
+  .pod-arcs circle { fill: none; stroke-width: 7; stroke-linecap: round; }
+  .pod-track { stroke: var(--sdc-quiet); }
+  .pod-projected { stroke: var(--secondary-text-color); opacity: 0.45; }
+  .pod-projected.risk { stroke: var(--family-warning, var(--warning-color, #ff9800)); opacity: 0.9; }
+  .pod-level { stroke: var(--primary-text-color); }
+  .pod-min { stroke: var(--primary-color); stroke-width: 2; }
+  .pod-value { font-size: 26px; font-weight: 600; fill: var(--primary-text-color); font-variant-numeric: tabular-nums; }
+  .plan-totals { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 8px; margin: 0; }
+  .plan-totals div { padding: 8px 10px; border-radius: 12px; border: 1px solid var(--sdc-quiet); background: var(--sdc-panel); min-width: 0; }
+  .plan-totals dt { font: 500 10px ui-monospace, "SF Mono", Menlo, Consolas, monospace; letter-spacing: 0.08em; text-transform: uppercase; color: var(--secondary-text-color); }
+  .plan-totals dd { margin: 2px 0 0; font-size: 15px; font-weight: 500; font-variant-numeric: tabular-nums; color: var(--primary-text-color); }
+  @keyframes sdcBreathe { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
+  @keyframes sdcChase { to { stroke-dashoffset: -88; } }
+
   @media (prefers-reduced-motion: reduce) {
+    .pod-ring, .tl-block.charging { animation: none !important; }
     .glow-under, .glow-overlay { animation: none !important; }
     *, *::before, *::after { transition: none !important; }
   }

@@ -1455,7 +1455,8 @@ delete iStates['switch.ic'];
 // Happy DOM cannot resolve a second shadow root's activeElement while focus sits in another card.
 root.activeElement?.blur();
 const el2 = document.createElement(tag);
-el2.setConfig(config);
+// The checks below cover the classic tiles; the plan layout (0.4.0 default) follows at the end.
+el2.setConfig({ ...config, layout: 'classic' });
 el2.hass = iHass;
 document.body.appendChild(el2);
 await wait(60);
@@ -2254,6 +2255,73 @@ check('tomorrow morning reads "Tonight" only when seen from the day before',
 Date.now = () => FIXED_NOW;
 el2._closeActiveDialog(); await el2.updateComplete;
 el2.remove();
+
+// ---- Plan layout (card 0.4.0): timeline, car gauges with LED rings, totals, layout switch ----
+try { win.localStorage?.clear(); } catch { /* no storage in this DOM */ }
+iAttrs.intelligent = basePayload();
+iAttrs.smartevse_1_state = 'Connected';
+const el3 = document.createElement(tag);
+el3.setConfig(config);
+el3.hass = iHass;
+document.body.appendChild(el3);
+await wait(60);
+const root3 = el3.shadowRoot;
+const push3 = async () => { el3.hass = { ...iHass }; el3._lastRenderKey = ''; el3.hass = iHass; await wait(); };
+check('with Intelligent support and no layout option the card uses the plan layout',
+  el3._layout() === 'plan' && !!root3.querySelector('ha-card.layout-plan') && !!root3.querySelector('.plan-timeline svg'));
+const tlLabel = root3.querySelector('.plan-timeline svg')?.getAttribute('aria-label') || '';
+check('the timeline draws every planned block, hatches hours without a known price and marks now',
+  root3.querySelectorAll('.tl-block').length === 4 && root3.querySelectorAll('.tl-block.top-up').length === 1 &&
+  root3.querySelectorAll('.tl-unpriced').length === 6 && root3.querySelectorAll('.tl-price').length === 7 &&
+  !!root3.querySelector('.tl-now') && root3.querySelectorAll('.tl-ready').length === 2);
+check('the timeline is described in words for screen readers',
+  /^Charging plan until /.test(tlLabel) && tlLabel.includes('Volvo XC40: 21:00–22:00') && tlLabel.includes('Volvo EX30: ') &&
+  tlLabel.includes('Ready by') && tlLabel.includes('No published price from'));
+const gauges = [...root3.querySelectorAll('.ev-pod .pod-gauge')];
+check('each connected car is a gauge with its level, minimum tick and projected arc',
+  gauges.length === 2 && gauges[0].getAttribute('aria-label') === 'Volvo XC40 battery 53%, minimum 80%' &&
+  gauges[0].querySelector('.pod-value')?.textContent === '53' && !!gauges[0].querySelector('.pod-min') &&
+  !!gauges[0].querySelector('.pod-projected') && !root3.querySelector('.battery-meter'));
+check('the LED ring follows the WLED state of its charger',
+  gauges.every((gauge) => /\b(breathe|chase|static)\b/.test(gauge.querySelector('.pod-ring')?.getAttribute('class') || '')));
+check('car tiles keep their plan lines, cost button and charger details in the plan layout',
+  root3.querySelectorAll('.ev-pod .charger-plan-line').length >= 2 && !!root3.querySelector('.ev-pod [data-action="open-charger-details"]'));
+const totalsText = root3.querySelector('.plan-totals')?.textContent.replace(/\s+/g, ' ') || '';
+check('the totals row shows planned cost, saving and next start',
+  totalsText.includes('Planned cost') && totalsText.includes('6.10') && totalsText.includes('Saving') && totalsText.includes('Next start'));
+// A block that runs now on a charger that reports Charging is drawn in the charging colour.
+Date.now = () => Date.parse('2026-11-09T21:30:00Z');
+iAttrs.smartevse_1_state = 'Charging';
+iAttrs.intelligent.status = 'charging';
+await push3();
+check('the running block of a charging car uses the charging colour and the totals say Now',
+  root3.querySelectorAll('.tl-block.charging').length === 1 &&
+  (root3.querySelector('.plan-totals')?.textContent || '').includes('Now'));
+iAttrs.smartevse_1_state = 'Connected';
+iAttrs.intelligent = basePayload();
+Date.now = () => FIXED_NOW;
+// Layout switch: Settings writes a per-device override; "classic" restores the earlier tiles.
+check('Settings offers the two layouts with the current one pressed',
+  /data-value="plan" aria-pressed="true"/.test(el3._layoutChoice()) && /data-value="classic" aria-pressed="false"/.test(el3._layoutChoice()));
+el3._setLayout('classic'); await el3.updateComplete; await wait();
+check('switching to Classic restores the earlier tiles and hides the timeline',
+  !!root3.querySelector('ha-card.layout-classic') && !root3.querySelector('.plan-timeline') && !root3.querySelector('.ev-pod') &&
+  !!root3.querySelector('.battery-meter') && !root3.querySelector('.plan-totals'));
+let storedLayout = null;
+try { storedLayout = win.localStorage?.getItem(el3._layoutStorageKey()) ?? null; } catch { storedLayout = 'classic'; }
+check('the layout choice is remembered on this device', storedLayout === 'classic');
+el3._setLayout('plan'); await el3.updateComplete;
+el3._layoutOverride = null;
+el3._config = { ...el3._config, layout: 'classic' };
+check('the layout card option sets the default', el3._layout() === 'classic');
+el3._config = { ...el3._config, layout: undefined };
+// Without Intelligent charging there is no plan to draw: tiles only.
+iAttrs.intelligent = { ...basePayload(), enabled: false, slots: [] };
+iStates['switch.ic'].state = 'off';
+await push3();
+check('with Intelligent off the plan layout shows gauges but no timeline or totals',
+  !root3.querySelector('.plan-timeline') && !root3.querySelector('.plan-totals') && root3.querySelectorAll('.ev-pod').length === 2);
+el3.remove();
 Date.now = realDateNow;
 
 console.log(ok ? '\nSMOKE TEST OK' : '\nSMOKE TEST FAILED');

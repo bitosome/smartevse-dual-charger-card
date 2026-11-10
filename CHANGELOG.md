@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.0 — 2026-11-10
+
+A new **plan layout** built around Intelligent charging. It is the default when the integration supports Intelligent charging (0.0.9.0+); the earlier tiles stay available as the **classic** layout.
+
+- Night timeline under the hero: price per hour, one lane of planned blocks per connected car, a "now" line and each car's ready-by marker. Hours without a published price are hatched. The timeline has a text description for screen readers.
+- Car tiles become gauges: battery level, projected level and a tick at the minimum, inside a segmented ring that mirrors the charger's LED ring. The ring breathes while waiting and runs a chase while charging, at the WLED effect speed. Planned blocks use the LED idle colour and the running block the LED charging colour, so the card and the charger show the same state.
+- Totals row: planned cost, saving and next start.
+- Layout switch: the `layout: plan | classic` card option sets the default, and Settings → Card layout overrides it on this device.
+- This layout is a pilot that departs from the Space Hub look; the timeline is drawn by the card itself, not by the shared chart. `@bitosome/ha-card-ui` stays at 1.5.0.
+
+Validation: typecheck, production build and 236 offline smoke checks (13 new for the plan layout and the layout switch); checked in Chrome on the local preview in light and dark themes.
+
 ## 0.3.0 — 2026-11-10
 
 Requires SmartEVSE Dual Charger integration 0.0.9.0 for Intelligent charging; with older integrations the card looks and behaves as before. `@bitosome/ha-card-ui` stays at 1.5.0.

@@ -2,7 +2,7 @@
 
 Standalone Lovelace card for the SmartEVSE Dual Charger Home Assistant integration.
 
-Version: `0.3.0`
+Version: `0.4.0`
 
 This repository contains only the frontend card and local preview assets.
 
@@ -167,6 +167,7 @@ gets each connected car to its minimum by its ready-by time; the card only rende
 controller sensor's `intelligent` attribute and edits the integration's entities. It
 computes no slots, energy, costs or savings itself.
 
+- **Layouts (0.4.0).** `layout: plan` shows a night timeline (prices, planned blocks per car, now, ready-by), car gauges inside an LED-style ring and a totals row. `layout: classic` keeps the earlier charger tiles. Without the option the card uses `plan` when the integration supports Intelligent charging. Settings → Card layout switches it on the current device.
 - **Standing plans.** Intelligent charging and Schedule are independent: switching one
   never changes the other. While both are on, Intelligent has priority (the Schedule
   tile says so), and the schedule takes over again when Intelligent is turned off.
