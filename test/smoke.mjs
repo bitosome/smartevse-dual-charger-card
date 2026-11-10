@@ -2257,7 +2257,11 @@ el2._closeActiveDialog(); await el2.updateComplete;
 el2.remove();
 
 // ---- Plan layout (card 0.4.0): timeline, car gauges with LED rings, totals, layout switch ----
+// The fixes of 0.4.2 are checked from "Plan layout fixes (card 0.4.2)" on; browser geometry is in test/layout.mjs.
 try { win.localStorage?.clear(); } catch { /* no storage in this DOM */ }
+// The first card watches the same controller and would follow a layout change; Happy DOM cannot
+// resolve its shadow root's activeElement while focus sits in another card, so it leaves the page.
+el.remove();
 iAttrs.intelligent = basePayload();
 iAttrs.smartevse_1_state = 'Connected';
 const el3 = document.createElement(tag);
@@ -2301,30 +2305,355 @@ iAttrs.smartevse_1_state = 'Connected';
 iAttrs.intelligent = basePayload();
 Date.now = () => FIXED_NOW;
 // Layout switch: Settings writes a per-device override; "classic" restores the earlier tiles.
-check('Settings offers the two layouts with the current one pressed',
-  /data-value="plan" aria-pressed="true"/.test(el3._layoutChoice()) && /data-value="classic" aria-pressed="false"/.test(el3._layoutChoice()));
+const pressed = (value) => new RegExp(`data-value="${value}" aria-pressed="true"`).test(el3._layoutChoice());
+check('Settings offers Auto, Plan and Classic, with Auto pressed while no device override is saved',
+  pressed('auto') && !pressed('plan') && !pressed('classic') && /Automatic · Plan/.test(el3._layoutChoice()));
 el3._setLayout('classic'); await el3.updateComplete; await wait();
 check('switching to Classic restores the earlier tiles and hides the timeline',
   !!root3.querySelector('ha-card.layout-classic') && !root3.querySelector('.plan-timeline') && !root3.querySelector('.ev-pod') &&
-  !!root3.querySelector('.battery-meter') && !root3.querySelector('.plan-totals'));
+  !!root3.querySelector('.battery-meter') && !root3.querySelector('.plan-totals') && pressed('classic') && !pressed('auto'));
 let storedLayout = null;
 try { storedLayout = win.localStorage?.getItem(el3._layoutStorageKey()) ?? null; } catch { storedLayout = 'classic'; }
 check('the layout choice is remembered on this device', storedLayout === 'classic');
-el3._setLayout('plan'); await el3.updateComplete;
-el3._layoutOverride = null;
+const elSaved = document.createElement(tag);
+elSaved.setConfig(config);
+check('a saved layout is loaded in setConfig', elSaved._layoutOverride === 'classic' && elSaved._layout() === 'classic');
+check('the classic layout keeps the smaller card size', el3.getCardSize() === 6);
+el3._setLayout('auto'); await el3.updateComplete; await wait();
+check('Auto clears the device override so the card option or the default applies again',
+  el3._layoutOverride === null && win.localStorage.getItem(el3._layoutStorageKey()) === null && el3._layout() === 'plan' &&
+  !!root3.querySelector('ha-card.layout-plan') && pressed('auto'));
+check('the plan layout with a car connected asks for a taller card', el3.getCardSize() === 12);
 el3._config = { ...el3._config, layout: 'classic' };
 check('the layout card option sets the default', el3._layout() === 'classic');
 el3._config = { ...el3._config, layout: undefined };
-// Without Intelligent charging there is no plan to draw: tiles only.
-iAttrs.intelligent = { ...basePayload(), enabled: false, slots: [] };
+// The same choice through the DOM: hero → Settings → layout chip. Settings needs no entity.
+const click3 = async (selector) => {
+  root3.querySelector(selector)?.dispatchEvent(new win.MouseEvent('click', { bubbles: true, composed: true }));
+  await el3.updateComplete; await wait();
+};
+const configWithSettings = el3._config;
+el3._config = { ...el3._config, charge_policy_entity: undefined, duty_cycle_entity: undefined };
+await click3('[data-action="open-force-wizard"]');
+check('the Settings entry is offered without a charge-policy or duty-cycle entity', !!root3.querySelector('dialog [data-action="open-settings"]'));
+await click3('[data-action="open-settings"]');
+check('Settings shows the layout choice on its own',
+  !!root3.querySelector('dialog .layout-choice') && root3.querySelectorAll('dialog [data-action="set-layout"]').length === 3 &&
+  !root3.querySelector('dialog .setting-tile'));
+await click3('dialog [data-action="set-layout"][data-value="classic"]');
+check('clicking the Classic chip switches the card and marks the chip',
+  !!root3.querySelector('ha-card.layout-classic') && win.localStorage.getItem(el3._layoutStorageKey()) === 'classic' &&
+  root3.querySelector('dialog [data-action="set-layout"][data-value="classic"]')?.getAttribute('aria-pressed') === 'true');
+await click3('dialog [data-action="set-layout"][data-value="auto"]');
+check('clicking the Auto chip returns to the default layout',
+  !!root3.querySelector('ha-card.layout-plan') && win.localStorage.getItem(el3._layoutStorageKey()) === null &&
+  root3.querySelector('dialog [data-action="set-layout"][data-value="auto"]')?.getAttribute('aria-pressed') === 'true');
+// The minute redraw never runs under an open dialog.
+let minuteRenders = 0;
+const realRender = el3._render;
+el3._render = () => { minuteRenders++; };
+el3._minuteTick();
+const rendersUnderDialog = minuteRenders;
+el3._render = realRender;
+el3._closeActiveDialog(); await el3.updateComplete; await wait();
+el3._config = configWithSettings;
+el3._render = () => { minuteRenders++; };
+el3._minuteTick();
+el3._render = realRender;
+check('the one-minute redraw runs with a timeline on screen and waits while a dialog is open',
+  rendersUnderDialog === 0 && minuteRenders === 1 && Boolean(el3._minuteTimer));
+// A second card on the same controller follows the choice (same page, and other tabs via storage).
+root3.activeElement?.blur();
+const el4 = document.createElement(tag);
+el4.setConfig(config);
+el4.hass = iHass;
+document.body.appendChild(el4);
+await wait(60);
+el3._setLayout('classic'); await wait();
+const followedClassic = el4._layout() === 'classic' && !!el4.shadowRoot.querySelector('ha-card.layout-classic');
+el3._setLayout('auto'); await wait();
+const followedAuto = el4._layout() === 'plan' && !!el4.shadowRoot.querySelector('ha-card.layout-plan');
+const storageEvent = (key) => { const event = new win.Event('storage'); event.key = key; window.dispatchEvent(event); };
+win.localStorage.setItem(el3._layoutStorageKey(), 'classic');
+storageEvent(el3._layoutStorageKey()); await wait();
+const storageClassic = el3._layout() === 'classic' && el4._layout() === 'classic' && !!root3.querySelector('ha-card.layout-classic');
+win.localStorage.removeItem(el3._layoutStorageKey());
+storageEvent(el3._layoutStorageKey()); await wait();
+check('a second card on the same controller follows the layout choice',
+  followedClassic && followedAuto && storageClassic && el3._layout() === 'plan' && el4._layout() === 'plan');
+el4.remove();
+// The default is sticky: an unavailable controller (restart) must not flip the card to Classic.
+const liveController = iStates['sensor.ctl'];
+iStates['sensor.ctl'] = { state: 'unavailable', attributes: {} };
+await push3();
+const elOutage = document.createElement(tag);
+elOutage.setConfig(config);
+elOutage.hass = iHass;
+check('an unavailable controller keeps the plan layout, also for a card loaded during the outage',
+  el3._layout() === 'plan' && !!root3.querySelector('ha-card.layout-plan') && !root3.querySelector('ha-card.layout-classic') &&
+  win.localStorage.getItem(el3._layoutDefaultStorageKey()) === 'plan' && elOutage._layout() === 'plan' &&
+  win.localStorage.getItem(el3._layoutStorageKey()) === null);
+const elOther = document.createElement(tag);
+elOther.setConfig(config);
+const rememberedForController = elOther._layout() === 'plan';
+elOther.setConfig({ ...config, controller_entity: 'sensor.other_controller' });
+elOther.hass = iHass;
+check('the remembered default belongs to its controller only', rememberedForController && elOther._layout() === 'classic');
+el3._setLayout('classic');
+const overrideWins = el3._layout() === 'classic';
+el3._setLayout('auto');
+el3._config = { ...el3._config, layout: 'classic' };
+const optionWins = el3._layout() === 'classic';
+el3._config = { ...el3._config, layout: undefined };
+check('during the outage the device override and the layout option keep their precedence', overrideWins && optionWins && el3._layout() === 'plan');
+const { intelligent: _dropped, ...legacyAttrs } = liveController.attributes;
+iStates['sensor.ctl'] = { state: 'ready', attributes: legacyAttrs };
+check('a readable controller without Intelligent support ends the remembered default',
+  elOutage._layout() === 'classic' && win.localStorage.getItem(el3._layoutDefaultStorageKey()) === null);
+iStates['sensor.ctl'] = liveController;
+await push3();
+check('the plan layout returns with the controller', el3._layout() === 'plan' && !!root3.querySelector('.plan-timeline svg'));
+
+// ---- Plan layout fixes (card 0.4.2) ----
+const legend3 = () => (root3.querySelector('.plan-legend')?.textContent || '').replace(/\s+/g, ' ').trim();
+const aria3 = () => root3.querySelector('.plan-timeline svg')?.getAttribute('aria-label') || '';
+const all3 = (selector) => [...root3.querySelectorAll(selector)];
+const attr3 = (node, name) => Number(node?.getAttribute(name));
+const at3 = async (iso) => { Date.now = () => Date.parse(iso); await push3(); };
+// "Next start" never shows a past time while a block runs, whatever the overall status is.
+iAttrs.intelligent = basePayload();
+iAttrs.intelligent.status = 'at_risk';
+iAttrs.intelligent.chargers.smartevse_2.status = 'at_risk';
+await at3('2026-11-09T21:30:00Z');
+const totals3 = () => (root3.querySelector('.plan-totals')?.textContent || '').replace(/\s+/g, ' ');
+check('a running block reads "Next start: Now" when the overall status is not "charging"',
+  /Next start\s*Now/.test(totals3()) && !totals3().includes('21:00'));
+await at3('2026-11-09T22:30:00Z');
+check('a start time that has passed reads Now, never the past time', /Next start\s*Now/.test(totals3()) && !totals3().includes('21:00'));
+iAttrs.smartevse_1_plug_state = 'Disconnected';
+iAttrs.intelligent.next_charge = '2026-11-10T02:00:00+00:00';
+await at3('2026-11-09T21:30:00Z');
+check('a running block of a charger without a car does not read Now', /Next start/.test(totals3()) && !/Next start\s*Now/.test(totals3()));
+iAttrs.smartevse_1_plug_state = 'Connected';
+check('at-risk and top-up blocks get their own legend entries',
+  !!root3.querySelector('.swatch.risk') && legend3().includes('Not enough time') && !!root3.querySelector('.swatch.top-up') && legend3().includes('Top-up'));
+// Force charge overrides the plan: the plan stays visible but dimmed and is named as paused.
+iAttrs.intelligent = basePayload();
+iAttrs.intelligent.overridden_by = 'force';
+iAttrs.smartevse_1_state = 'Charging';
+await at3('2026-11-09T21:30:00Z');
+const pausedByPayload = all3('.tl-block.paused').length === 4 && !root3.querySelector('.tl-block.charging') && !root3.querySelector('.tl-block:not(.paused)') &&
+  all3('.tl-price').length === 4 && !root3.querySelector('.swatch.planned') && !root3.querySelector('.swatch.charging') &&
+  legend3().includes('Plan paused by Force charge') && aria3().includes('Plan paused by Force charge') && !root3.querySelector('[data-anim-ms].tl-block');
+check('under Force charge the timeline keeps the prices, dims the plan and says it is paused', pausedByPayload);
+check('the totals row is hidden under Force charge', !root3.querySelector('.plan-totals'));
+iAttrs.intelligent.overridden_by = null;
+iStates['switch.force'].state = 'on';
+await push3();
+check('the Force charge switch pauses the timeline even before the payload reports it',
+  all3('.tl-block.paused').length === 4 && legend3().includes('Plan paused by Force charge') && !root3.querySelector('.plan-totals'));
+iStates['switch.force'].state = 'off';
+iAttrs.smartevse_1_state = 'Connected';
+iAttrs.intelligent = basePayload();
+await at3('2026-11-09T18:00:00Z');
+check('without Force charge the plan is not dimmed', !root3.querySelector('.tl-block.paused') && !legend3().includes('paused') && !!root3.querySelector('.plan-totals'));
+// Negative and zero prices: bars grow from a visible zero line.
+const withPrices = (prices, forecast = null) => priceSlots.map((slot, index) => ({ ...slot,
+  price: slot.kind === 'known' ? prices[index % prices.length] : forecast ?? slot.price }));
+iAttrs.intelligent.slots = withPrices([0.2, -0.05, 0, 0.1, -0.1, 0.05, 0.15]);
+await push3();
+const zeroY = attr3(root3.querySelector('.tl-zero'), 'y1');
+const bars = all3('.tl-price').map((bar) => ({ y: attr3(bar, 'y'), height: attr3(bar, 'height'), negative: bar.classList.contains('negative') }));
+check('negative prices hang below a visible zero line and positive prices stand on it',
+  bars.length === 7 && bars.filter((bar) => bar.negative).length === 2 && zeroY > 10 && zeroY < 70 &&
+  bars.filter((bar) => bar.negative).every((bar) => Math.abs(bar.y - zeroY) < 0.11 && bar.y + bar.height <= 70.11) &&
+  bars.filter((bar) => !bar.negative).every((bar) => Math.abs(bar.y + bar.height - zeroY) < 0.11) &&
+  bars[1].height > bars[2].height && bars[4].height > bars[1].height && bars[2].height === 2 &&
+  Math.abs(bars[0].y - 10) < 0.11 && aria3().includes('Some prices are below zero'));
+iAttrs.intelligent.slots = priceSlots;
+await push3();
+check('without negative prices there is no zero line and no mention of them', !root3.querySelector('.tl-zero') && !aria3().includes('below zero') && !root3.querySelector('.tl-price.negative'));
+// Scale and "cheap" come from published prices; forecast prices (drawn as hatch) do not move them.
+const heightsOf = () => all3('.tl-price').map((bar) => attr3(bar, 'height'));
+const cheapBefore = all3('.tl-price.cheap').length;
+const heightsBefore = heightsOf();
+iAttrs.intelligent.slots = withPrices([0.19, 0.2, 0.21], 5);
+await push3();
+const scaleKept = JSON.stringify(heightsOf()) === JSON.stringify(heightsBefore) && Math.max(...heightsOf()) === 60;
+iAttrs.intelligent.slots = withPrices([0.19, 0.2, 0.21], 0.001);
+await push3();
+check('forecast prices change neither the bar scale nor which hours count as cheap',
+  scaleKept && cheapBefore === 3 && all3('.tl-price.cheap').length === 3 && Math.max(...heightsOf()) === 60 && all3('.tl-unpriced').length === 6);
+iAttrs.intelligent.slots = priceSlots.flatMap((slot) => {
+  const middle = new Date(Date.parse(slot.start) + 1800000).toISOString();
+  return [{ ...slot, end: middle }, { ...slot, start: middle }];
+});
+await push3();
+check('slots shorter than an hour are labelled "Price", hourly slots "Price per hour"', /Price(?! per hour)/.test(legend3()) && !legend3().includes('Price per hour'));
+iAttrs.intelligent.slots = priceSlots;
+await push3();
+// Lanes: one per connected car, with a short label that tells the cars apart.
+check('lane labels are the word that tells the cars apart', JSON.stringify(all3('.tl-lane').map((node) => node.textContent)) === JSON.stringify(['XC40', 'EX30']));
+const labelsFor = (...names) => el3._laneLabels(names.map((name, index) => ({ key: `smartevse_${index + 1}`, name })));
+check('lane labels: unidentified is "Other", same names fall back to the charger, long words are cut by code point',
+  JSON.stringify(labelsFor('Unidentified vehicle', 'Volvo EX30')) === JSON.stringify(['Other', 'EX30']) &&
+  JSON.stringify(labelsFor('Anna’s car', 'Mart’s car')) === JSON.stringify(['Anna’s', 'Mart’s']) &&
+  JSON.stringify(labelsFor('Tesla Model 3')) === JSON.stringify(['Tesla']) &&
+  JSON.stringify(labelsFor('Volvo XC40')) === JSON.stringify(['XC40']) &&
+  JSON.stringify(labelsFor('Family car', 'Family car')) === JSON.stringify(['EVSE 1', 'EVSE 2']) &&
+  JSON.stringify(labelsFor('', 'SmartEVSE 2')) === JSON.stringify(['EVSE 1', 'EVSE 2']) &&
+  JSON.stringify(labelsFor('Volkswagen ID.4', '🚗🚙🚗🚙🚗🚙🚗🚙🚗 EX30')) === JSON.stringify(['Volksw…', '🚗🚙🚗🚙🚗🚙…']) &&
+  JSON.stringify(labelsFor('Mustang')) === JSON.stringify(['Mustang']) && JSON.stringify(labelsFor('Polestar')) === JSON.stringify(['Polest…']));
+delete iAttrs.intelligent.chargers.smartevse_2;
+await push3();
+check('a connected car without a plan entry keeps an empty lane and is not called "no vehicle"',
+  all3('.tl-track').length === 2 && all3('.tl-block').length === 2 && all3('.tl-ready').length === 1 &&
+  aria3().includes('Volvo EX30: no plan yet') && !legend3().includes('no vehicle connected') && !!root3.querySelector('.swatch.planned'));
+iAttrs.intelligent = basePayload();
+iAttrs.smartevse_1_available = false; iAttrs.smartevse_2_available = false;
+await push3();
+check('unreachable chargers are named as such, not as "no vehicle connected"',
+  !root3.querySelector('.tl-track') && legend3().includes('chargers unreachable') && !legend3().includes('no vehicle connected') &&
+  aria3().includes('Chargers unreachable'));
+iAttrs.smartevse_1_available = true; iAttrs.smartevse_2_available = true;
+iAttrs.smartevse_2_error = 'RCM tripped';
+await push3();
+check('a connected charger with an error keeps its lane but not its plan',
+  all3('.tl-track').length === 2 && all3('.tl-block').length === 2 && all3('.tl-ready').length === 1 &&
+  aria3().includes('Volvo EX30: charger error') && !root3.querySelector('.ev-pod.smartevse_2 .charger-plan'));
+iAttrs.smartevse_2_error = 'None';
+// Ready-by: only deadlines that are drawn, both times when the cars differ.
+iAttrs.intelligent.chargers.smartevse_2.deadline = '2026-11-10T05:00:00+00:00';
+await push3();
+const readyTue = (clock) => el3._formatPlanTime(`2026-11-10T${clock}:00+00:00`, FIXED_NOW);
+check('two different deadlines are both named in the legend',
+  legend3().includes(`Ready by ${readyTue('05:00')} / ${readyTue('07:00')}`) && aria3().includes(`Ready by ${readyTue('05:00')} / ${readyTue('07:00')}`));
+iAttrs.intelligent.chargers.smartevse_2.deadline = '2026-11-09T17:00:00+00:00';
+await push3();
+check('a deadline in the past is neither drawn nor named', all3('.tl-ready').length === 1 && legend3().includes(`Ready by ${readyTue('07:00')}`) && !legend3().includes(' / '));
+iAttrs.intelligent = basePayload();
+await push3();
+// The now line skips the hour labels; "no price yet" steps aside for it.
+const nowLines = all3('.tl-now');
+const tickY = attr3(root3.querySelector('.tl-tick'), 'y');
+check('the now line is drawn over the bars and the lanes only',
+  nowLines.length === 2 && attr3(nowLines[0], 'y2') < tickY - 11 && attr3(nowLines[1], 'y1') > tickY && attr3(nowLines[1], 'y1') < attr3(root3.querySelector('.tl-track'), 'y'));
+await at3('2026-11-10T01:10:00Z');
+check('"no price yet" moves off the now line',
+  attr3(root3.querySelector('.tl-note'), 'x') >= attr3(root3.querySelector('.tl-now'), 'x1') + 4.9);
+await at3('2026-11-09T18:00:00Z');
+// Hour labels follow the profile's clock and the Home Assistant time zone.
+const ticks3 = () => all3('.tl-tick:not(.tl-note)').map((node) => node.textContent);
+const ticks24 = ticks3();
+iHass.locale.time_format = '12';
+await push3();
+const ticks12 = ticks3();
+iHass.locale.time_format = '24';
+iHass.config.time_zone = 'Asia/Kolkata';
+await push3();
+const firstTick = root3.querySelector('.tl-tick');
+const viewWidth = Number((root3.querySelector('.plan-timeline svg')?.getAttribute('viewBox') || '').split(' ')[2]);
+const halfHour = (viewWidth - 58 - 12) / 13 / 2;
+check('hour labels use the 12-hour profile and sit on local full hours in a half-hour time zone',
+  ticks24.includes('21') && ticks24.includes('00') && !ticks24.some((label) => /[ap]$/.test(label)) &&
+  ticks12.includes('10p') && ticks12.includes('12a') && ticks12.includes('6a') && !ticks12.includes('22') && ticks12.every((label) => /^\d{1,2}[ap]$/.test(label)) &&
+  ticks12.length < ticks24.length &&
+  firstTick?.textContent === '00' && Math.abs(attr3(firstTick, 'x') - (58 + halfHour)) < 0.2 && viewWidth === 360);
+iHass.config.time_zone = 'UTC';
+await push3();
+// A re-render continues the ring and block animation instead of restarting it.
+iAttrs.wled_visuals = { off: { color: [12, 34, 56], fx: 0, sx: 0, ix: 0 }, idle: { color: [23, 67, 101], fx: 2, sx: 45, ix: 128 },
+  error: { color: [211, 22, 33], fx: 2, sx: 60, ix: 200 }, charging: { color: [44, 199, 88], fx: 41, sx: 80, ix: 100 } };
+iAttrs.smartevse_1_state = 'Charging';
+await at3('2026-11-09T21:30:00Z');
+const phase = (node) => node?.getAttribute('style') || '';
+const expected = (node) => `animation-delay: -${Date.now() % Number(node?.getAttribute('data-anim-ms'))}ms;`;
+const ring1 = root3.querySelector('.ev-pod.smartevse_1 .pod-ring');
+const block1 = root3.querySelector('.tl-block.charging');
+const cardStyle = root3.querySelector('ha-card')?.getAttribute('style') || '';
+const firstPhase = phase(ring1);
+check('animated rings and charging blocks start at the phase of a shared clock, using the CSS duration',
+  ring1?.classList.contains('chase') && ring1.getAttribute('data-anim-ms') === '2450' && cardStyle.includes('--sdc-led-charging-glow-duration: 2.45s') &&
+  firstPhase === expected(ring1) && block1?.getAttribute('data-anim-ms') === '2450' && phase(block1) === expected(block1) &&
+  root3.querySelector('.ev-pod.smartevse_2 .pod-ring')?.getAttribute('data-anim-ms') === '2780' && cardStyle.includes('--sdc-led-idle-glow-duration: 2.78s') &&
+  phase(root3.querySelector('.ev-pod.smartevse_2 .pod-ring')) === expected(root3.querySelector('.ev-pod.smartevse_2 .pod-ring')));
+Date.now = () => Date.parse('2026-11-09T21:30:01.234Z');
+await push3();
+const samePhase = root3.querySelector('.ev-pod.smartevse_1 .pod-ring') === ring1 && phase(ring1) === firstPhase;
+iAttrs.smartevse_1_battery = '54';
+await push3();
+const ring2 = root3.querySelector('.ev-pod.smartevse_1 .pod-ring');
+check('an unchanged render keeps the running animation; a replaced element continues at the clock’s phase',
+  samePhase && ring2 !== ring1 && phase(ring2) === expected(ring2) && phase(ring2) !== firstPhase);
+iAttrs.smartevse_1_battery = '53';
+iAttrs.smartevse_1_state = 'Connected';
+delete iAttrs.wled_visuals;
+// A payload whose slots have all ended is not a current plan.
+iAttrs.intelligent = basePayload();
+await at3('2026-11-10T07:00:00Z');
+check('a payload whose slots are all in the past draws no timeline', !root3.querySelector('.plan-timeline') && el3._planTimeline({}, {}) === '');
+await at3('2026-11-09T18:00:00Z');
+check('the timeline returns for a current payload', !!root3.querySelector('.plan-timeline svg'));
+// Escaping through the plan layout: names, error and status text never become markup.
+const evil = '<img src=x onerror=alert(1)>"\'';
+const evilName = `${evil} car`;
+iAttrs.intelligent = basePayload();
+Object.assign(iAttrs.intelligent.chargers.smartevse_1, { vehicle_name: evilName, status: evil });
+iAttrs.intelligent.vehicles.vehicle_1.name = evilName;
+iAttrs.intelligent.status = evil;
+const evilBefore = { name: iAttrs.smartevse_1_connected_ev, state: iAttrs.smartevse_2_state, reason: iAttrs.charge_reason, error: iAttrs.controller_error };
+Object.assign(iAttrs, { smartevse_1_connected_ev: evilName, smartevse_2_error: `Fault ${evil}`, smartevse_2_state: evil, charge_reason: evil, controller_error: evil });
+await push3();
+const overview3 = root3.querySelector('.flow-stage');
+const gauge3 = root3.querySelector('.ev-pod.smartevse_1 .pod-gauge');
+const svg3 = root3.querySelector('.plan-timeline svg');
+const names3 = (node) => (node ? node.getAttributeNames().map((name) => name.toLowerCase()).sort().join(',') : '');
+check('markup in vehicle names, error and status text stays text in the plan layout',
+  !overview3.querySelector('img') && ![...overview3.querySelectorAll('*')].some((node) => node.hasAttribute('onerror') || node.hasAttribute('src')) &&
+  root3.querySelector('.ev-pod.smartevse_1 .vehicle-name')?.textContent === evilName &&
+  gauge3?.getAttribute('aria-label')?.startsWith(`${evilName} battery `) && names3(gauge3) === 'aria-label,class,role,viewbox' &&
+  root3.querySelector('.tl-lane')?.textContent === '<img' && svg3?.getAttribute('aria-label')?.includes(`${evilName}: `) &&
+  names3(svg3) === 'aria-label,role,viewbox' &&
+  root3.querySelector('.ev-pod.smartevse_2 .charger-message')?.textContent === `Fault ${evil}` &&
+  !root3.querySelector('.ev-pod.smartevse_2 .charger-plan') && root3.querySelectorAll('.ev-pod').length === 2 && root3.querySelectorAll('.pod-gauge').length === 2);
+Object.assign(iAttrs, { smartevse_1_connected_ev: evilBefore.name, smartevse_2_error: 'None', smartevse_2_state: evilBefore.state, charge_reason: evilBefore.reason, controller_error: evilBefore.error });
+iAttrs.intelligent = basePayload();
+await push3();
+// CSS regressions: two columns in the plan layout, and no "anywhere" wrapping in a car tile.
+const css3 = (root3.querySelector('style')?.textContent || '').replace(/\/\*[\s\S]*?\*\//g, '');
+const podRules = [...css3.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter((rule) => rule[1].includes('.ev-pod'));
+check('the plan layout keeps two tiles side by side and car tiles never wrap one letter per line',
+  /\.layout-plan \.ev-row\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/.test(css3) &&
+  podRules.length > 5 && !podRules.some((rule) => /overflow-wrap:\s*anywhere/.test(rule[2])) &&
+  podRules.some((rule) => /\.vehicle-name/.test(rule[1]) && /overflow-wrap:\s*break-word/.test(rule[2])) &&
+  podRules.some((rule) => /max-width:\s*100%/.test(rule[2])));
+check('timeline labels are 11px and the gauge caption is HTML, outside the scaled drawing',
+  /\.tl-tick\s*\{[^}]*11px/.test(css3) && /\.tl-lane\s*\{[^}]*font-size:\s*11px/.test(css3) && /\.pod-unit\s*\{[^}]*font-size:\s*11px/.test(css3) &&
+  root3.querySelector('.pod-unit')?.localName === 'span' && !root3.querySelector('svg .pod-unit') &&
+  root3.querySelector('.pod-unit')?.textContent === '% · min 80');
+// Without Intelligent charging there is no plan to draw: tiles only (with and without slots).
+iAttrs.intelligent = { ...basePayload(), enabled: false };
 iStates['switch.ic'].state = 'off';
+await push3();
+check('with Intelligent off the plan layout shows gauges but no timeline or totals, even when slots are still published',
+  iAttrs.intelligent.slots.length === 13 && !root3.querySelector('.plan-timeline') && !root3.querySelector('.plan-totals') &&
+  root3.querySelectorAll('.ev-pod').length === 2 && !el3._minuteTimer);
+iAttrs.intelligent = { ...basePayload(), enabled: false, slots: [] };
 await push3();
 check('with Intelligent off the plan layout shows gauges but no timeline or totals',
   !root3.querySelector('.plan-timeline') && !root3.querySelector('.plan-totals') && root3.querySelectorAll('.ev-pod').length === 2);
-// No car connected (0.4.1): the charger tiles stay readable, centred tiles, never the classic row.
 iStates['switch.ic'].state = 'on';
-iAttrs.intelligent = { ...basePayload(), status: 'no_ev', chargers: {}, next_charge: null, connected_count: 0 };
+// One car: the empty charger tile keeps its own height beside the car tile.
+iAttrs.intelligent = basePayload();
+delete iAttrs.intelligent.chargers.smartevse_2;
 const plugBefore = [iAttrs.smartevse_1_plug_state, iAttrs.smartevse_2_plug_state];
+iAttrs.smartevse_2_plug_state = 'Disconnected';
+await push3();
+check('with one car the empty charger tile is not stretched to the car tile',
+  !!root3.querySelector('.ev-node-wrap.smartevse_2.pod-empty') && !root3.querySelector('.ev-node-wrap.smartevse_1.pod-empty') &&
+  /\.ev-node-wrap\.pod-empty\s*\{[^}]*align-self:\s*start/.test(css3) && all3('.tl-track').length === 1 && all3('.tl-now').length === 2);
+// No car connected (0.4.1): the charger tiles stay readable, centred tiles, never the classic row.
+iAttrs.intelligent = { ...basePayload(), status: 'no_ev', chargers: {}, next_charge: null, connected_count: 0 };
 iAttrs.smartevse_1_plug_state = 'Disconnected'; iAttrs.smartevse_2_plug_state = 'Disconnected';
 await push3();
 const emptyPods = [...root3.querySelectorAll('.ev-pod.empty')];
@@ -2333,10 +2662,13 @@ check('chargers without a car use the centred plan tile, not the classic heading
   emptyPods.every((pod) => !!pod.querySelector('.pod-icon') && /SmartEVSE [12]/.test(pod.querySelector('.charger-name')?.textContent || '') &&
     /No vehicle connected/.test(pod.querySelector('.charger-status')?.textContent || '')));
 check('with no car the timeline shows prices only and says so',
-  !!root3.querySelector('.plan-timeline') && !root3.querySelector('.tl-track') &&
-  /no vehicle connected/.test(root3.querySelector('.plan-legend')?.textContent || '') && !root3.querySelector('.swatch.planned'));
+  !!root3.querySelector('.plan-timeline') && !root3.querySelector('.tl-track') && all3('.tl-now').length === 1 &&
+  /no vehicle connected/.test(root3.querySelector('.plan-legend')?.textContent || '') && !root3.querySelector('.swatch.planned') &&
+  aria3().includes('No vehicle connected') && !root3.querySelector('.pod-empty') && el3.getCardSize() === 6);
 [iAttrs.smartevse_1_plug_state, iAttrs.smartevse_2_plug_state] = plugBefore;
+const timerWhileShown = Boolean(el3._minuteTimer);
 el3.remove();
+check('the one-minute redraw stops when the card leaves the page', timerWhileShown && !el3._minuteTimer);
 Date.now = realDateNow;
 
 console.log(ok ? '\nSMOKE TEST OK' : '\nSMOKE TEST FAILED');

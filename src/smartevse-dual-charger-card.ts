@@ -4,11 +4,11 @@ import { CARD_CSS } from "./styles/card";
 import {
   familyStyles, dialogStyles, componentStyles, glowStyles, FamilyFlowController, renderFamilyDialog, showEntityMoreInfo,
   UI_ICONS, TONE_ICONS, pendingIndicator, formatHassNumber, formatHassCurrency, formatHassTime, formatHassDate, formatHassDateTime,
-  formatHassDuration, hassTimeZone, UNAVAILABLE_TEXT, levelMeterMarkup, batteryTone, type Tone,
+  formatHassDuration, hassTimeZone, hassHour12, UNAVAILABLE_TEXT, levelMeterMarkup, batteryTone, type Tone,
 } from "@bitosome/ha-card-ui";
 import { buildGlow, type PulseColors } from "./shared/glow";
 
-const CARD_VERSION = "0.4.1";
+const CARD_VERSION = "0.4.2";
 
 // String twin of the shared pendingIndicator(); this card renders through unsafeHTML.
 const PENDING_INDICATOR = `<span class="family-pending-indicator" aria-hidden="true"></span>`;
@@ -26,6 +26,11 @@ const INTELLIGENT_VEHICLE_CONFIG_PREFIX: Record<IntelligentVehicleKey, string> =
   other: "other_vehicle",
 };
 const UNIDENTIFIED_VEHICLE = "Unidentified vehicle";
+// Other cards on the same controller follow a layout choice made in this document.
+const LAYOUT_EVENT = "smartevse-flow-card:layout";
+// Timeline drawing width before the card has been measured, and the narrowest it is drawn for.
+const TIMELINE_DEFAULT_WIDTH = 360;
+const TIMELINE_MIN_WIDTH = 200;
 // Saving below this magnitude is noise; the integration publishes it, the card hides it.
 const MIN_SAVING = 0.1;
 // A realised window with less energy never carries a saving (integration REALISED_MIN_KWH),
@@ -234,6 +239,8 @@ class SmartEVSEFlowCard extends LitElement {
     if (!config.controller_entity) {
       throw new Error("controller_entity is required");
     }
+    // The remembered default layout belongs to one controller.
+    if (config.controller_entity !== this._config?.controller_entity) this._layoutDefaultPlan = false;
     this._config = {
       schedule_price_entity: "switch.smartevse_dual_charger_schedule_acceptable_price",
       ...config,
@@ -265,8 +272,11 @@ class SmartEVSEFlowCard extends LitElement {
     this._render();
   }
 
+  // The plan layout with a car is roughly twice as tall as the classic tiles.
   getCardSize() {
-    return 6;
+    const attrs = this._entity(this._config?.controller_entity)?.attributes || {};
+    const connected = ["smartevse_1", "smartevse_2"].some((key) => attrs[`${key}_plug_state`] === "Connected");
+    return this._config && this._layout() === "plan" && connected ? 12 : 6;
   }
 
   connectedCallback() {
@@ -274,11 +284,22 @@ class SmartEVSEFlowCard extends LitElement {
     // A press may end outside the card; its release still completes a deferred field commit.
     window.addEventListener("pointerup", this._pointerReleased, true);
     window.addEventListener("pointercancel", this._pointerReleased, true);
+    window.addEventListener("storage", this._layoutChanged);
+    window.addEventListener(LAYOUT_EVENT, this._layoutChanged);
+    if (typeof ResizeObserver !== "undefined") {
+      this._resizeObserver = this._resizeObserver || new ResizeObserver(() => this._measureTimeline());
+      this._resizeObserver.observe(this);
+    }
+    this._syncMinuteTimer();
   }
 
   disconnectedCallback() {
     window.removeEventListener("pointerup", this._pointerReleased, true);
     window.removeEventListener("pointercancel", this._pointerReleased, true);
+    window.removeEventListener("storage", this._layoutChanged);
+    window.removeEventListener(LAYOUT_EVENT, this._layoutChanged);
+    this._resizeObserver?.disconnect();
+    this._syncMinuteTimer();
     this._pointerDown = false;
     this._flushDeferredCommits();
     super.disconnectedCallback();
@@ -633,9 +654,34 @@ class SmartEVSEFlowCard extends LitElement {
 
   // ---- Card layout: "plan" (0.4.0) or "classic" -------------------------------------------
   private _layoutOverride: "plan" | "classic" | null = null;
+  // The default resolved to "plan" once (Intelligent support was seen). It stays while the
+  // controller cannot say otherwise, e.g. while it is unavailable during a restart.
+  private _layoutDefaultPlan = false;
+  // Measured width of the timeline drawing, so its text keeps one size at every card width.
+  private _timelineWidth = TIMELINE_DEFAULT_WIDTH;
+  private _resizeObserver?: ResizeObserver;
+  private _minuteTimer?: ReturnType<typeof setInterval>;
+  // Another card (this document) or another tab (storage) changed the layout of this controller.
+  private _layoutChanged = (event: Event) => {
+    const detail = (event as CustomEvent<{ key?: string; value?: string; source?: unknown }>).detail;
+    if (detail && typeof detail === "object") {
+      if (detail.source === this || detail.key !== this._layoutStorageKey()) return;
+      this._layoutOverride = detail.value === "plan" || detail.value === "classic" ? detail.value : null;
+    } else {
+      const key = (event as StorageEvent).key ?? null;
+      if (key !== null && key !== this._layoutStorageKey() && key !== this._layoutDefaultStorageKey()) return;
+      this._loadLayoutPreference();
+    }
+    if (this._config) this._render();
+  };
 
   _layoutStorageKey() {
     return `smartevse-flow-card:layout:${this._config?.controller_entity || ""}`;
+  }
+
+  // The resolved default, kept apart from the explicit device override above.
+  _layoutDefaultStorageKey() {
+    return `smartevse-flow-card:layout-default:${this._config?.controller_entity || ""}`;
   }
 
   _loadLayoutPreference() {
@@ -643,18 +689,36 @@ class SmartEVSEFlowCard extends LitElement {
     try {
       const saved = window.localStorage?.getItem(this._layoutStorageKey());
       if (saved === "plan" || saved === "classic") this._layoutOverride = saved;
+      if (window.localStorage?.getItem(this._layoutDefaultStorageKey()) === "plan") this._layoutDefaultPlan = true;
     } catch {
       // Storage can be unavailable; the configured layout still applies.
     }
   }
 
-  _setLayout(value) {
-    if (value !== "plan" && value !== "classic") return;
-    this._layoutOverride = value;
+  _rememberLayoutDefault(plan: boolean) {
+    this._layoutDefaultPlan = plan;
     try {
-      window.localStorage?.setItem(this._layoutStorageKey(), value);
+      if (plan) window.localStorage?.setItem(this._layoutDefaultStorageKey(), "plan");
+      else window.localStorage?.removeItem(this._layoutDefaultStorageKey());
     } catch {
       // Kept for this card instance only.
+    }
+  }
+
+  // "plan" or "classic" saves a device override; "auto" clears it so the card option or default applies.
+  _setLayout(value) {
+    if (value !== "plan" && value !== "classic" && value !== "auto") return;
+    this._layoutOverride = value === "auto" ? null : value;
+    try {
+      if (value === "auto") window.localStorage?.removeItem(this._layoutStorageKey());
+      else window.localStorage?.setItem(this._layoutStorageKey(), value);
+    } catch {
+      // Kept for this card instance only.
+    }
+    try {
+      window.dispatchEvent(new CustomEvent(LAYOUT_EVENT, { detail: { key: this._layoutStorageKey(), value, source: this } }));
+    } catch {
+      // Other cards follow on their next load.
     }
     this._render();
   }
@@ -663,20 +727,74 @@ class SmartEVSEFlowCard extends LitElement {
     if (this._layoutOverride) return this._layoutOverride;
     const configured = this._config?.layout;
     if (configured === "plan" || configured === "classic") return configured;
-    return this._intelligentSupported() ? "plan" : "classic";
+    if (this._intelligentSupported()) {
+      if (!this._layoutDefaultPlan) this._rememberLayoutDefault(true);
+      return "plan";
+    }
+    // Support is not visible right now. Only a readable controller without an Intelligent payload
+    // (an older integration) means "unsupported"; an unavailable controller keeps the default.
+    if (this._layoutDefaultPlan && this._isAvailable(this._config?.controller_entity) && !this._intelligent()) {
+      this._rememberLayoutDefault(false);
+    }
+    return this._layoutDefaultPlan ? "plan" : "classic";
   }
 
   _layoutChoice() {
     const current = this._layout();
-    const option = (value, label, detail) => `<button class="family-chip layout-option" type="button" data-action="set-layout" data-value="${value}" aria-pressed="${current === value}" data-tone="${current === value ? "accent" : "neutral"}" title="${this._safe(detail)}">${this._safe(label)}</button>`;
+    const chosen = this._layoutOverride || "auto";
+    const option = (value, label, detail) => `<button class="family-chip layout-option" type="button" data-action="set-layout" data-value="${value}" aria-pressed="${chosen === value}" data-tone="${chosen === value ? "accent" : "neutral"}" title="${this._safe(detail)}">${this._safe(label)}</button>`;
     return `<div class="layout-choice" role="group" aria-label="Card layout">
-      <div class="setting-copy"><div class="setting-label">Card layout</div><div class="setting-value">Saved on this device</div></div>
-      <div class="layout-options">${option("plan", "Plan", "Night timeline and car gauges")}${option("classic", "Classic", "The earlier charger tiles")}</div>
+      <div class="setting-copy"><div class="setting-label">Card layout</div><div class="setting-value">${chosen === "auto" ? `Automatic · ${current === "plan" ? "Plan" : "Classic"}` : "Saved on this device"}</div></div>
+      <div class="layout-options">${option("auto", "Auto", "Follow the card option or the default")}${option("plan", "Plan", "Night timeline and car gauges")}${option("classic", "Classic", "The earlier charger tiles")}</div>
     </div>`;
   }
 
+  // The timeline is drawn at its measured width (1 SVG unit = 1 CSS px), so labels stay 11px.
+  _measureTimeline() {
+    const canvas = this.renderRoot?.querySelector<HTMLElement>(".tl-canvas");
+    const width = Math.round(canvas?.clientWidth || 0);
+    if (width > 0 && Math.abs(width - this._timelineWidth) > 3) {
+      this._timelineWidth = width;
+      this._render();
+    }
+  }
+
+  // Each re-render replaces the animated elements. A new one starts at the phase of a shared
+  // clock, so rings, glows and charging blocks continue instead of restarting from zero.
+  _syncAnimationPhase() {
+    this.renderRoot.querySelectorAll("[data-anim-ms]:not([data-anim-synced])").forEach((element) => {
+      const duration = Number(element.getAttribute("data-anim-ms"));
+      element.setAttribute("data-anim-synced", "");
+      if (duration > 0) element.setAttribute("style", `animation-delay: -${Math.round(Date.now() % duration)}ms;`);
+    });
+  }
+
+  // Animation period in ms of a WLED state, as the CSS duration variables carry it.
+  _glowDurationMs(visuals, key) {
+    return Math.round(Number(this._wledGlowDuration({ [key]: visuals?.[key] || visuals?.off }, key)) * 1000);
+  }
+
+  // The "now" line and time-dependent states move without a state change: redraw once a minute,
+  // only while a timeline is on screen and no dialog (and so no field being edited) is open.
+  _syncMinuteTimer() {
+    const wanted = this.isConnected && Boolean(this._config) && this._layout() === "plan" &&
+      Boolean(this.renderRoot?.querySelector(".plan-timeline"));
+    if (wanted && !this._minuteTimer) {
+      this._minuteTimer = setInterval(() => this._minuteTick(), 60000);
+    } else if (!wanted && this._minuteTimer) {
+      clearInterval(this._minuteTimer);
+      this._minuteTimer = undefined;
+    }
+  }
+
+  _minuteTick() {
+    if (!this.isConnected || this._editingEntity || this._flow.current) return;
+    this._render();
+  }
+
   // Segmented LED ring and arc gauge of one car: level, projected level and a tick at the minimum.
-  _podGauge({ value, minimum, projected, risk, ringClass, label }) {
+  // The caption under the number is HTML, so it keeps its size when the gauge scales.
+  _podGauge({ value, minimum, projected, risk, ringClass, ringMs = 0, label }) {
     const R = 42;
     const C = 2 * Math.PI * R;
     const sweep = C * 0.75;
@@ -688,8 +806,8 @@ class SmartEVSEFlowCard extends LitElement {
       const [x1, y1] = point(34), [x2, y2] = point(50);
       tick = `<line class="pod-min" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`;
     }
-    return `<svg class="pod-gauge" viewBox="0 0 120 116" role="img" aria-label="${this._safe(label)}">
-      <circle class="pod-ring ${ringClass}" cx="60" cy="60" r="52"/>
+    return `<div class="pod-gauge-wrap"><svg class="pod-gauge" viewBox="0 0 120 116" role="img" aria-label="${this._safe(label)}">
+      <circle class="pod-ring ${ringClass}"${ringClass !== "static" && ringMs > 0 ? ` data-anim-ms="${Number(ringMs)}"` : ""} cx="60" cy="60" r="52"/>
       <g transform="rotate(135 60 60)" class="pod-arcs">
         <circle class="pod-track" cx="60" cy="60" r="${R}" stroke-dasharray="${sweep.toFixed(1)} ${C.toFixed(1)}"/>
         ${projected !== null && value !== null && projected > value ? `<circle class="pod-projected${risk ? " risk" : ""}" cx="60" cy="60" r="${R}" stroke-dasharray="${arc(projected)} ${C.toFixed(1)}"/>` : ""}
@@ -697,92 +815,199 @@ class SmartEVSEFlowCard extends LitElement {
       </g>
       ${tick}
       <text class="pod-value" x="60" y="66" text-anchor="middle">${value !== null ? this._safe(Math.round(value)) : "–"}</text>
-      <text class="pod-unit" x="60" y="80" text-anchor="middle">${minimum !== null ? `% · min ${this._safe(Math.round(minimum))}` : "%"}</text>
-    </svg>`;
+    </svg><span class="pod-unit" aria-hidden="true">${minimum !== null ? `% · min ${this._safe(Math.round(minimum))}` : "%"}</span></div>`;
   }
 
-  // Night timeline: price per hour, one lane of planned blocks per car, "now" and ready-by.
+  // True when the profile shows a 12-hour clock ("language" follows the profile language).
+  _uses12HourClock() {
+    const explicit = hassHour12(this._hass);
+    if (explicit !== undefined) return explicit;
+    try {
+      const cycle = new Intl.DateTimeFormat(this._hass?.locale?.language || undefined, { hour: "numeric" }).resolvedOptions().hourCycle;
+      return cycle === "h11" || cycle === "h12";
+    } catch {
+      return false;
+    }
+  }
+
+  // Minutes past the hour in the HA time zone (zones can sit on a half or quarter hour).
+  _localMinute(value) {
+    const date = new Date(value);
+    try {
+      const minute = new Intl.DateTimeFormat("en-GB", { minute: "2-digit", timeZone: hassTimeZone(this._hass) }).format(date);
+      return Number.parseInt(minute, 10) || 0;
+    } catch {
+      return date.getMinutes();
+    }
+  }
+
+  _knownVehicleName(ev) {
+    return ev?.connectedEvName && !["unknown", "unavailable", "none", "?", "n/a"].includes(ev.connectedEvName.toLowerCase())
+      ? ev.connectedEvName : "";
+  }
+
+  // Short lane labels: "Other" for an unidentified car, otherwise the first word that tells the
+  // car apart from the other known cars ("XC40" / "EX30"), then "EVSE 1" / "EVSE 2".
+  _laneLabels(lanes: Array<{ key: string; name: string }>) {
+    const usable = (name) => Boolean(name) && name !== UNIDENTIFIED_VEHICLE && !/^SmartEVSE \d+$/.test(name);
+    const words = (name) => String(name).split(/\s+/).filter(Boolean);
+    const same = (left, right) => String(left ?? "").toLowerCase() === String(right ?? "").toLowerCase();
+    const vehicles = this._intelligent()?.vehicles;
+    const names = [
+      ...lanes.map((lane) => lane.name),
+      ...["vehicle_1", "vehicle_2"].map((key) => String(vehicles?.[key]?.name ?? "").trim()),
+    ].filter(usable);
+    return lanes.map((lane, index) => {
+      const fallback = `EVSE ${lane.key.replace("smartevse_", "")}`;
+      let label = fallback;
+      if (lane.name === UNIDENTIFIED_VEHICLE) label = "Other";
+      else if (usable(lane.name) && !lanes.some((other, at) => at !== index && same(other.name, lane.name))) {
+        const own = words(lane.name);
+        const others = names.filter((name) => !same(name, lane.name)).map(words);
+        const differs = others.length ? own.findIndex((word, at) => others.every((other) => !same(other[at], word))) : 0;
+        label = own[differs >= 0 ? differs : own.length - 1] || fallback;
+      }
+      const chars = Array.from(label);
+      return chars.length > 7 ? `${chars.slice(0, 6).join("")}…` : label;
+    });
+  }
+
+  // Night timeline: price bars, one lane of planned blocks per connected car, "now" and ready-by.
   _planTimeline(ev1, ev2, now = Date.now()) {
     const payload = this._isIntelligentPlanActive() ? this._intelligent() : null;
     const slots = (Array.isArray(payload?.slots) ? payload.slots : [])
       .map((slot) => ({ start: Date.parse(slot?.start), end: Date.parse(slot?.end), price: this._num(slot?.price), kind: String(slot?.kind || "") }))
       .filter((slot) => Number.isFinite(slot.start) && Number.isFinite(slot.end) && slot.end > slot.start)
       .sort((left, right) => left.start - right.start);
-    if (!payload || !slots.length) return "";
+    // No current plan: nothing published, or every published slot has already ended.
+    if (!payload || !slots.length || slots[slots.length - 1].end <= now) return "";
+    // Force charge overrides the plan: it stays visible, dimmed, and is named as paused.
+    const paused = this._isForcePlanActive() || payload.overridden_by === "force";
     const chargers = this._intelligentChargers();
-    const evByKey = { smartevse_1: ev1, smartevse_2: ev2 };
-    const lanes = ["smartevse_1", "smartevse_2"].filter((key) => chargers[key] && evByKey[key].connected);
+    const evs = [ev1, ev2];
+    // One lane per connected car. Its blocks are drawn only for a healthy charger with a plan,
+    // as the tile hides its plan lines for a charger error.
+    const lanes = evs.filter((ev) => ev.connected).map((ev) => {
+      const charger = chargers[ev.key] || null;
+      return { key: ev.key, ev, charger, planned: Boolean(charger) && !ev.hasError && ev.available,
+        name: charger ? this._intelligentVehicleName(charger, ev.key) : this._knownVehicleName(ev) };
+    });
+    const planned = lanes.filter((lane) => lane.planned);
     const HOUR = 3600000;
-    const deadlines = lanes.map((key) => Date.parse(chargers[key].deadline)).filter(Number.isFinite);
-    const blockEnds = lanes.flatMap((key) => this._blocks(chargers[key]).map((block) => block.end));
-    const first = slots.find((slot) => slot.end > now)?.start ?? slots[0].start;
+    const deadlines = planned.map((lane) => Date.parse(lane.charger.deadline)).filter(Number.isFinite);
+    const blockEnds = planned.flatMap((lane) => this._blocks(lane.charger).map((block) => block.end));
+    const first = slots.find((slot) => slot.end > now).start;
     const wanted = Math.max(first + 6 * HOUR, ...deadlines, ...blockEnds);
     const last = Math.min(slots[slots.length - 1].end, Math.ceil(wanted / HOUR) * HOUR);
     if (!(last > first)) return "";
-    const LEFT = 40, WIDTH = 312, TOP = 10, BASE = 70;
+    const twelve = this._uses12HourClock();
+    const TOTAL = Math.max(TIMELINE_MIN_WIDTH, Math.round(this._timelineWidth) || TIMELINE_DEFAULT_WIDTH);
+    const LEFT = lanes.length ? 58 : 12, RIGHT = 12, WIDTH = TOTAL - LEFT - RIGHT, TOP = 10, BASE = 70;
     const x = (time) => LEFT + Math.min(1, Math.max(0, (time - first) / (last - first))) * WIDTH;
     const visible = slots.filter((slot) => slot.end > first && slot.start < last);
-    const priced = visible.filter((slot) => slot.price !== null).map((slot) => slot.price);
-    const top = Math.max(0.01, ...priced);
-    const cheap = priced.length ? [...priced].sort((a, b) => a - b)[Math.floor((priced.length - 1) / 3)] : null;
+    const isKnown = (slot) => slot.kind === "known" && slot.price !== null;
+    // Scale and "cheap" come from published prices only; forecast hours are drawn as hatch.
+    const prices = visible.filter(isKnown).map((slot) => slot.price);
+    const low = Math.min(0, ...prices), high = Math.max(0, ...prices);
+    const span = Math.max(0.01, high - low);
+    const negative = low < 0;
+    // Bars grow from the zero line: up for a positive price, down for a negative one.
+    const zeroY = BASE - (0 - low) / span * (BASE - TOP);
+    const cheap = prices.length ? [...prices].sort((a, b) => a - b)[Math.floor((prices.length - 1) / 3)] : null;
     const bars = visible.map((slot) => {
       const x0 = x(slot.start), width = Math.max(1, x(slot.end) - x0 - 1.5);
-      const known = slot.kind === "known" && slot.price !== null;
-      if (!known) return `<rect class="tl-unpriced" x="${x0.toFixed(1)}" y="${TOP}" width="${width.toFixed(1)}" height="${BASE - TOP}" rx="2.5"/>`;
-      const height = Math.max(2, Math.max(0, slot.price) / top * (BASE - TOP));
-      return `<rect class="tl-price${cheap !== null && slot.price <= cheap ? " cheap" : ""}" x="${x0.toFixed(1)}" y="${(BASE - height).toFixed(1)}" width="${width.toFixed(1)}" height="${height.toFixed(1)}" rx="2.5"/>`;
+      if (!isKnown(slot)) return `<rect class="tl-unpriced" x="${x0.toFixed(1)}" y="${TOP}" width="${width.toFixed(1)}" height="${BASE - TOP}" rx="2.5"/>`;
+      const size = Math.max(2, Math.abs(slot.price) / span * (BASE - TOP));
+      const y = slot.price < 0 ? zeroY : zeroY - size;
+      return `<rect class="tl-price${cheap !== null && slot.price <= cheap ? " cheap" : ""}${slot.price < 0 ? " negative" : ""}" x="${x0.toFixed(1)}" y="${y.toFixed(1)}" width="${width.toFixed(1)}" height="${size.toFixed(1)}" rx="2.5"/>`;
     }).join("");
-    const hours = Math.round((last - first) / HOUR);
-    const step = hours > 16 ? 4 : hours > 8 ? 2 : 1;
+    const zeroLine = negative ? `<line class="tl-zero" x1="${LEFT}" y1="${zeroY.toFixed(1)}" x2="${LEFT + WIDTH}" y2="${zeroY.toFixed(1)}"/>` : "";
+    // Hour ticks sit on local full hours and are thinned until their labels cannot touch.
+    const tickWidth = (twelve ? 3 : 2) * 6.7 + 8;
+    const hourWidth = WIDTH / ((last - first) / HOUR);
+    const step = [1, 2, 3, 4, 6, 12].find((hours) => hours * hourWidth >= tickWidth) || 24;
     let ticks = "";
-    for (let time = Math.ceil(first / HOUR) * HOUR; time <= last; time += step * HOUR) {
-      const hour = this._localHour(time);
-      if (hour !== null) ticks += `<text class="tl-tick" x="${x(time).toFixed(1)}" y="${BASE + 12}" text-anchor="middle">${String(hour).padStart(2, "0")}</text>`;
+    let tick = Math.ceil(first / 60000) * 60000;
+    tick += ((60 - this._localMinute(tick)) % 60) * 60000;
+    for (; tick <= last; tick += HOUR) {
+      const hour = this._localHour(tick);
+      if (hour === null || hour % step !== 0) continue;
+      const label = twelve ? `${hour % 12 || 12}${hour < 12 ? "a" : "p"}` : String(hour).padStart(2, "0");
+      ticks += `<text class="tl-tick" x="${x(tick).toFixed(1)}" y="${BASE + 14}" text-anchor="middle">${label}</text>`;
     }
-    const unpricedFrom = visible.find((slot) => !(slot.kind === "known" && slot.price !== null));
+    const unpricedFrom = visible.find((slot) => !isKnown(slot));
+    const labels = this._laneLabels(lanes);
+    // Period of the charging block animation: the WLED charging duration, or the CSS fallback.
+    const visuals = this._wledVisuals(this._entity(this._config.controller_entity)?.attributes);
+    const blockMs = this._wledRgb(visuals, "charging") ? this._glowDurationMs(visuals, "charging") : 2400;
+    const laneTop = BASE + 26;
     const summary: string[] = [];
-    const laneMarkup = lanes.map((key, index) => {
-      const charger = chargers[key];
-      const y = BASE + 22 + index * 22;
-      const name = this._intelligentVehicleName(charger, key);
-      const risk = charger.status === "at_risk";
-      const blocks = this._blocks(charger).filter((block) => block.end > first && block.start < last);
-      summary.push(`${name}: ${blocks.length ? blocks.map((block) => `${this._formatPlanTime(block.start, now)}–${this._formatPlanTime(block.end, now)}`).join(", ") : "nothing planned"}`);
+    const readyTimes: number[] = [];
+    let drawn = 0, riskDrawn = false, topUpDrawn = false;
+    const laneMarkup = lanes.map((lane, index) => {
+      const y = laneTop + index * 22;
+      const risk = lane.charger?.status === "at_risk";
+      const blocks = lane.planned ? this._blocks(lane.charger).filter((block) => block.end > first && block.start < last) : [];
+      summary.push(`${lane.name || lane.ev.smartevseName}: ${lane.ev.hasError ? "charger error" : !lane.charger ? "no plan yet"
+        : blocks.length ? blocks.map((block) => `${this._formatPlanTime(block.start, now)}–${this._formatPlanTime(block.end, now)}`).join(", ") : "nothing planned"}`);
       const rects = blocks.map((block) => {
-        const current = block.start <= now && block.end > now && evByKey[key].isCharging;
+        const current = !paused && block.start <= now && block.end > now && lane.ev.isCharging;
         const x0 = x(Math.max(block.start, first)), width = Math.max(2, x(block.end) - x0);
-        return `<rect class="tl-block${current ? " charging" : ""}${risk ? " risk" : ""}${block.topUp ? " top-up" : ""}" x="${x0.toFixed(1)}" y="${y}" width="${width.toFixed(1)}" height="12" rx="6"/>`;
+        drawn++;
+        riskDrawn = riskDrawn || risk;
+        topUpDrawn = topUpDrawn || block.topUp;
+        return `<rect class="tl-block${paused ? " paused" : current ? " charging" : ""}${risk ? " risk" : ""}${block.topUp ? " top-up" : ""}"${current ? ` data-anim-ms="${blockMs}"` : ""} x="${x0.toFixed(1)}" y="${y}" width="${width.toFixed(1)}" height="12" rx="6"/>`;
       }).join("");
-      const deadline = Date.parse(charger.deadline);
-      const ready = Number.isFinite(deadline) && deadline >= first && deadline <= last
-        ? `<line class="tl-ready" x1="${x(deadline).toFixed(1)}" y1="${y - 3}" x2="${x(deadline).toFixed(1)}" y2="${y + 15}"/>` : "";
-      const label = name.split(" ").slice(-1)[0];
-      return `<text class="tl-lane" x="0" y="${y + 9.5}">${this._safe(label.length > 6 ? `${label.slice(0, 5)}…` : label)}</text>
+      const deadline = lane.planned ? Date.parse(lane.charger.deadline) : NaN;
+      let ready = "";
+      if (Number.isFinite(deadline) && deadline >= first && deadline <= last) {
+        readyTimes.push(deadline);
+        ready = `<line class="tl-ready" x1="${x(deadline).toFixed(1)}" y1="${y - 3}" x2="${x(deadline).toFixed(1)}" y2="${y + 15}"/>`;
+      }
+      return `<text class="tl-lane" x="0" y="${y + 10}" clip-path="url(#sdc-lane-clip)">${this._safe(labels[index])}</text>
         <rect class="tl-track" x="${LEFT}" y="${y}" width="${WIDTH}" height="12" rx="6"/>${rects}${ready}`;
     }).join("");
-    const height = BASE + 22 + lanes.length * 22 + 4;
+    const height = lanes.length ? laneTop + lanes.length * 22 + 2 : BASE + 20;
+    // The now line skips the band of tick labels: one segment over the bars, one over the lanes.
+    const nowShown = now >= first && now <= last;
     const nowX = x(now);
-    const latest = deadlines.length ? Math.max(...deadlines) : null;
-    const description = [`Charging plan until ${this._formatPlanTime(last, now)}`, ...summary,
-      latest !== null ? `Ready by ${this._formatPlanTime(latest, now)}` : "",
+    const nowLine = !nowShown ? "" : `<line class="tl-now" x1="${nowX.toFixed(1)}" y1="${TOP - 6}" x2="${nowX.toFixed(1)}" y2="${BASE}"/>${lanes.length
+      ? `<line class="tl-now" x1="${nowX.toFixed(1)}" y1="${laneTop - 5}" x2="${nowX.toFixed(1)}" y2="${height - 2}"/>` : ""}`;
+    // "no price yet" starts at the first hatched hour and steps aside when the now line crosses it.
+    const NOTE = 80;
+    let noteX = unpricedFrom ? Math.max(LEFT, Math.min(LEFT + WIDTH - NOTE, x(unpricedFrom.start) + 4)) : 0;
+    if (unpricedFrom && nowShown && nowX > noteX - 4 && nowX < noteX + NOTE + 4) {
+      noteX = nowX + 5 + NOTE <= LEFT + WIDTH ? nowX + 5 : Math.max(0, nowX - 5 - NOTE);
+    }
+    const readyText = [...new Set(readyTimes.sort((a, b) => a - b).map((time) => this._formatPlanTime(time, now)))].join(" / ");
+    const unreachable = evs.filter((ev) => !ev.available).length;
+    const note = !lanes.length ? (unreachable === 2 ? "chargers unreachable" : unreachable === 1 ? "one charger unreachable" : "no vehicle connected")
+      : drawn ? "" : lanes.every((lane) => lane.ev.hasError) ? "charger error" : lanes.every((lane) => !lane.charger) ? "no plan yet" : "nothing planned";
+    const PAUSED = "Plan paused by Force charge";
+    const description = [`Charging plan until ${this._formatPlanTime(last, now)}`, paused ? PAUSED : "", ...summary,
+      !lanes.length ? `${note.charAt(0).toUpperCase()}${note.slice(1)}` : "",
+      readyText ? `Ready by ${readyText}` : "",
+      negative ? "Some prices are below zero" : "",
       unpricedFrom ? `No published price from ${this._formatPlanTime(unpricedFrom.start, now)}` : ""].filter(Boolean).join(". ");
+    const priceLabel = visible.some((slot) => slot.end - slot.start < HOUR) ? "Price" : "Price per hour";
     return `
-      <section class="plan-timeline" aria-label="Charging plan">
-        <svg viewBox="0 0 360 ${height}" role="img" aria-label="${this._safe(description)}">
-          <defs><pattern id="sdc-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect class="tl-hatch" width="3" height="6"/></pattern></defs>
-          ${bars}${ticks}
-          ${unpricedFrom ? `<text class="tl-tick" x="${Math.min(LEFT + WIDTH - 54, x(unpricedFrom.start) + 4).toFixed(1)}" y="${TOP + 10}">no price yet</text>` : ""}
+      <section class="plan-timeline${paused ? " paused" : ""}" aria-label="Charging plan">
+        <div class="tl-canvas"><svg viewBox="0 0 ${TOTAL} ${height}" role="img" aria-label="${this._safe(description)}">
+          <defs><pattern id="sdc-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect class="tl-hatch" width="3" height="6"/></pattern>
+            <clipPath id="sdc-lane-clip"><rect x="0" y="0" width="${LEFT - 4}" height="${height}"/></clipPath></defs>
+          ${bars}${zeroLine}${ticks}
+          ${unpricedFrom ? `<text class="tl-tick tl-note" x="${noteX.toFixed(1)}" y="${TOP + 11}">no price yet</text>` : ""}
           ${laneMarkup}
-          ${now >= first && now <= last ? `<line class="tl-now" x1="${nowX.toFixed(1)}" y1="4" x2="${nowX.toFixed(1)}" y2="${height - 2}"/>` : ""}
-        </svg>
+          ${nowLine}
+        </svg></div>
         <ul class="plan-legend" aria-hidden="true">
-          ${lanes.length ? `<li><i class="swatch planned"></i>Planned</li><li><i class="swatch charging"></i>Charging</li>` : ""}
-          <li><i class="swatch price"></i>Price per hour${lanes.length ? "" : " · no vehicle connected"}</li>${latest !== null ? `<li><i class="swatch ready"></i>Ready by ${this._safe(this._formatPlanTime(latest, now))}</li>` : ""}
+          ${drawn && !paused ? `<li><i class="swatch planned"></i>Planned</li><li><i class="swatch charging"></i>Charging</li>` : ""}${riskDrawn && !paused ? `<li><i class="swatch risk"></i>Not enough time</li>` : ""}${topUpDrawn && !paused ? `<li><i class="swatch top-up"></i>Top-up</li>` : ""}
+          <li><i class="swatch price"></i>${priceLabel}${note ? ` · ${note}` : ""}</li>${readyText ? `<li><i class="swatch ready"></i>Ready by ${this._safe(readyText)}</li>` : ""}${paused ? `<li class="legend-note">${PAUSED}</li>` : ""}
         </ul>
       </section>`;
   }
 
-  _planTotals(now = Date.now()) {
+  _planTotals(ev1, ev2, now = Date.now()) {
     const payload = this._isIntelligentPlanActive() ? this._intelligent() : null;
     if (!payload || this._isForcePlanActive() || payload.overridden_by === "force") return "";
     const chargers = this._intelligentChargers();
@@ -791,8 +1016,13 @@ class SmartEVSEFlowCard extends LitElement {
     const estimated = keys.some((key) => chargers[key].estimated === true);
     const cost = keys.length && !totals.partial && !estimated ? this._formatMoney(totals.cost, payload.currency) : "";
     const saving = keys.length && !totals.partial && !totals.includes_forecast && !estimated ? this._formatSaving(totals.saving, payload.currency) : "";
-    const charging = String(payload.status || "") === "charging";
-    const next = charging ? "Now" : Number.isFinite(Date.parse(payload.next_charge)) ? this._formatPlanTime(payload.next_charge, now) : "";
+    // "Now" while a planned block of a connected car is running, whatever the overall status says
+    // (at-risk and similar statuses rank above "charging"), and never a start time in the past.
+    const running = [ev1, ev2].some((ev) => ev?.connected && chargers[ev.key] &&
+      this._blocks(chargers[ev.key]).some((block) => block.start <= now && block.end > now));
+    const nextAt = Date.parse(payload.next_charge);
+    const next = String(payload.status || "") === "charging" || running || (Number.isFinite(nextAt) && nextAt <= now) ? "Now"
+      : Number.isFinite(nextAt) ? this._formatPlanTime(payload.next_charge, now) : "";
     const cells = [
       cost ? `<div><dt>Planned cost</dt><dd>≈ ${this._safe(cost)}${totals.includes_forecast ? " forecast" : ""}</dd></div>` : "",
       saving ? `<div><dt>Saving</dt><dd>${this._safe(saving)}</dd></div>` : "",
@@ -1008,6 +1238,7 @@ class SmartEVSEFlowCard extends LitElement {
     const intelligentIds = this._intelligentEntityIds();
     const numberAttrs = ["min", "max", "step", "unit_of_measurement"];
     const tracked = {
+      locale: [this._hass.locale?.language, this._hass.locale?.time_format, hassTimeZone(this._hass)],
       intelligent: [
         this._entitySnapshot(intelligentIds.switch),
         this._entitySnapshot(intelligentIds.topUp),
@@ -2253,7 +2484,7 @@ class SmartEVSEFlowCard extends LitElement {
                 })
                 .join("")}
             </div>
-            ${this._entity(this._config.charge_policy_entity) || this._entity(this._config.duty_cycle_entity) ? `<button class="advanced-settings" data-action="open-settings" type="button" aria-haspopup="dialog"><ha-icon icon="${UI_ICONS.settings}" aria-hidden="true"></ha-icon><span>Settings</span><ha-icon icon="${UI_ICONS.next}" aria-hidden="true"></ha-icon></button>` : ""}
+            <button class="advanced-settings" data-action="open-settings" type="button" aria-haspopup="dialog"><ha-icon icon="${UI_ICONS.settings}" aria-hidden="true"></ha-icon><span>Settings</span><ha-icon icon="${UI_ICONS.next}" aria-hidden="true"></ha-icon></button>
             ${error}${status}</div>
           </div>
       `;
@@ -3001,7 +3232,8 @@ class SmartEVSEFlowCard extends LitElement {
       : this._forceWizardStep === "intelligent" ? "Intelligent charging" : "Charging plan";
   }
 
-  _evNode(ev) {
+  // `besideCar`: the other charger has a car, so an empty tile here keeps its own short height.
+  _evNode(ev, besideCar = false) {
     const record = this._costData()?.chargers?.[ev.key]?.session;
     const knownVehicle = ev.connectedEvName && !["unknown", "unavailable", "none", "?", "n/a"].includes(ev.connectedEvName.toLowerCase());
     const vehicleTitle = knownVehicle ? ev.connectedEvName : "Vehicle connected";
@@ -3037,14 +3269,15 @@ class SmartEVSEFlowCard extends LitElement {
       const ringClass = !nodeStyle || this._wledNumber({ [ev.visual]: visual?.[ev.visual] || visual?.off }, ev.visual, "fx") === 0 ? "static"
         : ev.visual === "charging" ? "chase" : "breathe";
       // A charger without a car is a short, centred tile: icon, name, status and its last session.
+      const ringMs = this._glowDurationMs(visual, ev.visual);
       const gauge = ev.connected ? this._podGauge({
-        value: level, minimum, projected, risk: planCharger?.status === "at_risk", ringClass,
+        value: level, minimum, projected, risk: planCharger?.status === "at_risk", ringClass, ringMs,
         label: `${vehicleTitle} battery ${level !== null ? this._formatPercent(level) : "unknown"}${minimum !== null ? `, minimum ${this._formatPercent(minimum)}` : ""}`,
       }) : `<span class="charger-icon pod-icon"><ha-icon icon="mdi:ev-station" aria-hidden="true"></ha-icon></span>`;
       return `
-      <div class="family-tile-wrap ev-node-wrap ${this._safe(ev.key)} tone-${this._safe(ev.tone)} visual-${this._safe(ev.visual)}"
+      <div class="family-tile-wrap ev-node-wrap ${this._safe(ev.key)} tone-${this._safe(ev.tone)} visual-${this._safe(ev.visual)}${!ev.connected && besideCar ? " pod-empty" : ""}"
         style="${this._safe(nodeStyle)}">
-        <div class="glow-under ev-glow" aria-hidden="true"><div class="glow-overlay"></div></div>
+        <div class="glow-under ev-glow"${nodeStyle && ringMs > 0 ? ` data-anim-ms="${ringMs}"` : ""} aria-hidden="true"><div class="glow-overlay"></div></div>
         <section class="ev-node ev-pod ${this._safe(ev.key)} tone-${this._safe(ev.tone)} visual-${this._safe(ev.visual)}${ev.connected ? "" : " empty"}"
           aria-label="${this._safe(ev.smartevseName)}">
           ${gauge}
@@ -3524,10 +3757,10 @@ class SmartEVSEFlowCard extends LitElement {
             ${!this._forceWizardOpen && this._forceWizardError ? this._notice("error", this._forceWizardError) : ""}
             ${this._layout() === "plan" ? this._planTimeline(ev1, ev2) : ""}
             <div class="ev-row">
-              ${this._evNode(ev1)}
-              ${this._evNode(ev2)}
+              ${this._evNode(ev1, ev2.connected)}
+              ${this._evNode(ev2, ev1.connected)}
             </div>
-            ${this._layout() === "plan" ? this._planTotals() : ""}
+            ${this._layout() === "plan" ? this._planTotals(ev1, ev2) : ""}
             <button class="advanced-settings charging-history-launcher" data-action="open-history" type="button" aria-haspopup="dialog"><ha-icon icon="${UI_ICONS.history}" aria-hidden="true"></ha-icon><span>Charging history</span><ha-icon icon="${UI_ICONS.next}" aria-hidden="true"></ha-icon></button>
           </div>
 
@@ -3646,6 +3879,9 @@ class SmartEVSEFlowCard extends LitElement {
       this._nativeHandoff = false;
     } else this._restoreUiFocus(this._pendingUiFocus);
     this._pendingUiFocus = null;
+    this._syncAnimationPhase();
+    this._measureTimeline();
+    this._syncMinuteTimer();
   }
 
   firstUpdated() {

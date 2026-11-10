@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.4.2 — 2026-11-10
+
+Fixes for the plan layout after a review in Chromium and WebKit. `@bitosome/ha-card-ui` stays at 1.5.0.
+
+Timeline:
+
+- Hour labels, lane labels and the caption under the battery number are now 11 px at every card width. Before, they shrank to 7–9 px on a phone and grew to 16 px on a wide card. Hour labels are thinned on narrow cards so they never touch.
+- Negative prices are drawn below a zero line and zero prices sit on it. Before, both looked like the same small stub.
+- The height of the price bars and the "cheap" shading use published prices only. Forecast hours, which are drawn hatched, no longer change them.
+- While Force charge overrides the plan, the planned blocks are dimmed and the timeline says "Plan paused by Force charge".
+- The "now" line moves once a minute, also when nothing else changes. It no longer strikes through the hour labels, and "no price yet" steps aside for it.
+- Hour labels follow a 12-hour profile ("9p", "12a") and sit on full local hours in half-hour time zones.
+- Lane labels tell the cars apart: "XC40" and "EX30" instead of the last word of the name, and "Other" for an unidentified car.
+- A connected car without a plan keeps an empty lane. A charger with an error keeps its lane but not its plan. Unreachable chargers are named as unreachable, not as "no vehicle connected".
+- "Ready by" lists both times when the two cars differ and leaves out a time that is past or outside the timeline. At-risk and top-up blocks have their own legend entries. The legend says "Price" when prices are shorter than an hour.
+- An outdated plan whose hours have all passed is no longer drawn.
+
+Tiles and totals:
+
+- A very long vehicle name without spaces now wraps inside its tile instead of running out of it.
+- With one car connected, the empty charger tile keeps its own short height beside the car tile.
+- "Next start" reads "Now" whenever a planned block is running or the start time has passed. Before, it could show a time in the past.
+- The ring around the gauge and the charging block keep their rhythm when the card redraws. Before, they restarted on every update.
+
+Layout switch:
+
+- The card no longer flips to the classic layout while the controller is unavailable, for example during a Home Assistant restart. The choice also survives a page reload during the outage.
+- Settings → Card layout has a third choice, Auto, which removes the choice saved on this device.
+- A second card for the same controller follows the choice at once.
+- Settings is always reachable from the plan chooser, also without a charge-policy or duty-cycle entity.
+- The card reports a taller size to the dashboard for the plan layout with a car connected.
+
+Validation: typecheck, production build and 285 offline smoke checks (47 new). New optional browser check `npm run test:layout` (needs Playwright, skipped without it): 66 of 66 states pass in Chromium and in WebKit (11 states at 320, 360 and 390 px, light and dark). Screenshots at 320 and 390 px in both themes were reviewed for no car, one car, two cars, a charging car, Force charge, negative prices, a 37-character name and a 12-hour profile. Not checked on a real dashboard or a real phone.
+
 ## 0.4.1 — 2026-11-10
 
 - Fix the plan layout when no car is connected: a charger without a car kept the classic heading row inside a half-width tile, so its name and status wrapped one letter per line on a phone. It is now a short centred tile with the charger icon, name, status and last session. The timeline legend no longer lists Planned and Charging when there is no car.

@@ -2,7 +2,7 @@
 
 Standalone Lovelace card for the SmartEVSE Dual Charger Home Assistant integration.
 
-Version: `0.4.1`
+Version: `0.4.2`
 
 This repository contains only the frontend card and local preview assets.
 
@@ -13,7 +13,7 @@ This repository contains only the frontend card and local preview assets.
 - One tile per charger, combining vehicle name, battery percentage/bar and charging or session status. Disconnected ports stay compact; unavailable and faulted chargers are identified explicitly.
 - Expandable **Charger details** for State, Mode, Current offered and Limit. Offered current is the charger pilot setting, not measured current or power consumption.
 - Space Hub shared surfaces, radii, theme colors and underglow helpers. Glow colors and effects follow the controller's physical WLED configuration.
-- Responsive layout: stacked charger tiles on narrow cards, two columns on wider cards.
+- Responsive layout. The plan layout always shows the two charger tiles side by side, also on a phone; a charger without a car is a short tile beside the car tile. The classic layout stacks the tiles on narrow cards and uses two columns on wider cards.
 - Charging-plan editor with schedule, immediate charging, timer and acceptable-price controls, plus **Intelligent charging** with integration 0.0.9.0+. Unsupported options are omitted; temporarily unavailable controls are identified and guarded.
 - Keyboard focus management, Escape/back navigation, visible focus, touch-sized controls and reduced-motion support. Expanded details survive live state updates.
 - Local interactive preview backed by mocked Home Assistant services.
@@ -157,6 +157,7 @@ npm install
 npm run build      # bundles src/ -> dist/smartevse-dual-charger-card.js
 npm test           # headless smoke test (happy-dom)
 npm run typecheck  # tsc --noEmit
+npm run test:layout  # optional browser layout checks; needs Playwright, skips without it
 ```
 
 ### Intelligent charging
@@ -167,7 +168,7 @@ gets each connected car to its minimum by its ready-by time; the card only rende
 controller sensor's `intelligent` attribute and edits the integration's entities. It
 computes no slots, energy, costs or savings itself.
 
-- **Layouts (0.4.0).** `layout: plan` shows a night timeline (prices, planned blocks per car, now, ready-by), car gauges inside an LED-style ring and a totals row. `layout: classic` keeps the earlier charger tiles. Without the option the card uses `plan` when the integration supports Intelligent charging. Settings → Card layout switches it on the current device.
+- **Layouts (0.4.0).** `layout: plan` shows a night timeline (prices, planned blocks per car, now, ready-by), car gauges inside an LED-style ring and a totals row. `layout: classic` keeps the earlier charger tiles. Without the option the card uses `plan` when the integration supports Intelligent charging. Settings → Card layout switches it on the current device (Plan or Classic), and Auto returns to the card option or the default. The default stays `plan` while the controller is unavailable, for example during a restart.
 - **Standing plans.** Intelligent charging and Schedule are independent: switching one
   never changes the other. While both are on, Intelligent has priority (the Schedule
   tile says so), and the schedule takes over again when Intelligent is turned off.
