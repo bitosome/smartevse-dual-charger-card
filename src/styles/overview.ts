@@ -163,9 +163,16 @@ export const OVERVIEW_CSS = `
   .layout-plan .ev-row { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; }
   .layout-plan .ev-node-wrap, .layout-plan .ev-pod { height: 100%; box-sizing: border-box; }
   .ev-pod { align-content: start; }
+  .ev-pod, .ev-pod * { min-width: 0; }
+  .ev-pod .charger-name, .ev-pod .vehicle-name, .ev-pod .charger-status { overflow-wrap: normal; word-break: normal; white-space: normal; }
+  .ev-pod.empty { padding-block: 14px; }
+  .ev-pod .pod-icon { margin: 2px 0 4px; }
   .ev-pod { display: grid; justify-items: center; text-align: center; gap: 4px; }
   .ev-pod .pod-copy { display: grid; gap: 1px; justify-items: center; min-width: 0; }
-  .ev-pod .charger-status { justify-content: center; }
+  .ev-pod .charger-status { display: block; text-align: center; }
+  .ev-pod .state-dot { display: inline-block; vertical-align: middle; margin-right: 6px; }
+  .layout-plan .ev-pod .pod-icon { display: inline-flex; }
+  .ev-pod.empty { align-content: center; }
   .ev-pod .charger-plan-line { text-align: center; }
   .ev-pod .session-cost { align-items: center; text-align: center; }
   .pod-gauge { width: 100%; max-width: 150px; height: auto; }
@@ -180,9 +187,9 @@ export const OVERVIEW_CSS = `
   .pod-level { stroke: var(--primary-text-color); }
   .pod-min { stroke: var(--primary-color); stroke-width: 2; }
   .pod-value { font-size: 26px; font-weight: 600; fill: var(--primary-text-color); font-variant-numeric: tabular-nums; }
-  .plan-totals { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 8px; margin: 0; }
-  .plan-totals div { padding: 8px 10px; border-radius: 12px; border: 1px solid var(--sdc-quiet); background: var(--sdc-panel); min-width: 0; }
-  .plan-totals dt { font: 500 10px ui-monospace, "SF Mono", Menlo, Consolas, monospace; letter-spacing: 0.08em; text-transform: uppercase; color: var(--secondary-text-color); }
+  .plan-totals { display: grid; grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); gap: 8px; margin: 0; }
+  .plan-totals div { padding: 8px; border-radius: 12px; border: 1px solid var(--sdc-quiet); background: var(--sdc-panel); min-width: 0; }
+  .plan-totals dt { font: 500 10px ui-monospace, "SF Mono", Menlo, Consolas, monospace; letter-spacing: 0.04em; white-space: nowrap; text-transform: uppercase; color: var(--secondary-text-color); }
   .plan-totals dd { margin: 2px 0 0; font-size: 15px; font-weight: 500; font-variant-numeric: tabular-nums; color: var(--primary-text-color); }
   @keyframes sdcBreathe { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
   @keyframes sdcChase { to { stroke-dashoffset: -88; } }

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.1 — 2026-11-10
+
+- Fix the plan layout when no car is connected: a charger without a car kept the classic heading row inside a half-width tile, so its name and status wrapped one letter per line on a phone. It is now a short centred tile with the charger icon, name, status and last session. The timeline legend no longer lists Planned and Charging when there is no car.
+
+Validation: typecheck, production build and 238 offline smoke checks (2 new); checked in Chrome at 390 and 320 px with no car, one car, two cars, a charging car, a charger error and an unreachable charger.
+
 ## 0.4.0 — 2026-11-10
 
 A new **plan layout** built around Intelligent charging. It is the default when the integration supports Intelligent charging (0.0.9.0+); the earlier tiles stay available as the **classic** layout.

@@ -2321,6 +2321,21 @@ iStates['switch.ic'].state = 'off';
 await push3();
 check('with Intelligent off the plan layout shows gauges but no timeline or totals',
   !root3.querySelector('.plan-timeline') && !root3.querySelector('.plan-totals') && root3.querySelectorAll('.ev-pod').length === 2);
+// No car connected (0.4.1): the charger tiles stay readable, centred tiles, never the classic row.
+iStates['switch.ic'].state = 'on';
+iAttrs.intelligent = { ...basePayload(), status: 'no_ev', chargers: {}, next_charge: null, connected_count: 0 };
+const plugBefore = [iAttrs.smartevse_1_plug_state, iAttrs.smartevse_2_plug_state];
+iAttrs.smartevse_1_plug_state = 'Disconnected'; iAttrs.smartevse_2_plug_state = 'Disconnected';
+await push3();
+const emptyPods = [...root3.querySelectorAll('.ev-pod.empty')];
+check('chargers without a car use the centred plan tile, not the classic heading row',
+  emptyPods.length === 2 && !root3.querySelector('.layout-plan .charger-heading') && !root3.querySelector('.pod-gauge') &&
+  emptyPods.every((pod) => !!pod.querySelector('.pod-icon') && /SmartEVSE [12]/.test(pod.querySelector('.charger-name')?.textContent || '') &&
+    /No vehicle connected/.test(pod.querySelector('.charger-status')?.textContent || '')));
+check('with no car the timeline shows prices only and says so',
+  !!root3.querySelector('.plan-timeline') && !root3.querySelector('.tl-track') &&
+  /no vehicle connected/.test(root3.querySelector('.plan-legend')?.textContent || '') && !root3.querySelector('.swatch.planned'));
+[iAttrs.smartevse_1_plug_state, iAttrs.smartevse_2_plug_state] = plugBefore;
 el3.remove();
 Date.now = realDateNow;
 

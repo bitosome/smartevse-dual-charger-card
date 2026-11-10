@@ -8,7 +8,7 @@ import {
 } from "@bitosome/ha-card-ui";
 import { buildGlow, type PulseColors } from "./shared/glow";
 
-const CARD_VERSION = "0.4.0";
+const CARD_VERSION = "0.4.1";
 
 // String twin of the shared pendingIndicator(); this card renders through unsafeHTML.
 const PENDING_INDICATOR = `<span class="family-pending-indicator" aria-hidden="true"></span>`;
@@ -776,8 +776,8 @@ class SmartEVSEFlowCard extends LitElement {
           ${now >= first && now <= last ? `<line class="tl-now" x1="${nowX.toFixed(1)}" y1="4" x2="${nowX.toFixed(1)}" y2="${height - 2}"/>` : ""}
         </svg>
         <ul class="plan-legend" aria-hidden="true">
-          <li><i class="swatch planned"></i>Planned</li><li><i class="swatch charging"></i>Charging</li>
-          <li><i class="swatch price"></i>Price</li>${latest !== null ? `<li><i class="swatch ready"></i>Ready by ${this._safe(this._formatPlanTime(latest, now))}</li>` : ""}
+          ${lanes.length ? `<li><i class="swatch planned"></i>Planned</li><li><i class="swatch charging"></i>Charging</li>` : ""}
+          <li><i class="swatch price"></i>Price per hour${lanes.length ? "" : " · no vehicle connected"}</li>${latest !== null ? `<li><i class="swatch ready"></i>Ready by ${this._safe(this._formatPlanTime(latest, now))}</li>` : ""}
         </ul>
       </section>`;
   }
@@ -3031,30 +3031,31 @@ class SmartEVSEFlowCard extends LitElement {
       ...(minimum !== null ? { target: minimum, valueText: `${this._formatPercent(battery)}, minimum ${this._formatPercent(minimum)}` } : {}),
     }) : "";
     const nodeStyle = this._wledNodeStyle(visual, ev.visual);
-    if (this._layout() === "plan" && ev.connected) {
+    if (this._layout() === "plan") {
       const level = battery !== null ? battery : this._num(planCharger?.soc);
       const projected = planCharger ? this._num(planCharger.projected_soc) : null;
       const ringClass = !nodeStyle || this._wledNumber({ [ev.visual]: visual?.[ev.visual] || visual?.off }, ev.visual, "fx") === 0 ? "static"
         : ev.visual === "charging" ? "chase" : "breathe";
-      const gauge = this._podGauge({
+      // A charger without a car is a short, centred tile: icon, name, status and its last session.
+      const gauge = ev.connected ? this._podGauge({
         value: level, minimum, projected, risk: planCharger?.status === "at_risk", ringClass,
         label: `${vehicleTitle} battery ${level !== null ? this._formatPercent(level) : "unknown"}${minimum !== null ? `, minimum ${this._formatPercent(minimum)}` : ""}`,
-      });
+      }) : `<span class="charger-icon pod-icon"><ha-icon icon="mdi:ev-station" aria-hidden="true"></ha-icon></span>`;
       return `
       <div class="family-tile-wrap ev-node-wrap ${this._safe(ev.key)} tone-${this._safe(ev.tone)} visual-${this._safe(ev.visual)}"
         style="${this._safe(nodeStyle)}">
         <div class="glow-under ev-glow" aria-hidden="true"><div class="glow-overlay"></div></div>
-        <section class="ev-node ev-pod ${this._safe(ev.key)} tone-${this._safe(ev.tone)} visual-${this._safe(ev.visual)}"
+        <section class="ev-node ev-pod ${this._safe(ev.key)} tone-${this._safe(ev.tone)} visual-${this._safe(ev.visual)}${ev.connected ? "" : " empty"}"
           aria-label="${this._safe(ev.smartevseName)}">
           ${gauge}
           <div class="pod-copy">
-            <div class="vehicle-name">${this._safe(vehicleTitle)}</div>
+            ${ev.connected ? `<div class="vehicle-name">${this._safe(vehicleTitle)}</div>` : ""}
             <div class="charger-name">${this._safe(ev.smartevseName)}</div>
             <div class="charger-status"><span class="state-dot" aria-hidden="true"></span>${this._safe(status)}</div>
           </div>
-          ${ev.hasError ? `<p class="charger-message" role="status">${this._safe(ev.error)}</p>` : ""}
+          ${ev.hasError ? `<p class="charger-message" role="status">${this._safe(ev.error)}</p>` : !ev.available ? `<p class="charger-message">Status cannot be read. Check the charger connection.</p>` : ""}
           ${planMarkup}
-          ${record ? `<button class="session-cost" data-action="open-history" data-charger="${this._safe(ev.key)}" aria-haspopup="dialog" aria-label="${this._safe(ev.smartevseName)} charging cost ${this._safe(this._costLabel(record))}; open history"><strong>${this._safe(this._costLabel(record))}</strong><small>${this._costData()?.error ? "History not saved" : record.partial ? "Partial estimate" : record.status !== "finished" ? "Session estimate" : "Last session"}</small></button>` : ""}
+          ${record ? `<button class="session-cost" data-action="open-history" data-charger="${this._safe(ev.key)}" aria-haspopup="dialog" aria-label="${this._safe(ev.smartevseName)} charging cost ${this._safe(this._costLabel(record))}; open history"><strong>${this._safe(this._costLabel(record))}</strong><small>${this._costData()?.error ? "History not saved" : record.partial ? "Partial estimate" : ev.connected && record.status !== "finished" ? "Session estimate" : "Last session"}</small></button>` : ""}
           ${diagnostics}
         </section>
       </div>`;
