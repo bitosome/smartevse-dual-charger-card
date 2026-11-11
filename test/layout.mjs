@@ -94,6 +94,7 @@ const STATES = {
     delete ctx.plan.chargers.smartevse_2;
     ctx.plan.connected_count = 1;
   },
+  // The cars have left: the chart keeps the prices and what each charger charged in the night.
   'no-car': (ctx) => {
     for (const key of ['smartevse_1', 'smartevse_2']) {
       ctx.attrs[`${key}_plug_state`] = 'Disconnected';
@@ -175,9 +176,24 @@ const STATES = {
     Object.assign(ctx.attrs, { smartevse_1_state: 'Charging', smartevse_1_charge_current: 16, active_smartevse_raw: 'smartevse_1',
       charge_allowed: true, charge_reason: 'schedule' });
   },
+  // Prices at and below zero, in the hourly lists the chart draws and in the plan's slots.
   'negative-prices': (ctx) => {
-    const known = ctx.plan.slots.filter((slot) => slot.kind === 'known');
-    known.forEach((slot, index) => { slot.price = [0.12, 0.04, 0, -0.03, -0.08, 0.02, 0.15][index % 7]; });
+    const cheap = [0.12, 0.04, 0, -0.03, -0.08, 0.02, 0.15];
+    ctx.plan.slots.forEach((slot, index) => { slot.price = cheap[index % 7]; });
+    for (const day of ['today', 'tomorrow']) {
+      ctx.states[`sensor.real_electricity_price_hourly_prices_${day}`].attributes.hourly_prices.forEach((row, index) => { row.actual_price = cheap[index % 7]; });
+    }
+  },
+  // Tomorrow's prices are not published yet and the plan runs past the listed ones: the
+  // hatched band, named in the legend.
+  'no-price-yet': (ctx) => {
+    const knownUntil = ctx.now + 6 * ctx.hour;
+    for (const day of ['today', 'tomorrow']) {
+      const list = ctx.states[`sensor.real_electricity_price_hourly_prices_${day}`].attributes;
+      list.hourly_prices = list.hourly_prices.filter((row) => Date.parse(row.start_time) < knownUntil);
+    }
+    for (const slot of ctx.plan.slots) if (Date.parse(slot.start) >= knownUntil) slot.kind = 'forecast';
+    ctx.plan.forecast_used = true;
   },
   'twelve-hour': (ctx) => {
     ctx.locale.language = 'en-US';
@@ -382,6 +398,18 @@ for (const theme of THEMES) {
           for (const label of svg.querySelectorAll('text')) {
             const size = Number.parseFloat(getComputedStyle(label).fontSize) * scale;
             if (!(size >= 10.5)) problems.push(`chart label "${label.textContent}" is ${size.toFixed(1)}px`);
+          }
+          // The price chart of the price card: today and tomorrow from midnight, one bar per hour.
+          const bars = svg.querySelectorAll('.family-chart-bar[data-series="price"]').length;
+          if (!(bars > 12 && bars <= 48)) problems.push(`the chart draws ${bars} price bars`);
+          if (shadow.querySelector('.family-chart-frame .family-chart-title')) problems.push('the chart frame has a title');
+          // Periods stay inside their lane track.
+          for (const lane of svg.querySelectorAll('.family-chart-lane')) {
+            const track = lane.querySelector('.family-chart-lane-track').getBoundingClientRect();
+            for (const period of lane.querySelectorAll('.family-chart-period')) {
+              const box = period.getBoundingClientRect();
+              if (box.left < track.left - 1 || box.right > track.right + 1) problems.push('a period leaves its lane');
+            }
           }
           const ticks = [...svg.querySelectorAll('.family-chart-time')].map((tick) => tick.getBoundingClientRect()).sort((a, b) => a.left - b.left);
           if (!ticks.length) problems.push('the chart has no time labels');

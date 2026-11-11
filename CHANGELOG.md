@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.7.0 — 2026-11-11
+
+The chart is the full electricity price chart of the Real Electricity Price card, with the charging periods under it. Needs `@bitosome/ha-card-ui` 1.10.0; works with SmartEVSE Dual Charger integration 0.0.10.0 and 0.0.11.0.
+
+- **The same price chart as the price card.** Today and tomorrow from midnight, one narrow bar per hour in the shared price colours, H and L, day-and-time labels ("11 Nov, 0:00") and the price with four decimals and its unit in the head ("0.4764 €/kWh"; the axis reads "0.40 €"). Window, data, series and labels come from the shared helpers of `@bitosome/ha-card-ui` 1.10.0. Card 0.6.0 drew only the plan's hours, from now to the last ready-by time.
+- **Prices from the hourly price lists.** The chart reads the yesterday, today and tomorrow lists of the price integration (next to `price_entity`, else the Real Electricity Price defaults; options `price_yesterday_entity`, `price_today_entity`, `price_tomorrow_entity`), so past hours are drawn too. Without the lists it falls back to the plan's known prices.
+- **Charged periods.** Each lane now also shows when the charger charged since midnight: slim green "Charged" periods left of the now marker, from the recorder history of the charger state sensors (`…_smartevse_1_state`, `…_smartevse_2_state`; options `smartevse_1_state_entity`, `smartevse_2_state_entity`). A charger whose car has left keeps its lane for the day. The history is read once per day, again about ten seconds after a charger changes state, and otherwise every ten minutes at most.
+- **Now and the plan.** A car that charges now is one "Charging" period from where the charger began to the end of its planned period. Planned periods start at the now marker, never left of it. A ready-by time that has passed is no longer marked.
+- **Force charge.** What is planned is grey and reads "paused"; what charges now stays "Charging" and what was charged stays "Charged".
+- The chart frame has no title, so the date, time and price fit one line on a narrow phone. The plot is 150 px high (was 120).
+- The chart stays while Intelligent charging is enabled and there are prices, also after the plan's last hour and with no car connected.
+- Not changed: the tiles, the saving line, the dialogs and every service call.
+
+Not verified on the real dashboard: see the knowledge repository's changelog for this release.
+
 ## 0.6.0 — 2026-11-11
 
 One layout, with the plan chart on top while Intelligent charging is enabled, and more and clearer data in the tiles and dialogs. For SmartEVSE Dual Charger integration 0.0.11.0; needs `@bitosome/ha-card-ui` 1.9.0.

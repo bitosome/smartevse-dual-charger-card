@@ -5,13 +5,16 @@ import {
   familyStyles, dialogStyles, componentStyles, glowStyles, FamilyFlowController, renderFamilyDialog, showEntityMoreInfo,
   UI_ICONS, TONE_ICONS, pendingIndicator, formatHassNumber, formatHassCurrency, formatHassTime, formatHassDate, formatHassDateTime,
   formatHassDuration, hassTimeZone, UNAVAILABLE_TEXT, levelMeterMarkup, batteryTone, type Tone,
-  FamilyChartController, chartFrame, chartLegend, chartStyles, chartTotalHeight, stepDecimals, electricityPriceColor,
+  FamilyChartController, chartFrame, chartLegend, chartStyles, chartTotalHeight, stepDecimals,
+  electricityPriceDomain, electricityPricePoints, electricityPriceSeries, electricityPriceTimeLabel,
+  ELECTRICITY_PRICE_ENTITIES, ELECTRICITY_PRICE_TICK_STEPS_MS,
   CHART_FRAME_CHROME_PX, CHART_LEGEND_PX, CHART_PERIOD_LINE_PX,
   type ChartBand, type ChartLane, type ChartPeriod, type ChartPeriodTone, type ChartPoint,
 } from "@bitosome/ha-card-ui";
 import { buildGlow, type PulseColors } from "./shared/glow";
+import { ChargeHistory, chargedIntervals, joinIntervals, withLiveState } from "./charge-history";
 
-const CARD_VERSION = "0.6.0";
+const CARD_VERSION = "0.7.0";
 
 // String twin of the shared pendingIndicator(); this card renders through unsafeHTML.
 const PENDING_INDICATOR = `<span class="family-pending-indicator" aria-hidden="true"></span>`;
@@ -33,10 +36,12 @@ const UNIDENTIFIED_VEHICLE = "Unidentified vehicle";
 // "Charge with schedule" plan, or charging as soon as the car is plugged in (the default).
 const baselineName = (kind: unknown, hyphen = "\u2011") => kind === "schedule" ? "Charge with schedule" : `charging at plug${hyphen}in`;
 // Plan chart (shared time-series chart): plot height, period wording and bar colours.
-const PLAN_CHART_HEIGHT = 120;
+const PLAN_CHART_HEIGHT = 150;
 const PERIOD_LABELS: Record<string, string> = {
-  planned: "Planned", active: "Charging", extra: "Above the minimum", warning: "Not enough time",
+  done: "Charged", planned: "Planned", active: "Charging", extra: "Above the minimum", warning: "Not enough time",
 };
+// The readout of the price chart has four decimals, as on the Real Electricity Price card.
+const PRICE_DECIMALS = 4;
 // Integration 0.0.10.0 charged above the minimum only in hours under a learned price.
 const EXTRA_WHILE_CHEAP = "Extra while cheap";
 // The legend is short so it stays within two lines on a phone; the tile rows and the period
@@ -62,8 +67,7 @@ interface PlanChartData {
   legend: Array<{ tone: ChartPeriodTone; label: string }>;
   bandLegend: Array<{ label: string }>;
   cheap: number | null;
-  currency: string;
-  digits: number;
+  unit: string;
 }
 // Saving below this magnitude is noise; the integration publishes it, the card hides it.
 const MIN_SAVING = 0.1;
@@ -119,6 +123,8 @@ interface UiFocusSnapshot {
 interface HassEntity {
   state: string;
   attributes?: Record<string, any>;
+  last_changed?: string;
+  last_updated?: string;
 }
 
 interface HassLocale {
@@ -133,6 +139,7 @@ interface HomeAssistant {
   locale?: HassLocale;
   config?: { time_zone?: string; currency?: string };
   callService(domain: string, service: string, data?: Record<string, any>): Promise<unknown>;
+  callWS?(message: Record<string, unknown>): Promise<unknown>;
 }
 
 interface SmartEvseCardConfig {
@@ -148,6 +155,13 @@ interface SmartEvseCardConfig {
   force_timer_entity?: string;
   acceptable_price_entity?: string;
   cheap_price_entity?: string;
+  // The price chart: the hourly price lists and the charger state sensors, when their names
+  // differ from the ones beside the price sensor and the controller entity.
+  price_yesterday_entity?: string;
+  price_today_entity?: string;
+  price_tomorrow_entity?: string;
+  smartevse_1_state_entity?: string;
+  smartevse_2_state_entity?: string;
   charge_policy_entity?: string;
   duty_cycle_entity?: string;
   force_charge_duration_entity?: string;
@@ -175,6 +189,9 @@ interface SmartEvseCardConfig {
 
 type DialogPage = "plan" | "schedule" | "now" | "intelligent" | "settings" | "history" | `setting:${string}` | `charger:${string}`;
 class SmartEVSEFlowCard extends LitElement {
+  // The pure history helpers, reachable for the tests of the bundle (it has no exports: it also
+  // loads as a classic script).
+  static historyHelpers = { chargedIntervals, joinIntervals, withLiveState };
   private _flow = new FamilyFlowController<DialogPage>(this, {
     guard: (intent) => this._dialogGuard(intent),
     onChange: (route) => {
@@ -796,6 +813,8 @@ class SmartEVSEFlowCard extends LitElement {
   // redraw also keeps the hero, tiles and totals current ("Now", "Charging until …").
   private _charts = new FamilyChartController(this);
   private _chartGroup = `smartevse-plan-${++chartInstances}`;
+  // When each charger charged today (recorder history); a finished read redraws the chart.
+  private _chargeHistory = new ChargeHistory(() => this._render());
   // Each re-render replaces the animated elements. A new one starts at the phase of a shared
   // clock, so rings, glows and charging blocks continue instead of restarting from zero.
   _syncAnimationPhase() {
@@ -842,131 +861,192 @@ class SmartEVSEFlowCard extends LitElement {
     });
   }
 
-  // Everything the plan chart shows, or null when there is no current plan to draw: no published
-  // slots, or every slot already ended. Shared by render() and getCardSize().
+  // The hourly price lists of the price integration: the card options win, then the lists next
+  // to the configured price sensor (as the integration finds them), then the shared defaults.
+  _priceListEntities() {
+    const price = String(this._config?.price_entity ?? "");
+    const result: { yesterday?: string; today?: string; tomorrow?: string } = {};
+    for (const day of ["yesterday", "today", "tomorrow"] as const) {
+      const configured = this._config?.[`price_${day}_entity`];
+      const beside = price.includes("current_price") ? price.replace("current_price", `hourly_prices_${day}`) : "";
+      result[day] = typeof configured === "string" && configured.trim() ? configured.trim()
+        : beside && this._entity(beside) ? beside : ELECTRICITY_PRICE_ENTITIES[day];
+    }
+    return result;
+  }
+
+  // The integration's state sensor of each charger ("Charging", "Connected to EV", …), whose
+  // recorder history says when the charger charged: `smartevse_N_state_entity`, else the sensor
+  // named like the controller entity.
+  _chargerStateEntities() {
+    const controller = String(this._config?.controller_entity ?? "");
+    const result: Record<string, string> = {};
+    for (const key of ["smartevse_1", "smartevse_2"]) {
+      const configured = this._config?.[`${key}_state_entity`];
+      result[key] = typeof configured === "string" && configured.trim() ? configured.trim()
+        : /_controller_state$/.test(controller) ? controller.replace(/_controller_state$/, `_${key}_state`) : "";
+    }
+    return result;
+  }
+
+  // "€/kWh" for the chart: the unit of the price sensor, else the symbol of the payload currency.
+  _chartPriceUnit(currency) {
+    const unit = String(this._attr(this._config?.price_entity, "unit_of_measurement") ?? "").trim();
+    if (unit) return unit;
+    try {
+      const symbol = new Intl.NumberFormat("en", { style: "currency", currency: String(currency), currencyDisplay: "narrowSymbol" })
+        .formatToParts(0).find((part) => part.type === "currency")?.value;
+      return symbol ? `${symbol}/kWh` : "";
+    } catch {
+      return "";
+    }
+  }
+
+  // Everything the chart shows while Intelligent charging is enabled, or null when there is
+  // neither a price nor a plan: the price chart of the Real Electricity Price card (today and
+  // tomorrow, one bar per hour) with one lane per car under it. Shared by render() and getCardSize().
   _planChartData(ev1, ev2, now = Date.now()): PlanChartData | null {
     const payload = this._isIntelligentPlanActive() ? this._intelligent() : null;
-    const slots = (Array.isArray(payload?.slots) ? payload.slots : [])
-      .map((slot) => ({ start: Date.parse(slot?.start), end: Date.parse(slot?.end), price: this._num(slot?.price), kind: String(slot?.kind || "") }))
-      .filter((slot) => Number.isFinite(slot.start) && Number.isFinite(slot.end) && slot.end > slot.start)
-      .sort((left, right) => left.start - right.start);
-    if (!payload || !slots.length || slots[slots.length - 1].end <= now) return null;
-    // Force charge overrides the plan: it stays visible, muted, and its periods read "Paused".
-    const paused = this._isForcePlanActive() || payload.overridden_by === "force";
-    const chargers = this._intelligentChargers();
-    const evs = [ev1, ev2];
-    // One lane per connected car. Its periods are drawn only for a healthy charger with a plan,
-    // as the tile hides its plan for a charger error.
-    const cars = evs.filter((ev) => ev.connected).map((ev) => {
-      const charger = chargers[ev.key] || null;
-      return { key: ev.key, ev, charger, planned: Boolean(charger) && !ev.hasError && ev.available,
-        name: charger ? this._intelligentVehicleName(charger, ev.key) : this._knownVehicleName(ev) };
-    });
-    const planned = cars.filter((car) => car.planned);
+    if (!payload) return null;
     const HOUR = 3600000;
-    const deadlines = planned.map((car) => Date.parse(car.charger.deadline)).filter(Number.isFinite);
-    const blockEnds = planned.flatMap((car) => this._blocks(car.charger).map((block) => block.end));
-    const start = slots.find((slot) => slot.end > now).start;
-    let end = Math.min(slots[slots.length - 1].end, Math.max(start + 6 * HOUR, ...deadlines, ...blockEnds));
-    // Never cut a price bar: the window ends with the slot that holds its end.
-    const holder = slots.find((slot) => slot.start < end && slot.end > end);
-    if (holder) end = holder.end;
-    if (!(end > start)) return null;
-    const visible = slots.filter((slot) => slot.end > start && slot.start < end);
+    const domain = electricityPriceDomain(this._hass, now);
+    const { start, end } = domain;
+    const visible = (Array.isArray(payload.slots) ? payload.slots : [])
+      .map((slot) => ({ start: Date.parse(slot?.start), end: Date.parse(slot?.end), price: this._num(slot?.price), kind: String(slot?.kind || "") }))
+      .filter((slot) => Number.isFinite(slot.start) && Number.isFinite(slot.end) && slot.end > slot.start && slot.end > start && slot.start < end)
+      .sort((left, right) => left.start - right.start);
     const isKnown = (slot) => slot.kind === "known" && slot.price !== null;
     const known = visible.filter(isKnown);
-    // One hatched band per run of hours without a published price.
+    // The same hourly prices as the price card. Without those sensors: the prices of the plan.
+    const listed = electricityPricePoints(this._hass, { entities: this._priceListEntities(), domain }).points;
+    const points: ChartPoint[] = listed.length ? listed.map((point) => ({ t: point.t, v: point.v }))
+      : known.map((slot) => ({ t: slot.start, v: slot.price }));
+    const intervalMs = listed.length || !known.length ? HOUR : known[0].end - known[0].start;
+    if (!points.length && !visible.length) return null;
+    const priced = (slot) => isKnown(slot) || points.some((point) => point.t <= slot.start && slot.start < point.t + intervalMs);
+    // One hatched band per run of hours the plan covers without a published price.
     const bands: ChartBand[] = [];
     for (const slot of visible) {
-      if (isKnown(slot)) continue;
+      if (priced(slot)) continue;
       const last = bands[bands.length - 1];
       if (last && Math.abs(last.end - slot.start) < 1000) last.end = Math.min(end, slot.end);
       else bands.push({ start: Math.max(start, slot.start), end: Math.min(end, slot.end), label: NO_PRICE_YET });
     }
+    // Force charge overrides the plan: what is planned stays visible, muted, and reads "paused".
+    const paused = this._isForcePlanActive() || payload.overridden_by === "force";
+    const chargers = this._intelligentChargers();
+    const evs = [ev1, ev2];
+    // When each charger charged since midnight, from the recorder and the live state.
+    const charged = this._chargeHistory.intervals(this._hass, this._chargerStateEntities(), start, now);
+    const sessions = Array.isArray(payload.sessions) ? payload.sessions : [];
+    // One lane per connected car, and per charger that charged today. A plan is drawn only for
+    // a healthy charger, as the tile hides its plan for a charger error.
+    const cars = evs.filter((ev) => ev.connected || (charged[ev.key] || []).length).map((ev) => {
+      const charger = ev.connected ? chargers[ev.key] || null : null;
+      const last = ev.connected ? "" : String(sessions.find((session) => session?.outlet === ev.key)?.vehicle_name ?? "").trim();
+      return { key: ev.key, ev, charger, planned: Boolean(charger) && !ev.hasError && ev.available,
+        name: !ev.connected ? last : charger ? this._intelligentVehicleName(charger, ev.key) : this._knownVehicleName(ev) };
+    });
     const labels = this._laneLabels(cars);
     const summary: string[] = [];
     const readyTimes: number[] = [];
     const tones = new Set<ChartPeriodTone>();
+    const range = (item) => `${this._formatPlanTime(item.start, now)}–${this._formatPlanTime(item.end, now)}`;
     const lanes: ChartLane[] = cars.map((car, index) => {
       const risk = car.charger?.status === "at_risk";
-      const blocks = car.planned ? this._blocks(car.charger).filter((block) => block.end > start && block.start < end) : [];
-      summary.push(`${car.name || car.ev.smartevseName}: ${car.ev.hasError ? "charger error" : !car.charger ? "no plan yet"
-        : blocks.length ? blocks.map((block) => `${this._formatPlanTime(block.start, now)}–${this._formatPlanTime(block.end, now)}`).join(", ") : "nothing planned"}`);
-      // The physical state wins: a block that runs now on a charger that reports Charging is "Charging".
-      const periods: ChartPeriod[] = blocks.map((block) => {
-        const tone: ChartPeriodTone = block.start <= now && block.end > now && car.ev.isCharging ? "active"
-          : block.topUp ? "extra" : risk ? "warning" : "planned";
+      const blocks = car.planned ? this._blocks(car.charger).filter((block) => block.end > now && block.start < end) : [];
+      const past = (charged[car.key] || []).filter((item) => item.end > start && item.start < end);
+      // The physical state wins: a block that runs now on a charger that reports Charging is
+      // "Charging", from where the charger began. Left of now is what happened, right of it the plan.
+      const charging = car.ev.connected && car.ev.isCharging;
+      const open = charging ? past.find((item) => item.open) : undefined;
+      const running = charging && !paused ? blocks.find((block) => block.start <= now) : undefined;
+      const periods: ChartPeriod[] = [];
+      const add = (from, to, tone: ChartPeriodTone, label) => {
+        if (!(to > from)) return;
         tones.add(tone);
-        return { start: block.start, end: block.end, tone, label: tone === "extra" ? this._extraLabel() : PERIOD_LABELS[tone] };
-      });
+        periods.push({ start: from, end: to, tone, label });
+      };
+      for (const item of past) {
+        if (item === open) {
+          if (!running) add(item.start, item.end, "active", PERIOD_LABELS.active);
+        } else add(item.start, item.end, "done", PERIOD_LABELS.done);
+      }
+      for (const block of blocks) {
+        if (block === running) add(open ? Math.min(open.start, block.start) : block.start, block.end, "active", PERIOD_LABELS.active);
+        else if (paused) add(Math.max(block.start, now), block.end, "muted", "paused");
+        else {
+          const tone: ChartPeriodTone = block.topUp ? "extra" : risk ? "warning" : "planned";
+          add(Math.max(block.start, now), block.end, tone, tone === "extra" ? this._extraLabel() : PERIOD_LABELS[tone]);
+        }
+      }
+      const done = past.filter((item) => item !== open || !running);
+      summary.push(`${car.name || car.ev.smartevseName}: ${[
+        !car.ev.connected ? "" : car.ev.hasError ? "charger error" : !car.charger ? "no plan yet"
+          : blocks.length ? blocks.map(range).join(", ") : "nothing planned",
+        done.length ? `charged ${done.map(range).join(", ")}` : ""].filter(Boolean).join("; ")}`);
       const deadline = car.planned ? Date.parse(car.charger.deadline) : NaN;
-      const ready = Number.isFinite(deadline) && deadline >= start && deadline <= end;
+      // A ready-by time that has passed (a car that stays plugged in) is not marked.
+      const ready = Number.isFinite(deadline) && deadline > now - HOUR && deadline <= end;
       if (ready) readyTimes.push(deadline);
       return { id: car.key, label: labels[index], periods,
-        ...(ready ? { marker: { t: deadline, label: `Ready by ${this._formatPlanTime(deadline, now)}` } } : {}),
-        // Paused by Force charge: the lane is muted and reads "XC40 paused"; its periods keep their meaning.
-        ...(paused ? { muted: true, mutedLabel: "paused" } : {}) };
+        ...(ready ? { marker: { t: deadline, label: `Ready by ${this._formatPlanTime(deadline, now)}` } } : {}) };
     });
-    const legend = !tones.size ? [] : paused ? [{ tone: "muted" as ChartPeriodTone, label: PAUSED_BY_FORCE }]
-      : (["planned", "active", "extra", "warning"] as ChartPeriodTone[]).filter((tone) => tones.has(tone)).map((tone) => ({ tone, label: LEGEND_LABELS[tone] }));
+    const legend = (["done", "active", "planned", "extra", "warning", "muted"] as ChartPeriodTone[]).filter((tone) => tones.has(tone))
+      .map((tone) => ({ tone, label: tone === "muted" ? PAUSED_BY_FORCE : LEGEND_LABELS[tone] }));
     const readyText = [...new Set(readyTimes.sort((a, b) => a - b).map((time) => this._formatPlanTime(time, now)))].join(" / ");
     const unreachable = evs.filter((ev) => !ev.available).length;
     const note = cars.length ? "" : unreachable === 2 ? "Chargers unreachable" : unreachable === 1 ? "One charger unreachable" : "No vehicle connected";
-    const unpricedFrom = visible.find((slot) => !isKnown(slot));
     const title = cars.length ? "Charging plan" : "Electricity price";
     const description = [`${cars.length ? "Charging plan" : "Electricity prices"} until ${this._formatPlanTime(end, now)}`,
-      paused && tones.size ? PAUSED_BY_FORCE : "", ...summary, note,
+      paused && tones.has("muted") ? PAUSED_BY_FORCE : "", ...summary, note,
       readyText ? `Ready by ${readyText}` : "",
-      known.some((slot) => slot.price < 0) ? "Some prices are below zero" : "",
-      unpricedFrom ? `No published price from ${this._formatPlanTime(unpricedFrom.start, now)}` : ""].filter(Boolean).join(". ");
+      points.some((point) => (point.v as number) < 0) ? "Some prices are below zero" : "",
+      bands.length ? `No published price from ${this._formatPlanTime(bands[0].start, now)}` : ""].filter(Boolean).join(". ");
     // Green hours: at or below the price limit of the electricity price card (or, with
     // integration 0.0.10.0, the price it learned for charging above the minimum).
     const cheapEntity = this._config.cheap_price_entity || DEFAULT_CHEAP_PRICE_ENTITY;
     const cheap = this._num(payload.top_up?.price) ?? (this._entity(cheapEntity) ? this._numberState(cheapEntity) : null);
-    const prices = known.map((slot) => slot.price);
     return {
-      title, description, domain: { start, end }, lanes, bands, legend, cheap,
+      title, description, domain, lanes, bands, legend, cheap, intervalMs, points,
       // The in-plot band label does not fit a narrow band; the legend always explains the hatch.
-      bandLegend: bands.length && known.length ? [{ label: NO_PRICE_YET }] : [],
-      intervalMs: (known[0] || visible[0]).end - (known[0] || visible[0]).start,
-      points: known.map((slot) => ({ t: slot.start, v: slot.price })),
-      currency: typeof payload.currency === "string" ? payload.currency : "",
-      // Two decimals unless a price needs the third (0.125).
-      digits: prices.every((price) => Math.abs(price * 100 - Math.round(price * 100)) < 1e-6) ? 2 : 3,
+      bandLegend: bands.length ? [{ label: NO_PRICE_YET }] : [],
+      unit: this._chartPriceUnit(payload.currency),
     };
   }
 
-  // A price for the chart: the payload currency in the profile's format, else the bare number.
+  // A price for the chart, as the price card writes it: "0.3445 €/kWh"; the axis has "0.40 €".
+  _formatUnitPrice(value, unit, digits) {
+    return formatHassNumber(this._hass, value, { digits, ...(unit ? { unit } : {}) });
+  }
+
+  // A price in a sentence: the payload currency in the profile's format, else the bare number.
   _formatChartPrice(value, currency, digits) {
     const money = currency ? formatHassCurrency(this._hass, value, { currency, digits }) : UNAVAILABLE_TEXT;
     return money === UNAVAILABLE_TEXT ? formatHassNumber(this._hass, value, { digits }) : money;
   }
 
-  // The plan on the shared time-series chart: price bars, one lane of periods per connected car.
+  // The price chart of the Real Electricity Price card on the shared time-series chart (the
+  // same window, bars, colours, H and L and time labels), with one lane of periods per car.
   _planChart(data: PlanChartData, now = Date.now()) {
-    const HOUR = 3600000;
-    const series = [{
-      // The price chart of the Real Electricity Price card: one bar per hour in the shared price
-      // colours (past, current, to come; green when cheap) with H and L. Each bar fills its
-      // hour, so its edges line up with the charging periods under it.
-      id: "price", label: "Price", kind: "bar" as const, curve: "step" as const, barFit: "interval" as const,
-      intervalMs: data.intervalMs, points: data.points, extremes: true,
-      colorAt: (point: ChartPoint) => electricityPriceColor({ start: point.t, end: point.t + data.intervalMs, now, value: point.v, cheap: data.cheap }),
-      format: (value: number) => `${this._formatChartPrice(value, data.currency, data.digits)}/kWh`,
-    }];
+    const series = [electricityPriceSeries({
+      points: data.points, now, cheap: data.cheap, intervalMs: data.intervalMs,
+      format: (value: number) => this._formatUnitPrice(value, data.unit, PRICE_DECIMALS),
+    })];
+    const axisUnit = data.unit.split("/")[0].trim();
     const view = this._charts.render({
       id: "plan", label: data.title, description: data.description, height: PLAN_CHART_HEIGHT, hass: this._hass,
       domain: data.domain, series, lanes: data.lanes, bands: data.bands, now,
       axes: { primary: { includeZero: true, decimals: 2,
-        format: (value, axis) => this._formatChartPrice(value, data.currency, Math.max(2, stepDecimals(axis.step))) } },
-      timeLabel: (time) => formatHassTime(this._hass, time),
-      // No hourly labels: on a short window they crowd the start-anchored first label.
-      tickStepsMs: [2, 3, 4, 6, 12].map((hours) => hours * HOUR),
+        format: (value, axis) => this._formatUnitPrice(value, axisUnit, Math.max(2, stepDecimals(axis.step))) } },
+      timeLabel: (time) => electricityPriceTimeLabel(this._hass, time),
+      tickStepsMs: ELECTRICITY_PRICE_TICK_STEPS_MS,
       emptyMessage: "No published prices yet",
       selectionGroup: this._chartGroup,
     });
-    // `below`: the fixed-height line with what each car does at the selected time.
-    return chartFrame({ className: "plan-chart", title: data.title, readout: view.readout, body: view.svg, below: view.periods,
+    // No title, like the price card: the head is the readout alone, so a date, a time and a price
+    // fit one line on a narrow phone. `below` is the line with what each car does at the selected time.
+    return chartFrame({ className: "plan-chart", readout: view.readout, body: view.svg, below: view.periods,
       legend: chartLegend(series, { periods: data.legend, bands: data.bandLegend }) });
   }
 
@@ -1209,6 +1289,9 @@ class SmartEVSEFlowCard extends LitElement {
       ],
       controller: this._entitySnapshot(this._config.controller_entity, controllerAttrs),
       price: this._entitySnapshot(this._config.price_entity),
+      // The chart's hourly prices and the charger state sensors change rarely: their update time is enough.
+      priceLists: Object.values(this._priceListEntities()).map((id) => this._entity(id)?.last_updated ?? null),
+      chargerStates: Object.values(this._chargerStateEntities()).map((id) => this._entity(id)?.last_changed ?? null),
       schedule: this._entitySnapshot(this._config.schedule_entity, ["next_event"]),
       scheduleSwitch: this._entitySnapshot(this._config.schedule_switch_entity),
       schedulePrice: this._entitySnapshot(this._schedulePriceEntity()),

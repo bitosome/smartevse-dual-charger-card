@@ -206,7 +206,8 @@
             Select a state and try Edit plan or Charger details. Only enabled plans appear in the overview.
             Both paths support an acceptable-price limit, and Force charge can
             combine that limit with a timer.
-            The Intelligent charging scenario shows a planned night for two cars on the shared chart:
+            The Intelligent charging scenario shows the electricity price chart (today and tomorrow)
+            with what each charger charged since midnight and a planned night for two cars under it:
             each car is guaranteed its minimum by its ready-by time and then goes on charging to its
             own charge limit in the cheapest hours left. Its page edits ready-by times and the minimum without starting a charge.
             Controls call a mock Home Assistant service and update this preview. The live installation is unchanged.
@@ -784,10 +785,24 @@
         const at = (hours) => new Date(base + hours * hour).toISOString();
         const deadline = at(12);
         const readyBy = new Date(base + 12 * hour).toTimeString().slice(0, 5);
+        // The hourly price lists of the Real Electricity Price integration (yesterday, today and
+        // tomorrow, all published): the chart reads them like the price card does, and the plan's
+        // slots carry the same prices.
+        const midnight = new Date(); midnight.setHours(0, 0, 0, 0);
+        const day0 = midnight.getTime();
+        const dayCurve = [0.30, 0.34, 0.26, 0.25, 0.25, 0.27, 0.26, 0.31, 0.38, 0.43, 0.47, 0.48, 0.49, 0.47, 0.45, 0.46, 0.47, 0.43, 0.36, 0.34, 0.33, 0.30, 0.28, 0.27];
+        const priceAt = (time) => {
+          const hourOfDay = Math.floor((time - day0) / hour);
+          const dayIndex = Math.floor(hourOfDay / 24);
+          return Math.round((dayCurve[((hourOfDay % 24) + 24) % 24] - (dayIndex > 0 ? 0.06 : 0)) * 10000) / 10000;
+        };
+        const priceList = (dayIndex) => entity("ok", { hourly_prices: Array.from({ length: 24 }, (_, index) => {
+          const start = day0 + (dayIndex * 24 + index) * hour;
+          return { start_time: new Date(start).toISOString(), end_time: new Date(start + hour).toISOString(), actual_price: priceAt(start) };
+        }) });
         const slots = [];
         for (let h = -1; h < 13; h++) {
-          const price = [0.31, 0.29, 0.24, 0.27, 0.22, 0.2, 0.25][h + 1] ?? 0.24;
-          slots.push({ start: at(h), end: at(h + 1), price, kind: h < 6 ? "known" : "forecast",
+          slots.push({ start: at(h), end: at(h + 1), price: priceAt(base + h * hour), kind: "known",
             smartevse_1_minutes: [1, 3].includes(h) ? 60 : 0, smartevse_2_minutes: [6, 7].includes(h) ? 60 : h === 8 ? 30 : 0, expected_kw: 10.4 });
         }
         const charger = (fields) => ({
@@ -799,6 +814,11 @@
         snapshot["switch.smartevse_dual_charger_force_charge"] = entity("off");
         snapshot["switch.smartevse_dual_charger_charge_with_schedule"] = entity("off");
         snapshot[intelligentEntities.intelligent_charge] = entity("on");
+        snapshot["sensor.real_electricity_price_hourly_prices_yesterday"] = priceList(-1);
+        snapshot["sensor.real_electricity_price_hourly_prices_today"] = priceList(0);
+        snapshot["sensor.real_electricity_price_hourly_prices_tomorrow"] = priceList(1);
+        snapshot["sensor.real_electricity_price_current_price"] = entity(String(priceAt(Date.now())), { unit_of_measurement: "€/kWh" });
+        snapshot["number.real_electricity_price_acceptable_price"] = entity("0.27");
         for (const key of ["vehicle_1", "vehicle_2", "other"]) {
           snapshot[intelligentEntities[key].ready_by] = entity(`${readyBy}:00`);
           snapshot[intelligentEntities[key].minimum_charge] = entity("80", { min: 10, max: 100, step: 1, unit_of_measurement: "%" });
@@ -814,7 +834,7 @@
           smartevse_2_state: "Ready to Charge", smartevse_2_mode: "Off", smartevse_2_battery: "30%",
           intelligent: {
             enabled: true, status: "planned", reason: "intelligent_waiting_for_planned_slot", overridden_by: null,
-            connected_count: 2, currency: "EUR", known_until: at(6), forecast_used: true, baseline_kind: "schedule",
+            connected_count: 2, currency: "EUR", known_until: at(13), forecast_used: false, baseline_kind: "schedule",
             model_error: null, planner_error: null,
             totals: { cost: 6.1, saving: 1.34, energy_kwh: 46.5, includes_forecast: false, partial: false },
             next_charge: at(1), order: ["smartevse_1", "smartevse_2"],
@@ -996,9 +1016,41 @@
         }
       }
 
+      // The state sensor of each charger, kept in step with the controller attributes, and a
+      // synthetic recorder history of them: when each charger charged since midnight.
+      const chargerStateEntity = (key) => controllerEntity.replace(/_controller_state$/, `_${key}_state`);
+      function syncChargerStates() {
+        const attrs = states[controllerEntity]?.attributes || {};
+        for (const key of ["smartevse_1", "smartevse_2"]) {
+          const id = chargerStateEntity(key);
+          const next = String(attrs[`${key}_state`] ?? "unknown");
+          if (states[id]?.state !== next) states[id] = { ...entity(next), last_changed: new Date().toISOString() };
+        }
+      }
+      function demoChargeHistory(message) {
+        const midnight = new Date(); midnight.setHours(0, 0, 0, 0);
+        const at = (hours, minutes) => (midnight.getTime() + (hours * 60 + minutes) * 60000) / 1000;
+        const end = Date.parse(message.end_time) / 1000;
+        const rows = {
+          smartevse_1: [[0, 0, "Ready to Charge"], [0, 12, "Charging"], [0, 29, "Charging Stopped"], [2, 0, "Charging"], [4, 43, "Charging Stopped"]],
+          smartevse_2: [[0, 0, "Ready to Charge"], [6, 0, "Charging"], [6, 23, "Charging Stopped"]],
+        };
+        const result = {};
+        for (const key of Object.keys(rows)) {
+          const id = chargerStateEntity(key);
+          if (!message.entity_ids.includes(id)) continue;
+          result[id] = rows[key].map(([hours, minutes, state]) => ({ s: state, lu: at(hours, minutes) })).filter((row) => row.lu <= end);
+        }
+        return result;
+      }
+
       function makeHass() {
+        syncChargerStates();
         return {
           states,
+          callWS(message) {
+            return message?.type === "history/history_during_period" ? Promise.resolve(demoChargeHistory(message)) : Promise.reject(new Error("not mocked"));
+          },
           locale: {
             language: currentTimeFormat === "24" ? "en-GB" : "en-US",
             time_format: currentTimeFormat,

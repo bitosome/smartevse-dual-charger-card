@@ -2,7 +2,7 @@
 
 Standalone Lovelace card for the SmartEVSE Dual Charger Home Assistant integration.
 
-Version: `0.6.0`
+Version: `0.7.0`
 
 This repository contains only the frontend card and local preview assets.
 
@@ -177,24 +177,38 @@ Older integrations keep their wording: 0.0.10.0 charged above the minimum only u
 learned price ("extra while cheap"), and 0.0.9.x has the **Top up when price is low** switch
 and its price.
 
-- **Plan chart.** While Intelligent charging is enabled, the plan is drawn above the charger
-  tiles on the shared time-series chart of
-  `@bitosome/ha-card-ui` (1.9.0) and looks like the Real Electricity Price card: one bar per
-  hour in the shared price colours (past, current and coming hours in blue, green at or below
-  the cheap limit) with H and L over the highest and lowest price. The cheap limit is the
-  price card's acceptable price (`number.real_electricity_price_acceptable_price`, or the
-  card option `cheap_price_entity`). Each bar fills its hour, so its edges line up with the
-  periods under it. Hours without a published price are hatched ("No price yet", also named
-  in the legend). Under the prices there is one lane per connected car with its periods
-  (Planned, Charging, Above the minimum, Not enough time) and a tick at its ready-by time.
-  The now marker moves by itself. The chart is a slider: scrub it with a finger, the mouse
-  or the arrow keys, also into hours without a price. The head shows the time and price,
-  and one line under the chart says what each car does at that time ("XC40 Charging · EX30
-  Planned"). The legend is kept short ("Extra") so it stays within two lines on a phone.
-  While Force charge overrides the plan the lanes are grey, the legend says "Paused by Force
-  charge" and the line reads "XC40 paused". With no car connected the chart is titled
-  "Electricity price" and shows prices only. A field being edited on the Intelligent page
-  is not disturbed when the chart redraws the card every 30 seconds.
+- **Price chart with charging periods (0.7.0).** While Intelligent charging is enabled, the
+  card shows the electricity price chart of the Real Electricity Price card above the charger
+  tiles: today and tomorrow from midnight, one bar per hour in the shared price colours (past,
+  current and coming hours in blue, green at or below the cheap limit), H and L over the
+  highest and lowest price, and the price with four decimals in the head. It is built from
+  the shared helpers of `@bitosome/ha-card-ui` (1.10.0), so both cards draw it the same way.
+  - **Prices** come from the hourly price lists of the price integration: the sensors next
+    to the configured `price_entity` (`…current_price` → `…hourly_prices_today`, as the
+    integration finds them), else `sensor.real_electricity_price_hourly_prices_yesterday`,
+    `…_today` and `…_tomorrow`. The card options `price_yesterday_entity`,
+    `price_today_entity` and `price_tomorrow_entity` name other lists. Without any list the
+    bars are the known prices of the plan. The cheap limit is the price card's acceptable
+    price (`number.real_electricity_price_acceptable_price`, or `cheap_price_entity`).
+  - **Under the prices** there is one lane per connected car, and per charger that charged
+    today. Left of the now marker is what happened: **Charged** periods (slim, green), read
+    from the recorder history of the charger state sensors
+    (`sensor.<name>_smartevse_1_state` and `_2_state` next to a controller entity named
+    `…_controller_state`, or the options `smartevse_1_state_entity` and
+    `smartevse_2_state_entity`). Right of it is the plan: Planned, Above the minimum, Not
+    enough time, and a tick at the ready-by time. A car that charges now is one **Charging**
+    period from where the charger began to the end of its planned period. The history is
+    read once per day and again after a charger changes state (at most every ten minutes
+    otherwise); without the recorder the lanes show the plan and the live state only.
+  - Hours the plan covers without a published price are hatched ("No price yet", named in
+    the legend). While Force charge overrides the plan, what is planned is grey and reads
+    "XC40 paused"; what charges stays "Charging".
+  - The now marker moves by itself. The chart is a slider: scrub it with a finger, the mouse
+    or the arrow keys. The head shows the time and price, and one line under the chart says
+    what each car did or does at that time ("XC40 Charged · EX30 Planned"). The frame has no
+    title, like the price card. With no car connected and nothing charged today it shows
+    prices only. A field being edited on the Intelligent page is not disturbed when the
+    chart redraws the card every 30 seconds.
 
 - **One layout (0.6.0).** Cards 0.4.0 to 0.5.x had a separate "plan" layout and a layout chooser in Settings. Both are gone: there is one layout, the chart shows whenever Intelligent charging is enabled, and nothing is stored per device. A `layout:` key left in a dashboard configuration is accepted and ignored.
 - **Standing plans.** Intelligent charging and Schedule are independent: switching one
