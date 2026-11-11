@@ -380,16 +380,47 @@ for (const theme of THEMES) {
           if (elementWidth < 40 && tops.size > 3) problems.push(`"${text.slice(0, 30)}" is ${Math.round(elementWidth)}px wide on ${tops.size} lines`);
         }
         // 2b. Plan rows: the label stays on one line; the value never breaks inside a word.
-        for (const row of shadow.querySelectorAll('.plan-row')) {
+        const linesOf = (node) => {
+          const range = document.createRange();
+          range.selectNodeContents(node);
+          return new Set([...range.getClientRects()].map((line) => Math.round(line.bottom))).size;
+        };
+        for (const row of shadow.querySelectorAll('.plan-rows .plan-row')) {
           const label = row.querySelector('dt');
           const value = row.querySelector('dd');
           if (label.getClientRects().length !== 1 || label.getBoundingClientRect().height > 22) problems.push(`row label "${label.textContent}" wraps`);
-          const range = document.createRange();
-          range.selectNodeContents(value);
-          const lines = new Set([...range.getClientRects()].map((line) => Math.round(line.top))).size;
+          const lines = linesOf(value);
           const words = value.textContent.trim().split(/\s+/).length;
           if (lines > words) problems.push(`row value "${value.textContent}" breaks inside a word (${lines} lines)`);
           if (lines > 3) problems.push(`row value "${value.textContent}" takes ${lines} lines`);
+        }
+        // 2c. The figures (0.8.0): the same cells in the same order in every tile, a one-line label,
+        // a figure that is never cut or wrapped, and at most two lines under it.
+        for (const stats of shadow.querySelectorAll('.plan-stats')) {
+          for (const row of stats.querySelectorAll('.plan-row')) {
+            const label = row.querySelector('dt');
+            if (linesOf(label) !== 1) problems.push(`figure label "${label.textContent}" wraps`);
+            const main = row.querySelector('.fact-main');
+            if (!main) { problems.push(`figure "${row.textContent.trim()}" has no main part`); continue; }
+            if (main.scrollWidth > main.clientWidth + 1) problems.push(`figure "${main.textContent}" is cut (${main.scrollWidth}px in ${main.clientWidth}px)`);
+            if (main.getBoundingClientRect().height > 24) problems.push(`figure "${main.textContent}" wraps`);
+            const sub = row.querySelector('.fact-sub');
+            if (sub && linesOf(sub) > 2) problems.push(`"${sub.textContent}" under a figure takes ${linesOf(sub)} lines`);
+          }
+        }
+        // 2d. Under the bar: one or two lines, inside the tile, and the two captions never overlap.
+        for (const scale of shadow.querySelectorAll('.plan-scale')) {
+          const box = scale.getBoundingClientRect();
+          if (box.height > 40) problems.push(`the line under the bar is ${Math.round(box.height)}px tall`);
+          const captions = [...scale.querySelectorAll('.plan-row dd')].map((node) => node.getBoundingClientRect()).filter((rect) => rect.width > 0);
+          for (const rect of captions) {
+            if (rect.left < box.left - 1 || rect.right > box.right + 1) problems.push('a caption under the bar leaves the tile');
+          }
+          if (captions.length === 2) {
+            const [a, b] = captions;
+            const sameLine = Math.abs(a.top - b.top) < 4;
+            if (sameLine && a.right > b.left - 4 && b.right > a.left - 4) problems.push('the captions under the bar overlap');
+          }
         }
         // 3. Chart and gauge labels are a constant, readable size, and time labels do not touch.
         const svg = shadow.querySelector('.family-chart-frame svg.family-chart');

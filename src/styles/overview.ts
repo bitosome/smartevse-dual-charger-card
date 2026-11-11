@@ -149,6 +149,36 @@ export const OVERVIEW_CSS = `
   .plan-row:last-child:nth-child(odd) { grid-column: 1 / -1; }
   .plan-row dt { font-size: 11px; line-height: 1.4; color: var(--secondary-text-color); white-space: nowrap; }
   .plan-row dd { margin: 0; min-width: 0; font-size: 13px; line-height: 1.4; color: var(--primary-text-color); font-variant-numeric: tabular-nums; overflow-wrap: break-word; }
+  /* Under the battery bar: what is guaranteed, at the minimum tick, and how far the extra goes,
+     at the end of the bar. One line; when they do not fit beside each other, at its two ends. */
+  .plan-scale { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 8px; min-height: 18px; margin: 6px 0 0; }
+  .plan-scale .plan-row { display: block; flex: 0 0 auto; }
+  .plan-scale dt { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .plan-scale dd { font-size: 12px; line-height: 18px; color: var(--secondary-text-color); white-space: nowrap; }
+  .plan-scale .fact-main { font-weight: 600; color: var(--primary-text-color); }
+  .plan-scale .fact-sep { white-space: pre; }
+  /* The guaranteed level ends at the minimum tick (it starts there when the tick is in the left half). */
+  .plan-scale[data-side="end"] [data-row="guaranteed"] { box-sizing: border-box; width: calc(var(--plan-minimum) * 1%); min-width: max-content; text-align: right; }
+  .plan-scale[data-side="start"] [data-row="guaranteed"] { margin-inline-start: calc(var(--plan-minimum) * 1%); }
+  /* The extra level is at the end of the bar; when it does not fit beside the other it wraps under it. */
+  .plan-scale [data-row="extra"] { margin-inline-start: auto; text-align: right; }
+  /* "to 100%": the level is enough here; the hatched part of the bar shows the rest. */
+  .plan-scale [data-row="extra"][data-short] :is(.fact-sub, .fact-sep) { display: none; }
+  /* The figures side by side: a small label, the figure, and a quieter line under it. */
+  .plan-stats { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); margin: 0;
+    border-block: 1px solid var(--family-divider, color-mix(in srgb, var(--primary-text-color) 10%, transparent)); }
+  .plan-stats .plan-row { padding: 9px 0 9px 12px; border-inline-start: 1px solid var(--family-divider, color-mix(in srgb, var(--primary-text-color) 10%, transparent)); }
+  .plan-stats .plan-row:first-child { padding-inline-start: 0; border-inline-start: 0; }
+  .plan-stats .plan-row:last-child:nth-child(odd) { grid-column: auto; }
+  .plan-stats dt { font-size: 10px; line-height: 1.4; letter-spacing: .06em; text-transform: uppercase; }
+  .plan-stats dd { margin-top: 2px; }
+  .plan-stats .fact { display: flex; flex-direction: column; min-width: 0; }
+  .plan-stats .fact-main { order: 0; font-size: 16px; font-weight: 600; line-height: 1.25; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .plan-stats .fact-main small { font-size: 11px; font-weight: 500; letter-spacing: 0; color: var(--secondary-text-color); }
+  .plan-stats .fact-sub { order: 1; font-size: 12px; line-height: 1.4; color: var(--secondary-text-color); overflow-wrap: anywhere; }
+  .plan-stats .fact-sep { display: none; }
+  .plan-stats .row-history { display: flex; width: 100%; justify-content: space-between; margin: -11px 0; padding: 11px 0; }
+  .plan-stats .row-history ha-icon { margin-inline-end: 4px; }
   /* "Charged" (and "Last charge") open that charger's history: the value is the control, with a
      touch-sized hit area that does not make the row taller. */
   .row-history { display: inline-flex; align-items: center; gap: 2px; max-width: 100%; margin: -13px -4px -13px 0; padding: 13px 4px 13px 0; border: 0;
@@ -162,6 +192,16 @@ export const OVERVIEW_CSS = `
   .plan-saving ha-icon { flex: none; --mdc-icon-size: 16px; width: 16px; height: 16px; }
   @container charger-facts (max-width: 250px) {
     .plan-rows { grid-template-columns: minmax(0, 1fr); }
+  }
+  @container charger-facts (max-width: 270px) {
+    /* A narrow tile: the figures as rows, label left and figure right. */
+    .plan-stats { grid-auto-flow: row; }
+    .plan-stats .plan-row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 7px 0; border-inline-start: 0;
+      border-top: 1px solid var(--family-divider, color-mix(in srgb, var(--primary-text-color) 10%, transparent)); }
+    .plan-stats .plan-row:first-child { border-top: 0; }
+    .plan-stats dd { margin: 0; text-align: right; }
+    .plan-stats .fact { align-items: flex-end; }
+    .plan-stats .row-history { gap: 6px; }
   }
   @media (prefers-reduced-motion: reduce) {
     .glow-under, .glow-overlay { animation: none !important; }

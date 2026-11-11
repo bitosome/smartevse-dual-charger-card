@@ -2407,14 +2407,69 @@ check('each connected car is the classic tile: icon, charger, vehicle, state and
   same(heading3('smartevse_1'), ['', 'SmartEVSE 1', 'Volvo XC40', 'Connected · waiting', '53%']) &&
   same(heading3('smartevse_2'), ['', 'SmartEVSE 2', 'Volvo EX30', 'Connected · waiting', '30%']) &&
   all3('.ev-node .charger-heading .charger-icon ha-icon').every((icon) => icon.getAttribute('icon') === 'mdi:ev-station') &&
-  same([...root3.querySelector('.ev-node.smartevse_1').children].map((node) => node.className.split(' ')[0]), ['charger-heading', 'family-level-meter', 'charger-plan', 'charger-details']) &&
+  same([...root3.querySelector('.ev-node.smartevse_1').children].map((node) => node.className.split(' ')[0]), ['charger-heading', 'family-level-meter', 'plan-scale', 'charger-plan', 'charger-details']) &&
   !root3.querySelector('.pod-gauge, .pod-ring, .pod-unit, .pod-head, .session-cost, .plan-totals, .charger-totals button'));
 check('the LED state of each charger shows as the glow under its tile',
   all3('.ev-node-wrap').every((wrap) => /\bvisual-(idle|charging|error|off)\b/.test(wrap.getAttribute('class') || '') && !!wrap.querySelector(':scope > .glow-under.ev-glow')));
 check('a planned car reads Guaranteed, Extra, Next, Charged and the total as labelled rows',
   same(rows3('smartevse_1'), [['Guaranteed', `80% by ${t7}`], ['Extra', 'none tonight'], ['Next', 'Starts 21:00'], CH3, ['Total', '≈ €4.91']]) &&
   same(rows3('smartevse_2'), [['Guaranteed', `80% by ${t7}`], ['Extra', 'to ≈ 96% while cheap'], ['Next', `Starts ${planTime('2026-11-10T02:00:00+00:00')}`], CH3, ['Total', '≈ €1.19']]) &&
-  !root3.querySelector('.ev-node .charger-plan-line') && all3('.ev-node dl.plan-rows').length === 2);
+  !root3.querySelector('.ev-node .charger-plan-line') && all3('.ev-node dl.plan-stats').length === 2 && !root3.querySelector('.ev-node dl.plan-rows'));
+// 0.8.0: the same facts, laid out. Guaranteed and Extra sit under the battery bar; Next, Charged
+// and the total are three figures side by side, each a main figure with a quieter second part.
+const scale3 = (key) => root3.querySelector(`.ev-node.${key} > .plan-scale`);
+const parts3 = (key, row) => {
+  const node = root3.querySelector(`.ev-node.${key} .plan-row[data-row="${row}"] dd`);
+  return [norm(node?.querySelector('.fact-main')?.textContent), norm(node?.querySelector('.fact-sub')?.textContent)];
+};
+check('Guaranteed and Extra sit under the battery bar, the guaranteed level ending at the minimum tick',
+  same([...scale3('smartevse_1').children].map((row) => row.getAttribute('data-row')), ['guaranteed', 'extra']) &&
+  scale3('smartevse_1').getAttribute('data-side') === 'end' && /--plan-minimum:\s*80;/.test(scale3('smartevse_1').getAttribute('style')) &&
+  same(parts3('smartevse_1', 'guaranteed'), ['80%', `by ${t7}`]) && same(parts3('smartevse_1', 'extra'), ['none tonight', '']) &&
+  !scale3('smartevse_1').querySelector('[data-short]') &&
+  scale3('smartevse_1').previousElementSibling === gauges[0]);
+check('the part the plan charges above the minimum is hatched on the bar (shared level meter range)',
+  !gauges[0].querySelector('.family-level-range') &&
+  (gauges[1].querySelector('.family-level-range')?.getAttribute('style') || '').replace(/\s+/g, '') === 'left:80%;width:16%');
+// How a value splits into its main figure and second part; the text stays the plain value.
+const split3 = (value, kind) => {
+  const box = document.createElement('div');
+  box.innerHTML = el3._factParts(value, kind);
+  return [norm(box.querySelector('.fact-main')?.textContent), norm(box.querySelector('.fact-sub')?.textContent), norm(box.textContent)];
+};
+check('values split into a main figure and a second part without changing their text',
+  same(split3('Starts 22:24', 'time'), ['22:24', 'Starts', 'Starts 22:24']) &&
+  same(split3('Starts Thu 0:56', 'time'), ['0:56', 'Starts Thu', 'Starts Thu 0:56']) &&
+  same(split3('Starts 9:00 PM', 'time'), ['9:00 PM', 'Starts', 'Starts 9:00 PM']) &&
+  same(split3('Charging until 23:10', 'time'), ['23:10', 'Charging until', 'Charging until 23:10']) &&
+  same(split3('Charging now', 'time'), ['now', 'Charging', 'Charging now']) &&
+  same(split3('After Volvo XC40', 'time'), ['Volvo XC40', 'After', 'After Volvo XC40']) &&
+  same(split3('Done', 'time'), ['Done', '', 'Done']) &&
+  same(split3('5.3 kWh · ≈ €1.84 · partial estimate'), ['5.3 kWh', '≈ €1.84 · partial estimate', '5.3 kWh · ≈ €1.84 · partial estimate']) &&
+  same(split3('≈ 47.1 kWh · ≈ €12.87'), ['≈ 47.1 kWh', '≈ €12.87', '≈ 47.1 kWh · ≈ €12.87']) &&
+  same(split3('Nothing yet'), ['Nothing yet', '', 'Nothing yet']) &&
+  same(split3('80% by 7:00'), ['80%', 'by 7:00', '80% by 7:00']) &&
+  same(split3('Reached · 80%'), ['80%', 'Reached', 'Reached · 80%']) &&
+  same(split3('to 100% · car limit'), ['to 100%', 'car limit', 'to 100% · car limit']) &&
+  same(split3('to ≈ 86% by 07:00'), ['to ≈ 86%', 'by 07:00', 'to ≈ 86% by 07:00']) &&
+  same(split3('when prices arrive · ≈ 15:00'), ['when prices arrive', '≈ 15:00', 'when prices arrive · ≈ 15:00']) &&
+  same(split3('<img src=x> · <b>'), ['<img src=x>', '<b>', '<img src=x> · <b>']));
+const scaleOf = (rows, minimum) => { const box = document.createElement('div'); box.innerHTML = el3._planScale(rows, minimum); return box.firstElementChild; };
+check('under the bar an extra level is short ("to 100%"), other extra texts are whole, and a low minimum starts at its tick',
+  scaleOf([{ id: 'guaranteed', label: 'Guaranteed', value: '80% by 7:00' }, { id: 'extra', label: 'Extra', value: 'to 100% · car limit' }], 80)
+    .querySelector('[data-row="extra"]').hasAttribute('data-short') &&
+  scaleOf([{ id: 'extra', label: 'Extra', value: 'to ≈ 86% by 07:00' }], 80).querySelector('[data-row="extra"]').hasAttribute('data-short') &&
+  !scaleOf([{ id: 'extra', label: 'Extra', value: 'when prices arrive · ≈ 15:00' }], 80).querySelector('[data-short]') &&
+  !scaleOf([{ id: 'extra', label: 'Extra', value: 'to ≈ 96% while cheap' }], 80).querySelector('[data-short]') &&
+  scaleOf([{ id: 'guaranteed', label: 'Guaranteed', value: '30% by 7:00' }], 30).getAttribute('data-side') === 'start' &&
+  /--plan-minimum:\s*100;/.test(scaleOf([{ id: 'guaranteed', label: 'Guaranteed', value: 'x' }], 140).getAttribute('style')) &&
+  el3._planScale([], 80) === '');
+check('Next, Charged and the total are three figures side by side, each with its main figure and a second part',
+  same([...root3.querySelector('.ev-node.smartevse_1 .plan-stats').children].map((row) => row.getAttribute('data-row')), ['next', 'charged', 'cost']) &&
+  same(parts3('smartevse_1', 'next'), ['21:00', 'Starts']) && same(parts3('smartevse_1', 'charged'), ['14.2 kWh', '≈ €2.40']) &&
+  same(parts3('smartevse_1', 'cost'), ['≈ €4.91', '']) &&
+  norm(root3.querySelector('.ev-node.smartevse_1 .plan-row[data-row="charged"] .fact-main small')?.textContent) === 'kWh' &&
+  !!root3.querySelector('.ev-node.smartevse_1 .plan-row[data-row="charged"] .row-history .fact'));
 check('car tiles keep the "Charger details" row button under their facts',
   all3('.ev-node > .charger-details[data-action="open-charger-details"]').length === 2 &&
   all3('.ev-node > .charger-details').every((button) => /charger details$/.test(button.getAttribute('aria-label') || '') &&
@@ -2851,7 +2906,7 @@ document.body.appendChild(elOld);
 await wait(60);
 check('a layout: key in the card configuration is accepted and ignored',
   layoutError === null && !!elOld.shadowRoot.querySelector('.family-chart-frame.plan-chart') &&
-  elOld.shadowRoot.querySelectorAll('.ev-node .charger-heading').length === 2 && elOld.shadowRoot.querySelectorAll('.ev-node .plan-rows').length === 2 &&
+  elOld.shadowRoot.querySelectorAll('.ev-node .charger-heading').length === 2 && elOld.shadowRoot.querySelectorAll('.ev-node .plan-stats').length === 2 &&
   !/layout-/.test(elOld.shadowRoot.querySelector('ha-card')?.getAttribute('class') || ''));
 elOld.remove();
 // The dialogs still open from the overview, which is a Lit template around HTML parts.
@@ -2878,11 +2933,11 @@ const liveController = iStates['sensor.ctl'];
 iStates['sensor.ctl'] = { state: 'unavailable', attributes: {} };
 await push3();
 check('an unavailable controller keeps the charger tiles and shows no chart or saving line',
-  title3() === 'Controller unavailable' && !chart3() && all3('.ev-node .charger-heading').length === 2 && !root3.querySelector('.plan-saving, .plan-rows') &&
+  title3() === 'Controller unavailable' && !chart3() && all3('.ev-node .charger-heading').length === 2 && !root3.querySelector('.plan-saving, .plan-rows, .plan-stats, .plan-scale') &&
   all3('.ev-node .charger-status').every((node) => norm(node.textContent) === 'Unavailable'));
 iStates['sensor.ctl'] = liveController;
 await push3();
-check('the chart and the plan facts return with the controller', !!svg3() && all3('.ev-node .plan-rows').length === 2);
+check('the chart and the plan facts return with the controller', !!svg3() && all3('.ev-node .plan-stats').length === 2 && all3('.ev-node .plan-scale').length === 2);
 
 // ---- Plan chart states ----
 // Force charge overrides the plan: what is planned is grey and reads "paused".

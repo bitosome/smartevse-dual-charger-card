@@ -14,7 +14,7 @@ import {
 import { buildGlow, type PulseColors } from "./shared/glow";
 import { ChargeHistory, chargedIntervals, joinIntervals, withLiveState } from "./charge-history";
 
-const CARD_VERSION = "0.7.0";
+const CARD_VERSION = "0.8.0";
 
 // String twin of the shared pendingIndicator(); this card renders through unsafeHTML.
 const PENDING_INDICATOR = `<span class="family-pending-indicator" aria-hidden="true"></span>`;
@@ -3454,9 +3454,54 @@ class SmartEVSEFlowCard extends LitElement {
       : this._wrapGlue(row.value)}</dd></div>`).join("")}</dl>`;
   }
 
+  // A fact value in two parts, a main figure and a quieter second part, with the same text
+  // as the plain value ("Starts 22:24", "5.3 kWh · ≈ €1.84", "80% by 7:00"). `kind` says where
+  // it splits: "time" before a trailing clock time (or "now"), otherwise at the first " · " or
+  // before " by ". The unit of a main figure in kWh is set smaller.
+  _factParts(value, kind: "time" | "text" = "text") {
+    const text = String(value ?? "");
+    const main = (part) => `<b class="fact-main">${this._wrapGlue(part).replace(/ kWh$/, `<small> kWh</small>`)}</b>`;
+    const sub = (part) => `<span class="fact-sub">${this._wrapGlue(part)}</span>`;
+    if (kind === "time") {
+      const after = text.match(/^(After) (.+)$/);
+      if (after) return `${sub(after[1])} ${main(after[2])}`;
+      const timed = text.match(/^(.*\S)\s+(\d{1,2}[:.]\d{2}(?:\s?[AaPp]\.?[Mm]\.?)?|now)$/);
+      return timed ? `${sub(timed[1])} ${main(timed[2])}` : main(text);
+    }
+    const reached = text.match(/^(Reached) · (.+)$/);
+    if (reached) return `${sub(reached[1])}<span class="fact-sep"> · </span>${main(reached[2])}`;
+    const dot = text.indexOf(" · ");
+    if (dot > 0) return `${main(text.slice(0, dot))}<span class="fact-sep"> · </span>${sub(text.slice(dot + 3))}`;
+    const by = text.indexOf(" by ");
+    return by > 0 ? `${main(text.slice(0, by))} ${sub(text.slice(by + 1))}` : main(text);
+  }
+
+  // Under the battery bar (0.8.0): what is guaranteed, ending at the minimum tick, and how far the
+  // extra charging goes, at the end of the bar. One line; an extra text that does not fit
+  // beside the guaranteed level wraps under it.
+  _planScale(rows: Array<{ id: string; label: string; value: string }>, minimum: number) {
+    if (!rows.length) return "";
+    const side = minimum >= 50 ? "end" : "start";
+    return `<dl class="plan-scale" data-side="${side}" style="--plan-minimum: ${Math.max(0, Math.min(100, minimum))};">${
+      // "to 100% · car limit", "to ≈ 86% by 07:00": the level alone is shown.
+      rows.map((row) => `<div class="plan-row" data-row="${this._safe(row.id)}"${row.id === "extra" && /^to .*( · | by )/.test(row.value) ? " data-short" : ""}><dt>${this._safe(row.label)}</dt><dd>${this._factParts(row.value)}</dd></div>`).join("")}</dl>`;
+  }
+
+  // The figures of a charger tile, side by side (0.8.0): Next, Charged and Planned, each a main
+  // figure with a quieter line under it. "Charged" opens that charger's history.
+  _statRows(ev, rows: Array<{ id: string; label: string; value: string; history?: boolean }>) {
+    if (!rows.length) return "";
+    return `<dl class="plan-stats">${rows.map((row) => {
+      const parts = this._factParts(row.value, row.id === "next" ? "time" : "text");
+      return `<div class="plan-row" data-row="${this._safe(row.id)}"><dt>${this._safe(row.label)}</dt><dd>${row.history
+        ? `<button class="row-history" type="button" data-action="open-history" data-charger="${this._safe(ev.key)}" aria-haspopup="dialog" aria-label="${this._safe(`${ev.smartevseName} ${row.label.toLowerCase()} ${row.value}; open history`)}"><span class="fact">${parts}</span><ha-icon icon="${UI_ICONS.next}" aria-hidden="true"></ha-icon></button>`
+        : `<span class="fact">${parts}</span>`}</dd></div>`;
+    }).join("")}</dl>`;
+  }
+
   // One tile per charger: icon, charger, vehicle and state with the battery level, the shared
-  // level meter with the minimum marked, at most one note or warning line, then short labelled
-  // facts. "Charged" is what this charge has taken and cost since plug-in, in every mode; the
+  // level meter with the minimum marked and the extra range hatched, what is guaranteed and how
+  // far the extra goes under it, at most one note or warning line, then the figures. "Charged" is what this charge has taken and cost since plug-in, in every mode; the
   // other facts need an Intelligent plan for the car. The LED state is the glow under the tile.
   _evNode(ev) {
     const record = this._costData()?.chargers?.[ev.key]?.session;
@@ -3470,12 +3515,15 @@ class SmartEVSEFlowCard extends LitElement {
     const minimum = planCharger ? this._num(planCharger.target ?? planCharger.minimum) : null;
     const battery = this._knownVehicleName(ev) ? this._batteryPercent(ev.battery) : null;
     const level = battery !== null ? battery : this._num(planCharger?.soc);
+    // The part the plan charges above the minimum is hatched on the bar.
+    const extraTo = planCharger?.top_up === true ? this._num(planCharger.extra_soc) ?? this._num(planCharger.car_limit) : null;
     const meter = ev.connected && level !== null ? levelMeterMarkup({
       value: level,
       label: `${vehicleTitle} battery`,
       tone: batteryTone(level),
       className: "battery-meter",
       ...(minimum !== null ? { target: minimum, valueText: `${this._formatPercent(level)}, minimum ${this._formatPercent(minimum)}` } : {}),
+      ...(minimum !== null && extraTo !== null && extraTo > minimum ? { range: { from: minimum, to: extraTo } } : {}),
     }) : "";
     const plan = ev.connected && planCharger ? this._intelligentTileRows(ev) : { note: null, rows: [] };
     const rows: Array<{ id: string; label: string; value: string; history?: boolean }> = [...plan.rows];
@@ -3494,7 +3542,14 @@ class SmartEVSEFlowCard extends LitElement {
       const lastSaving = this._lastChargeSaving(record);
       if (lastSaving) note = `<p class="charger-plan-line">Last charge saved ≈ ${this._safe(lastSaving.amount)} compared with ${this._safe(baselineName(lastSaving.kind))}</p>`;
     }
-    const facts = this._factRows(ev, rows);
+    // With a bar and a minimum on it, Guaranteed and Extra sit under the bar; the figures
+    // (Next, Charged, Planned) are side by side. A charger without a car keeps its one row.
+    const onBar = Boolean(meter) && minimum !== null;
+    const scaleRows = onBar ? rows.filter((row) => row.id === "guaranteed" || row.id === "extra") : [];
+    const scale = this._planScale(scaleRows, minimum ?? 0);
+    const rest = rows.filter((row) => !scaleRows.includes(row));
+    const labelled = rest.filter((row) => row.id === "guaranteed" || row.id === "extra" || row.id === "last");
+    const facts = `${this._factRows(ev, labelled)}${this._statRows(ev, rest.filter((row) => !labelled.includes(row)))}`;
     const nodeStyle = this._wledNodeStyle(visual, ev.visual);
     const glowMs = this._glowDurationMs(visual, ev.visual);
     return `
@@ -3512,7 +3567,7 @@ class SmartEVSEFlowCard extends LitElement {
             </div>
             ${ev.connected && level !== null ? `<div class="charger-totals"><div class="battery-value">${this._safe(Math.round(level))}<span>%</span></div></div>` : ""}
           </div>
-          ${meter}
+          ${meter}${scale}
           ${ev.hasError ? `<p class="charger-message" role="status">${this._safe(ev.error)}</p>` : !ev.available ? `<p class="charger-message">Status cannot be read. Check the charger connection.</p>` : ""}
           ${note || facts ? `<div class="charger-plan">${note}${facts}</div>` : ""}
           ${ev.available && ev.connected ? `

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.8.0 — 2026-11-12
+
+The facts of a car tile are laid out instead of listed. Same facts, same wording; needs `@bitosome/ha-card-ui` 1.11.0.
+
+- **On the battery bar.** What is guaranteed sits right under the bar and ends at the minimum tick ("80% by 7:00"). The part the plan charges above the minimum is hatched on the bar, with its level at the end ("to 100%"). An extra text that does not fit beside the guaranteed level ("when prices arrive · ≈ 15:00") wraps under it. Until 0.7.0 Guaranteed and Extra were two of five label-and-value pairs in a loose grid.
+- **Three figures side by side.** Next, Charged and Planned are always in that order, each a small label, the figure, and a quieter line under it ("22:24" over "Starts", "5.3 kWh" over "≈ €1.84"). The Charged figure still opens that charger's history. In a narrow tile (two tiles side by side, or a 320 px phone) they become three rows with the label left and the figure right.
+- A car without a known battery level has no bar, so its Guaranteed and Extra stay as labelled rows above the figures. A charger without a car keeps its Last charge row.
+- The tile is about one row shorter. Dialogs, the chart and every service call are unchanged.
+
 ## 0.7.0 — 2026-11-11
 
 The chart is the full electricity price chart of the Real Electricity Price card, with the charging periods under it. Needs `@bitosome/ha-card-ui` 1.10.0; works with SmartEVSE Dual Charger integration 0.0.10.0 and 0.0.11.0.

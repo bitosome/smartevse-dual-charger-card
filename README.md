@@ -2,7 +2,7 @@
 
 Standalone Lovelace card for the SmartEVSE Dual Charger Home Assistant integration.
 
-Version: `0.7.0`
+Version: `0.8.0`
 
 This repository contains only the frontend card and local preview assets.
 
@@ -14,7 +14,7 @@ This repository contains only the frontend card and local preview assets.
 - One tile per charger: charger, vehicle, status and battery percentage, the shared battery meter, then short labelled facts. **Charged** (what this charge has taken and cost since plug-in) is shown for every connected car in every mode and opens that charger's history. Disconnected ports stay compact; unavailable and faulted chargers are identified explicitly.
 - **Charger details** opens a dialog with everything about one charger in short sections: the car, its plan, this charge, the charger (State, Mode, Current offered, Limit) and what the planner uses. Offered current is the charger pilot setting, not measured current or power consumption.
 - Space Hub shared surfaces, radii, theme colors and underglow helpers. Glow colors and effects follow the controller's physical WLED configuration.
-- Responsive: the two charger tiles stack on a phone and sit side by side on a wide card. The facts in a tile use two columns, one in a narrow tile.
+- Responsive: the two charger tiles stack on a phone and sit side by side on a wide card. In a car tile the guaranteed level and the extra level sit under the battery bar, and Next, Charged and Planned are three figures side by side (rows in a narrow tile).
 - Charging-plan editor with schedule, immediate charging, timer and acceptable-price controls, plus **Intelligent charging** with integration 0.0.9.0+. Unsupported options are omitted; temporarily unavailable controls are identified and guarded.
 - Keyboard focus management, Escape/back navigation, visible focus, touch-sized controls and reduced-motion support. Expanded details survive live state updates.
 - Local interactive preview backed by mocked Home Assistant services.
@@ -172,7 +172,7 @@ computes no slots, energy, costs or savings itself.
 **The minimum is a floor, not a target.** The car is guaranteed at least its minimum by its
 ready-by time. With integration 0.0.11.0 it then goes on charging to its own charge limit
 (the one set in the car) in the cheapest hours left before the ready-by time; there is no
-price limit and nothing to set. The card calls the two parts **Guaranteed** and **Extra**.
+price limit to set (since integration 0.0.13.0 the planner limits it to the hours that are cheap for the night by itself). The card calls the two parts **Guaranteed** and **Extra**.
 Older integrations keep their wording: 0.0.10.0 charged above the minimum only under a
 learned price ("extra while cheap"), and 0.0.9.x has the **Top up when price is low** switch
 and its price.
@@ -182,7 +182,7 @@ and its price.
   tiles: today and tomorrow from midnight, one bar per hour in the shared price colours (past,
   current and coming hours in blue, green at or below the cheap limit), H and L over the
   highest and lowest price, and the price with four decimals in the head. It is built from
-  the shared helpers of `@bitosome/ha-card-ui` (1.10.0), so both cards draw it the same way.
+  the shared helpers of `@bitosome/ha-card-ui` (1.11.0), so both cards draw it the same way.
   - **Prices** come from the hourly price lists of the price integration: the sensors next
     to the configured `price_entity` (`…current_price` → `…hourly_prices_today`, as the
     integration finds them), else `sensor.real_electricity_price_hourly_prices_yesterday`,
@@ -229,7 +229,7 @@ and its price.
   the charger and vehicle name, the status and the battery level, and the shared horizontal
   battery meter with the minimum marked. The LED state of the charger is the glow under the
   tile. Under the meter comes at most one note or warning line ("Not enough time · ≈ 74% by
-  07:00", "Car isn’t accepting charge"), then short facts in two columns (one column in a
+  07:00", "Car isn’t accepting charge"), then the facts (0.8.0): **Guaranteed** right under the battery bar, ending at the minimum tick, and **Extra** at the end of the bar, whose hatched part is what the plan charges above the minimum; then **Next**, **Charged** and **Planned** as three figures side by side, each with a quieter line under it (three rows in a
   narrow tile):
   - **Guaranteed**: "80% by 07:00", "≈ 30 kWh by 07:00" for a car with an unknown level, or
     "Reached · 82%".
