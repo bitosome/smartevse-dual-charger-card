@@ -205,8 +205,8 @@
             Both paths support an acceptable-price limit, and Force charge can
             combine that limit with a timer.
             The Intelligent charging scenario shows a planned night for two cars on the shared chart:
-            each car is guaranteed its minimum by its ready-by time and keeps charging above it while
-            electricity is cheap. Its page edits ready-by times and the minimum without starting a charge.
+            each car is guaranteed its minimum by its ready-by time and then goes on charging to its
+            own charge limit in the cheapest hours left. Its page edits ready-by times and the minimum without starting a charge.
             Controls call a mock Home Assistant service and update this preview. The live installation is unchanged.
           </div>
 
@@ -761,9 +761,11 @@
       scenarios.long_name = deepClone(scenarios.charging_left);
       scenarios.long_name[controllerEntity].attributes.smartevse_1_connected_ev = "Volvo XC40 Recharge · Extended Range";
 
-      // Intelligent charging: synthetic payload in the contract of integration 0.0.10.0 (times
-      // relative to now). The minimum is a floor; above it the car charges while prices are at or
-      // below a learned cheap limit (top_up.price). There are no top-up entities any more.
+      // Intelligent charging: synthetic payload in the contract of integration 0.0.11.0 (times
+      // relative to now). The minimum is a floor; above it each car goes on to its own charge
+      // limit in the cheapest known-price hours before its ready-by (no price limit, nothing to
+      // set). The EX30's window still has hours without a published price, so its charging above
+      // the minimum waits for them (extra_waits_until).
       const intelligentEntities = {
         intelligent_charge: "switch.smartevse_dual_charger_intelligent_charging",
         vehicle_1: { ready_by: "time.smartevse_dual_charger_volvo_xc40_ready_by", minimum_charge: "number.smartevse_dual_charger_volvo_xc40_minimum_charge" },
@@ -789,7 +791,7 @@
         const charger = (fields) => ({
           settings_key: fields.vehicle, soc_source: "vehicle", car_limit: 90, limited_by_car: false, ready_by: readyBy, deadline,
           feasible: true, estimated: false, includes_forecast: false, partial: false, overrun: false, not_accepting: false,
-          car_timer: false, queue_after: null, top_up: false, top_up_cost: null, extra_soc: null, minimum: 80, target: 80, ...fields,
+          car_timer: false, queue_after: null, top_up: false, top_up_cost: null, extra_soc: null, extra_waits_until: null, extra_done: false, planned_kwh: 0, planned_cost: null, minimum: 80, target: 80, ...fields,
         });
         const snapshot = deepClone(scenarios.charging_left);
         snapshot["switch.smartevse_dual_charger_force_charge"] = entity("off");
@@ -815,12 +817,12 @@
             totals: { cost: 6.1, saving: 1.34, energy_kwh: 46.5, includes_forecast: false, partial: false },
             next_charge: at(1), order: ["smartevse_1", "smartevse_2"],
             chargers: {
-              smartevse_1: charger({ vehicle: "vehicle_1", vehicle_name: "Volvo XC40", soc: 53, car_limit: 100, projected_soc: 80, need_kwh: 21.5, status: "planned",
-                top_up: true, top_up_cost: 0.86, extra_soc: 92,
+              smartevse_1: charger({ vehicle: "vehicle_1", vehicle_name: "Volvo XC40", soc: 53, car_limit: 90, projected_soc: 80, need_kwh: 21.5, status: "planned",
+                top_up: true, top_up_cost: 0.86, extra_soc: 90, planned_kwh: 27.9, planned_cost: 4.91,
                 blocks: [{ start: at(1), end: at(2), top_up: false }, { start: at(3), end: at(4), top_up: false }, { start: at(4), end: at(5), top_up: true }],
                 next_start: at(1), session_cost: 4.91, saving: 1.29 }),
               smartevse_2: charger({ vehicle: "vehicle_2", vehicle_name: "Volvo EX30", soc: 30, car_limit: 100, projected_soc: 80, need_kwh: 25,
-                status: "planned", queue_after: "smartevse_1",
+                status: "planned", queue_after: "smartevse_1", extra_waits_until: at(2), planned_kwh: 28.4, planned_cost: 1.19,
                 blocks: [{ start: at(6), end: at(9), top_up: false }],
                 next_start: at(6), session_cost: 1.19, saving: 0.05 }),
             },
@@ -835,7 +837,7 @@
             slots,
             sessions: [{ ledger_id: "demo-session", outlet: "smartevse_1", vehicle_name: "Volvo XC40", closed: true, energy_kwh: 19.3,
               cost: 4.28, baseline_cost: 5.53, saving: 1.25, mixed: false, partial: false }],
-            top_up: { enabled: true, price: 0.26, source: "learned" },
+            top_up: { enabled: true, price: null, source: "car_limit", waits_until: at(2) },
             entities: deepClone(intelligentEntities),
           },
         });

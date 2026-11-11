@@ -2297,6 +2297,8 @@ const lanes3 = () => all3('.family-chart-lane').map((lane) => ({
   id: lane.getAttribute('data-lane'), label: lane.querySelector('.family-chart-lane-label')?.textContent,
   tones: [...lane.querySelectorAll('.family-chart-period')].map((period) => period.getAttribute('data-tone')),
   marker: !!lane.querySelector('.family-chart-lane-marker'), muted: lane.hasAttribute('data-muted') }));
+// Both chargers of this fixture carry the same metered session: what the charge has cost so far.
+const CH3 = ['Charged', '14.2 kWh · ≈ €2.40'];
 const rows3 = (key) => all3(`.ev-pod.${key} .plan-row`).map((row) => [row.querySelector('dt').textContent, norm(row.querySelector('dd').textContent)]);
 const note3 = (key) => norm(root3.querySelector(`.ev-pod.${key} .charger-plan-line`)?.textContent);
 const title3 = () => norm(root3.querySelector('.status-title')?.textContent);
@@ -2316,19 +2318,22 @@ check('each connected car is a lane with its planned and extra periods and a rea
     { id: 'smartevse_1', label: 'XC40', tones: ['planned', 'planned'], marker: true, muted: false },
     { id: 'smartevse_2', label: 'EX30', tones: ['planned', 'extra'], marker: true, muted: false }]) &&
   all3('.family-chart-period-hatch[data-pattern="hatch"]').length === 1 && !root3.querySelector('.family-chart-period-hatch[data-pattern="bars"]'));
-// The price is a stepped line (0.5.1): one colour per priced interval, read from the line's
-// gradient (two stops per interval). Bars were narrow and centred, so they did not line up
-// with the periods underneath.
-const barFills = () => all3('stop').filter((stop) => /stroke/.test(stop.parentNode?.getAttribute?.('id') || ''))
-  .map((stop) => stop.getAttribute('stop-color') || '').filter((_, index) => index % 2 === 0);
-const priceLines = () => all3('.family-chart-line[data-series="price"]');
-check('the price is a stepped line over each whole interval, never centred bars',
-  priceLines().length >= 1 && !root3.querySelector('.family-chart-bar') &&
-  priceLines().every((line) => /^M [\d.-]+ [\d.-]+ L /.test(line.getAttribute('d') || '') && !/NaN/.test(line.getAttribute('d') || '')) &&
-  !!root3.querySelector('.family-chart-area[data-series="price"]'));
-check('known prices are drawn per hour, cheap hours take the success colour, hours without a price are one hatched band',
-  barFills().length === 7 && barFills().filter((fill) => fill.includes('--family-success')).length === 4 &&
-  barFills().filter((fill) => fill.includes('--sdc-chart-price')).length === 3 &&
+// The price is drawn like the Real Electricity Price card (0.6.0): one bar per priced interval
+// in the shared price colours. Each bar fills its interval (ha-card-ui 1.9.0 `barFit`), so its
+// edges line up with the periods underneath; 0.5.0 had narrow centred bars, 0.5.1 a grey line.
+const priceBars = () => all3('.family-chart-bar[data-series="price"]');
+const barFills = () => priceBars().map((bar) => (bar.getAttribute('style') || '').replace(/^fill:\s*/, '').replace(/;$/, ''));
+const PRICE_GREENS = ['#86efac', '#22c55e', '#bbf7d0'];
+const PRICE_BLUES = ['#93c5fd', '#3b82f6', '#bfdbfe'];
+const greenBars = () => barFills().filter((fill) => PRICE_GREENS.includes(fill));
+const barBox = (bar) => ({ x: Number(bar.getAttribute('x')), width: Number(bar.getAttribute('width')) });
+check('the price is one bar per hour that fills its hour, never a line or narrow centred bars',
+  priceBars().length === 7 && !root3.querySelector('.family-chart-line[data-series="price"]') &&
+  priceBars().every((bar) => barBox(bar).width > 14 && Number.isFinite(barBox(bar).x)) &&
+  priceBars().slice(1).every((bar, index) => Math.abs(barBox(bar).x - (barBox(priceBars()[index]).x + barBox(priceBars()[index]).width) - 2) < 0.01));
+check('prices take the shared electricity price colours, green at or below the cheap limit; hours without a price are one hatched band',
+  barFills().length === 7 && greenBars().length === 4 && barFills().filter((fill) => PRICE_BLUES.includes(fill)).length === 3 &&
+  all3('.family-chart-extreme').length >= 0 &&
   all3('.family-chart-band').length === 1 && root3.querySelector('.family-chart-band')?.getAttribute('data-pattern') === 'hatched' &&
   root3.querySelector('.family-chart-band-label')?.textContent === 'No price yet' && !!root3.querySelector('.family-chart-now'));
 check('the chart is a named slider with the plan described in words',
@@ -2342,29 +2347,32 @@ check('under the chart one line says what each car does at the selected time; th
   norm(chart3().querySelector('.family-chart-readout')?.textContent).endsWith('€0.31/kWh') &&
   [...chart3().children].map((node) => node.className.split(' ')[0]).join(',') === 'family-chart-head,family-chart-legend,family-chart-body,family-chart-periods');
 check('the chart is 120 px plus one row per car and the card size follows it',
-  svg3()?.getAttribute('viewBox') === '0 0 360 170' && el3.getCardSize() === 15);
+  svg3()?.getAttribute('viewBox') === '0 0 360 170' && el3.getCardSize() === 17);
 const selectionGroups = [el3._chartGroup, document.createElement(tag)._chartGroup];
 check('each card instance has its own chart selection group', selectionGroups[0] !== selectionGroups[1] && /^smartevse-plan-\d+$/.test(selectionGroups[0]));
-// Car tiles: gauge, then short labelled rows.
-const gauges = [...root3.querySelectorAll('.ev-pod .pod-gauge')];
-check('each connected car is a gauge with its level, minimum tick and projected arc',
-  gauges.length === 2 && gauges[0].getAttribute('aria-label') === 'Volvo XC40 battery 53%, minimum 80%' &&
-  gauges[0].querySelector('.pod-value')?.textContent === '53' && !!gauges[0].querySelector('.pod-min') &&
-  !!gauges[0].querySelector('.pod-projected') && !root3.querySelector('.battery-meter'));
-check('the level reached with extra charging is drawn and spoken on the gauge',
-  gauges[1].getAttribute('aria-label') === 'Volvo EX30 battery 30%, minimum 80%, up to 96% while cheap' &&
-  !!gauges[1].querySelector('.pod-extra') && !gauges[0].querySelector('.pod-extra'));
-check('the LED ring follows the WLED state of its charger',
-  gauges.every((gauge) => /\b(breathe|chase|static)\b/.test(gauge.querySelector('.pod-ring')?.getAttribute('class') || '')));
+// Car tiles (0.6.0): a compact tile with the shared horizontal battery meter, then short labelled
+// facts. The round gauges of 0.4.0-0.5.1 took most of a phone screen.
+const meters3 = () => all3('.ev-pod .battery-meter');
+const gauges = meters3();
+check('each connected car is a compact tile with its level and the shared battery meter marking the minimum',
+  gauges.length === 2 && gauges[0].classList.contains('family-level-meter') && gauges[0].getAttribute('aria-label') === 'Volvo XC40 battery' &&
+  gauges[0].getAttribute('aria-valuetext') === '53%, minimum 80%' && !!gauges[0].querySelector('.family-level-target') &&
+  norm(root3.querySelector('.ev-pod.smartevse_1 .battery-value')?.textContent) === '53%' &&
+  norm(root3.querySelector('.ev-pod.smartevse_1 .charger-status')?.textContent) === 'SmartEVSE 1 · Connected · waiting' &&
+  !root3.querySelector('.pod-gauge, .pod-ring, .pod-unit, .session-cost, .plan-totals'));
+check('the LED state of each charger shows as the glow under its tile',
+  all3('.ev-node-wrap').every((wrap) => /\bvisual-(idle|charging|error|off)\b/.test(wrap.getAttribute('class') || '') && !!wrap.querySelector(':scope > .glow-under.ev-glow')));
 check('a planned car reads Guaranteed, Extra, Next and Cost as labelled rows',
-  same(rows3('smartevse_1'), [['Guaranteed', `80% by ${t7}`], ['Extra', 'none tonight'], ['Next', 'Starts 21:00'], ['Cost', '≈ €4.91 · saves ≈ €1.29']]) &&
-  same(rows3('smartevse_2'), [['Guaranteed', `80% by ${t7}`], ['Extra', 'to ≈ 96% while cheap'], ['Next', `Starts ${planTime('2026-11-10T02:00:00+00:00')}`], ['Cost', '≈ €1.19']]) &&
+  same(rows3('smartevse_1'), [['Guaranteed', `80% by ${t7}`], ['Extra', 'none tonight'], ['Next', 'Starts 21:00'], CH3, ['Cost', '≈ €4.91']]) &&
+  same(rows3('smartevse_2'), [['Guaranteed', `80% by ${t7}`], ['Extra', 'to ≈ 96% while cheap'], ['Next', `Starts ${planTime('2026-11-10T02:00:00+00:00')}`], CH3, ['Cost', '≈ €1.19']]) &&
   !root3.querySelector('.ev-pod .charger-plan-line') && all3('.ev-pod dl.plan-rows').length === 2);
-check('car tiles keep the cost button and charger details under the rows',
-  !!root3.querySelector('.ev-pod .session-cost') && all3('.ev-pod [data-action="open-charger-details"]').length === 2);
-const totalsText = norm(root3.querySelector('.plan-totals')?.textContent);
-check('the totals row shows planned cost, saving and next start',
-  totalsText.includes('Planned cost') && totalsText.includes('6.10') && totalsText.includes('Saving') && totalsText.includes('Next start') && !/Saves/.test(totalsText));
+check('car tiles open the charger details from an icon button in their heading',
+  all3('.ev-pod .pod-head [data-action="open-charger-details"]').length === 2 &&
+  all3('.ev-pod .pod-details').every((button) => /charger details$/.test(button.getAttribute('aria-label') || '') && button.getAttribute('aria-haspopup') === 'dialog'));
+const saving3 = () => norm(root3.querySelector('.plan-saving')?.textContent);
+check('one line under the tiles says what the plan saves and compared with what; there is no totals row',
+  saving3() === 'Saves ≈ €1.34 compared with charging at plug\u2011in' && root3.querySelector('.plan-saving')?.classList.contains('family-surface') &&
+  !root3.querySelector('.plan-totals'));
 check('the hero is one plain sentence with the ready-by time and the extra charging under it',
   title3() === 'Next charge at 21:00' && support3() === `Ready by ${t7} · then extra while cheap` &&
   !root3.querySelector('[data-plan-group="intelligent"] .status-pill') &&
@@ -2376,9 +2384,9 @@ svg3().dispatchEvent(new win.MouseEvent('click', { bubbles: true, composed: true
 iAttrs.smartevse_1_battery = '54';
 await push3();
 check('a state change replaces the tiles but keeps the chart and the stage in place',
-  root3.querySelector('.flow-stage') === stage3 && svg3() === chartNode && gauges[0] !== root3.querySelector('.ev-pod .pod-gauge') &&
-  root3.querySelector('.ev-pod .pod-value')?.textContent === '54' && !el3._flow.current &&
-  same([...stage3.children].map((node) => node.className.split(' ')[0]), ['house-node', 'family-chart-frame', 'ev-row', 'plan-totals', 'advanced-settings']));
+  root3.querySelector('.flow-stage') === stage3 && svg3() === chartNode && gauges[0] !== root3.querySelector('.ev-pod .battery-meter') &&
+  norm(root3.querySelector('.ev-pod .battery-value')?.textContent) === '54%' && !el3._flow.current &&
+  same([...stage3.children].map((node) => node.className.split(' ')[0]), ['house-node', 'family-chart-frame', 'ev-row', 'plan-saving', 'advanced-settings']));
 iAttrs.smartevse_1_battery = '53';
 // Different ready-by times are named per car; a deadline outside the window has no marker.
 iAttrs.intelligent.chargers.smartevse_2.deadline = '2026-11-10T05:00:00+00:00';
@@ -2397,16 +2405,16 @@ iAttrs.intelligent.status = 'charging';
 iAttrs.intelligent.chargers.smartevse_1.status = 'charging';
 iAttrs.charge_reason = 'intelligent_charging';
 await at3('2026-11-09T21:30:00Z');
-check('a charging car reads "Charging" on its lane, in the legend, the period line, its row, the hero and the totals',
+check('a charging car reads "Charging" on its lane, in the legend, the period line, its row and the hero',
   same(lanes3()[0].tones, ['active', 'planned']) && same(legend3(), ['Price', 'Planned', 'Charging', 'Extra', 'No price yet']) &&
   periodLine3().includes('XC40 Charging') &&
   same(rows3('smartevse_1')[2], ['Next', 'Charging until 22:00']) && title3() === 'Charging Volvo XC40' &&
-  /Next start\s*Now/.test(norm(root3.querySelector('.plan-totals')?.textContent)));
+  saving3().startsWith('Saves ≈ '));
 iAttrs.smartevse_1_state = 'Connected';
 await push3();
 check('a planned block that runs before the charger reports Charging is not shown as charging',
   same(lanes3()[0].tones, ['planned', 'planned']) && same(rows3('smartevse_1')[2], ['Next', 'Starting now']) && title3() === 'Starting to charge Volvo XC40' &&
-  /Next start\s*Now/.test(norm(root3.querySelector('.plan-totals')?.textContent)));
+  saving3().startsWith('Saves ≈ '));
 iAttrs.charge_reason = 'intelligent_waiting_for_planned_slot';
 // Minimum reached: the guarantee is met; extra charging may still follow.
 const reached10 = () => {
@@ -2418,9 +2426,9 @@ const reached10 = () => {
 reached10();
 await at3('2026-11-09T18:00:00Z');
 check('a car at its minimum reads "Reached" with its level, and "Done" when nothing more is planned',
-  same(rows3('smartevse_1'), [['Guaranteed', 'Reached · 82%'], ['Extra', 'none tonight'], ['Next', 'Done'], ['Cost', '≈ €4.91 · saved ≈ €1.29']]));
+  same(rows3('smartevse_1'), [['Guaranteed', 'Reached · 82%'], ['Extra', 'none tonight'], ['Next', 'Done'], CH3, ['Cost', '≈ €4.91']]));
 check('a car at its minimum with extra charging planned names the extra level and its start',
-  same(rows3('smartevse_2'), [['Guaranteed', 'Reached · 81%'], ['Extra', 'to ≈ 96% while cheap'], ['Next', `Starts ${planTime('2026-11-10T04:00:00+00:00')}`], ['Cost', '≈ €1.19']]) &&
+  same(rows3('smartevse_2'), [['Guaranteed', 'Reached · 81%'], ['Extra', 'to ≈ 96% while cheap'], ['Next', `Starts ${planTime('2026-11-10T04:00:00+00:00')}`], CH3, ['Cost', '≈ €1.19']]) &&
   same(lanes3().map((lane) => lane.tones), [[], ['extra']]) && same(legend3(), ['Price', 'Extra', 'No price yet']) &&
   title3() === `Next charge ${el3._formatDateTime('2026-11-10T04:00:00+00:00')}` && support3() === 'Minimum reached · extra while cheap');
 iAttrs.intelligent.chargers.smartevse_2.blocks = [];
@@ -2446,7 +2454,7 @@ const riskLine = root3.querySelector('.ev-pod.smartevse_2 .charger-plan-line');
 check('a car that cannot reach its minimum has one warning line and no "Guaranteed" row',
   note3('smartevse_2') === `Not enough time · ≈ 74% by ${t7}` && riskLine?.getAttribute('data-tone') === 'warning' &&
   riskLine.querySelector('.plan-tone-icon')?.getAttribute('icon') === 'mdi:alert-outline' && riskLine.querySelectorAll('.sep').length === 1 &&
-  same(rows3('smartevse_2'), [['Next', `Starts ${planTime('2026-11-10T02:00:00+00:00')}`], ['Cost', '≈ €1.19']]) &&
+  same(rows3('smartevse_2'), [['Next', `Starts ${planTime('2026-11-10T02:00:00+00:00')}`], CH3, ['Cost', '≈ €1.19']]) &&
   same(lanes3()[1].tones, ['warning']) && same(legend3(), ['Price', 'Planned', 'Not enough time', 'No price yet']) &&
   all3('.family-chart-period-hatch[data-pattern="bars"]').length === 1 &&
   support3() === `Volvo XC40 by ${t7}` && all3('[data-plan-group="intelligent"] .status-pill').length === 1);
@@ -2466,9 +2474,9 @@ for (const [name, mutate, text, warning] of tileNotes) {
   await push3();
   const line = root3.querySelector('.ev-pod.smartevse_2 .charger-plan-line');
   if (note3('smartevse_2') !== text || (line?.getAttribute('data-tone') === 'warning') !== warning || !!line?.querySelector('.plan-tone-icon') !== warning ||
-    rows3('smartevse_2').length !== 0) wrongNotes.push(`${name}: ${note3('smartevse_2')} / ${rows3('smartevse_2').length} rows`);
+    rows3('smartevse_2').some((row) => row[0] !== 'Charged')) wrongNotes.push(`${name}: ${note3('smartevse_2')} / ${rows3('smartevse_2').length} rows`);
 }
-check('identifying, policy, car-timer and refusing cars read as one line without rows', wrongNotes.length === 0);
+check('identifying, policy, car-timer and refusing cars read as one line, with no plan rows (only what was charged so far)', wrongNotes.length === 0);
 if (wrongNotes.length) console.log(wrongNotes);
 // Unknown battery level (unidentified car): an energy budget, no Extra or Cost row.
 iAttrs.intelligent = payload10();
@@ -2478,14 +2486,81 @@ const ev2Before = [iAttrs.smartevse_2_connected_ev, iAttrs.smartevse_2_battery];
 iAttrs.smartevse_2_connected_ev = 'unknown'; iAttrs.smartevse_2_battery = '';
 await push3();
 check('an unidentified car is guaranteed an energy budget and its lane is "Other"',
-  same(rows3('smartevse_2'), [['Guaranteed', `≈ 25 kWh by ${t7}`.replace(/\s+/g, ' ')], ['Next', `Starts ${planTime('2026-11-10T02:00:00+00:00')}`]]) &&
+  same(rows3('smartevse_2'), [['Guaranteed', `≈ 25 kWh by ${t7}`.replace(/\s+/g, ' ')], ['Next', `Starts ${planTime('2026-11-10T02:00:00+00:00')}`], CH3]) &&
   lanes3()[1].label === 'Other' && norm(root3.querySelector('.ev-pod.smartevse_2 .vehicle-name')?.textContent) === 'Vehicle connected');
 [iAttrs.smartevse_2_connected_ev, iAttrs.smartevse_2_battery] = ev2Before;
+// Integration 0.0.11.0: the minimum is a floor and every car goes on to its own charge limit in
+// the cheapest hours left before its ready-by. No price limit: top_up = { source: 'car_limit' }.
+const payload11 = () => {
+  const payload = payload10();
+  payload.top_up = { enabled: true, price: null, source: 'car_limit', waits_until: null };
+  for (const charger of Object.values(payload.chargers)) Object.assign(charger, { extra_waits_until: null, extra_done: false });
+  // What the plan still charges, and its cost; what was charged so far is the charger's session.
+  Object.assign(payload.chargers.smartevse_1, { planned_kwh: 27.9, planned_cost: 4.91 });
+  Object.assign(payload.chargers.smartevse_2, { planned_kwh: 28.44, planned_cost: 1.19 });
+  return payload;
+};
+iAttrs.intelligent = payload11();
+await at3('2026-11-09T18:00:00Z');
+check('0.0.11.0: the Extra row names the level the plan reaches above the minimum and by when',
+  same(rows3('smartevse_2'), [['Guaranteed', `80% by ${t7}`], ['Extra', `to ≈ 96% by ${t7}`], ['Next', `Starts ${planTime('2026-11-10T02:00:00+00:00')}`], CH3,
+    ['Planned', '≈ 28.4 kWh · ≈ €1.19']]) &&
+  same(rows3('smartevse_1')[1], ['Extra', `none before ${t7}`]) && !/while cheap/.test(norm(root3.querySelector('ha-card')?.textContent)));
+check('0.0.11.0: the cost of a charge is two plain rows: what was charged so far and what is still planned',
+  same(rows3('smartevse_1').slice(3), [CH3, ['Planned', '≈ 27.9 kWh · ≈ €4.91']]) &&
+  !all3('.plan-row').some((row) => /saves|saved|Session estimate/i.test(row.textContent)) && !root3.querySelector('.ev-pod .session-cost') &&
+  saving3() === 'Saves ≈ €1.34 compared with charging at plug\u2011in');
+check('0.0.11.0: the hero says the cars go on to the car limit, and the gauge speaks the level',
+  title3() === 'Next charge at 21:00' && support3() === `Ready by ${t7} · then extra up to the car limit` &&
+  root3.querySelector('.ev-pod.smartevse_2 .battery-meter')?.getAttribute('aria-valuetext') === '30%, minimum 80%' &&
+  same(legend3(), ['Price', 'Planned', 'Extra', 'No price yet']) &&
+  // No learned price any more, and this fixture has no price-card limit: no bar is green.
+  greenBars().length === 0 && barFills().every((fill) => PRICE_BLUES.includes(fill)));
+iAttrs.intelligent.chargers.smartevse_2.extra_soc = 100;
+iAttrs.intelligent.chargers.smartevse_1.extra_waits_until = '2026-11-09T19:00:00+00:00';
+iAttrs.intelligent.top_up.waits_until = '2026-11-09T19:00:00+00:00';
+await push3();
+check('0.0.11.0: a plan that fills the car says so, and a car waiting for tomorrow\'s prices says when they are due',
+  same(rows3('smartevse_2')[1], ['Extra', 'to 100% · car limit']) &&
+  same(rows3('smartevse_1')[1], ['Extra', `when prices arrive · ≈ ${planTime('2026-11-09T19:00:00+00:00')}`]));
+// The owner's morning (2026-11-11): the XC40 is at its car limit, the EX30 reached its 70 %
+// minimum and goes on charging until its ready-by.
+iAttrs.intelligent = payload11();
+Object.assign(iAttrs.intelligent.chargers.smartevse_1, { status: 'reached', soc: 90, minimum: 90, target: 90, car_limit: 90, blocks: [], need_kwh: 0,
+  projected_soc: 90, next_start: null, planned_kwh: 0, planned_cost: 0 });
+Object.assign(iAttrs.intelligent.chargers.smartevse_2, { status: 'reached', soc: 70, minimum: 70, target: 70, car_limit: 100, need_kwh: 0, projected_soc: 70,
+  top_up: true, extra_soc: 77, planned_kwh: 4.6, planned_cost: 1.11, blocks: [{ start: '2026-11-10T06:15:00+00:00', end: '2026-11-10T07:00:00+00:00', top_up: true }] });
+Object.assign(iAttrs, { smartevse_2_state: 'Charging', active_smartevse_raw: 'smartevse_2', charge_allowed: true, charge_reason: 'intelligent_top_up' });
+const morningBefore = [iAttrs.smartevse_1_battery, iAttrs.smartevse_2_battery];
+iAttrs.smartevse_1_battery = '90%'; iAttrs.smartevse_2_battery = '70%';
+await at3('2026-11-10T06:20:00Z');
+check('0.0.11.0: a car at its minimum goes on charging; a car at its own limit says so',
+  same(rows3('smartevse_1'), [['Guaranteed', 'Reached · 90%'], ['Extra', 'At the car’s limit'], ['Next', 'Done'], CH3]) &&
+  same(rows3('smartevse_2'), [['Guaranteed', 'Reached · 70%'], ['Extra', `to ≈ 77% by ${t7}`], ['Next', `Charging until ${planTime('2026-11-10T07:00:00+00:00')}`], CH3,
+    ['Planned', '≈ 4.6 kWh · ≈ €1.11']]) &&
+  title3() === 'Charging Volvo EX30' && support3() === 'Minimum reached · extra up to the car limit');
+check('the saving line is a shared foreground surface, so the glows of the car tiles stay beneath it',
+  all3('.plan-saving').length === 1 && all3('.plan-saving').every((cell) => cell.classList.contains('family-surface')) && !root3.querySelector('.plan-totals'));
+// The minimum equal to the car's limit leaves nothing above it: no Extra row while it charges.
+Object.assign(iAttrs.intelligent.chargers.smartevse_1, { status: 'planned', soc: 60, need_kwh: 22, blocks: [{ start: '2026-11-10T06:30:00+00:00', end: '2026-11-10T07:00:00+00:00', top_up: false }] });
+iAttrs.smartevse_1_battery = '60%';
+await push3();
+check('0.0.11.0: a minimum equal to the car limit has no Extra row',
+  same(rows3('smartevse_1').map((row) => row[0]), ['Guaranteed', 'Next', 'Charged']));
+// The car stopped by itself below the limit the integration reads from it: nothing more is planned.
+Object.assign(iAttrs.intelligent.chargers.smartevse_2, { top_up: false, extra_soc: null, blocks: [], planned_kwh: 0, planned_cost: 0, extra_done: true });
+Object.assign(iAttrs, { smartevse_2_state: 'Connected', active_smartevse_raw: '', charge_allowed: false });
+await push3();
+check('0.0.11.0: a car that stopped below its limit says so instead of promising more',
+  same(rows3('smartevse_2'), [['Guaranteed', 'Reached · 70%'], ['Extra', 'Car stopped charging'], ['Next', 'Done'], CH3]));
+[iAttrs.smartevse_1_battery, iAttrs.smartevse_2_battery] = morningBefore;
+Object.assign(iAttrs, { smartevse_2_state: 'Connected', active_smartevse_raw: '', charge_allowed: false, charge_reason: 'intelligent_waiting_for_planned_slot' });
+await at3('2026-11-09T18:00:00Z');
 // Integration 0.0.9.x: no extra_soc, no learned limit, a top-up switch. The rows still work.
 iAttrs.intelligent = basePayload();
 await push3();
 check('a 0.0.9.x payload keeps working: Extra comes from the car limit and only where top-up is planned',
-  same(rows3('smartevse_1'), [['Guaranteed', `80% by ${t7}`], ['Next', 'Starts 21:00'], ['Cost', '≈ €4.91 · saves ≈ €1.29']]) &&
+  same(rows3('smartevse_1'), [['Guaranteed', `80% by ${t7}`], ['Next', 'Starts 21:00'], CH3, ['Cost', '≈ €4.91']]) &&
   same(rows3('smartevse_2')[1], ['Extra', 'up to 100% while cheap']) &&
   gauges.length === 2 && !root3.querySelector('.pod-extra') && !/while cheap/.test(root3.querySelector('.ev-pod.smartevse_2 .pod-gauge')?.getAttribute('aria-label') || '') &&
   barFills().length === 7 && !barFills().some((fill) => fill.includes('--family-success')) && same(legend3(), ['Price', 'Planned', 'Extra', 'No price yet']));
@@ -2534,6 +2609,19 @@ check('the Intelligent page says "At least" and "extra while cheap", never "top-
   norm(root3.querySelector('dialog .intelligent-minimum-help')?.textContent) === 'Charges to at least this level by the ready-by time.' &&
   all3('dialog .intelligent-block').some((node) => /· extra while cheap$/.test(norm(node.textContent))) &&
   !/top.?up|topping/i.test(root3.querySelector('dialog')?.textContent || ''));
+iAttrs.intelligent = payload11();
+iAttrs.intelligent.top_up.waits_until = '2026-11-09T19:00:00+00:00';
+await push3();
+check('0.0.11.0: "Above the minimum" says the cars go on to their own limit, and when the prices are due',
+  extraBlock()?.getAttribute('data-state') === 'car-limit' &&
+  norm(extraBlock().querySelector('.intelligent-fact')?.textContent) ===
+    'The minimum is what the plan guarantees by the ready-by time. After it each car goes on charging to its own charge limit in the cheapest hours that are left.'
+    + ` Tomorrow’s prices are due about ${planTime('2026-11-09T19:00:00+00:00')}; the charging above the minimum is planned when they arrive.` &&
+  !extraBlock().querySelector('input, button, select') &&
+  all3('dialog .intelligent-block').some((node) => /· above the minimum$/.test(norm(node.textContent))) &&
+  !/while cheap|top.?up|five days/i.test(root3.querySelector('dialog')?.textContent || ''));
+iAttrs.intelligent = payload10();
+await push3();
 const minimumSelector = 'dialog .force-input[data-entity="number.v1_minimum"]';
 const minimumInput3 = typeInto(minimumSelector, '91');
 await rerender(); await rerender();
@@ -2569,12 +2657,12 @@ check('before the cheap price is learned, "Above the minimum" says when extra ch
   !extraBlock().querySelector('input, button, select'));
 el3._closeActiveDialog(); await el3.updateComplete; await wait();
 check('while the cheap price is still being learned the tiles have no Extra row and no bar is marked cheap',
-  same(rows3('smartevse_1').map((row) => row[0]), ['Guaranteed', 'Next', 'Cost']) && same(rows3('smartevse_2').map((row) => row[0]), ['Guaranteed', 'Next', 'Cost']) &&
+  same(rows3('smartevse_1').map((row) => row[0]), ['Guaranteed', 'Next', 'Charged', 'Cost']) && same(rows3('smartevse_2').map((row) => row[0]), ['Guaranteed', 'Next', 'Charged', 'Cost']) &&
   !barFills().some((fill) => fill.includes('--family-success')) && support3() === `Ready by ${t7}` && same(legend3(), ['Price', 'Planned', 'No price yet']));
 iAttrs.intelligent = payload10();
 Object.assign(iAttrs.intelligent.chargers.smartevse_1, { car_limit: 80 });
 await push3();
-check('a car whose own limit equals the minimum has no Extra row', same(rows3('smartevse_1').map((row) => row[0]), ['Guaranteed', 'Next', 'Cost']));
+check('a car whose own limit equals the minimum has no Extra row', same(rows3('smartevse_1').map((row) => row[0]), ['Guaranteed', 'Next', 'Charged', 'Cost']));
 iAttrs.intelligent = payload10();
 await push3();
 
@@ -2692,30 +2780,33 @@ check('under Force charge the chart keeps the prices, mutes the lanes and says t
   barFills().length === 4 && same(legend3(), ['Price', 'Paused by Force charge', 'No price yet']) && desc3().includes('Paused by Force charge') &&
   periodLine3().includes('XC40 paused') && !periodLine3().some((text) => /Charging|Planned/.test(text)) &&
   same(all3('.family-chart-legend [data-period]').map((node) => node.getAttribute('data-period')), ['muted']));
-check('under Force charge the tiles show no plan rows and the totals row is hidden',
-  !root3.querySelector('.plan-rows') && !root3.querySelector('.plan-totals') && !root3.querySelector('.status-support') &&
+check('under Force charge the tiles show no plan rows (only what was charged) and no saving line',
+  all3('.plan-row').every((row) => row.getAttribute('data-row') === 'charged') && !root3.querySelector('.plan-saving') && !root3.querySelector('.status-support') &&
   /Resumes after force charge/.test(root3.querySelector('[data-plan-group="intelligent"]')?.textContent || ''));
 iAttrs.intelligent.overridden_by = null;
 iStates['switch.force'].state = 'on';
 await push3();
 check('the Force charge switch pauses the chart even before the payload reports it',
-  lanes3().every((lane) => lane.muted) && same(legend3(), ['Price', 'Paused by Force charge', 'No price yet']) && !root3.querySelector('.plan-totals'));
+  lanes3().every((lane) => lane.muted) && same(legend3(), ['Price', 'Paused by Force charge', 'No price yet']) && !root3.querySelector('.plan-saving'));
 iStates['switch.force'].state = 'off';
 iAttrs.smartevse_1_state = 'Connected';
 iAttrs.intelligent = payload10();
 await at3('2026-11-09T18:00:00Z');
-check('without Force charge nothing is muted', lanes3().every((lane) => !lane.muted) && !desc3().includes('Paused') && !!root3.querySelector('.plan-totals'));
-// "Next start" never shows a past time while a block runs, whatever the overall status is.
+check('without Force charge nothing is muted', lanes3().every((lane) => !lane.muted) && !desc3().includes('Paused') && !!root3.querySelector('.plan-saving'));
+// The next start is in the hero and the Next rows (the totals row with "Next start" is gone). It
+// never shows a past time while a block runs, whatever the overall status is.
 iAttrs.intelligent.status = 'at_risk';
 await at3('2026-11-09T21:30:00Z');
-const totals3 = () => norm(root3.querySelector('.plan-totals')?.textContent);
-check('a running block reads "Next start: Now" when the overall status is not "charging"', /Next start\s*Now/.test(totals3()) && !totals3().includes('21:00'));
+check('a block that runs before the charger reports Charging reads "Starting", never its past start time',
+  title3() === 'Starting to charge Volvo XC40' && same(rows3('smartevse_1')[2], ['Next', 'Starting now']) && !/21:00/.test(title3()));
 await at3('2026-11-09T22:30:00Z');
-check('a start time that has passed reads Now, never the past time', /Next start\s*Now/.test(totals3()) && !totals3().includes('21:00'));
+check('after a block has ended the hero names the next one, never a past time',
+  title3() === 'Next charge at 23:00' && same(rows3('smartevse_1')[2], ['Next', 'Starts 23:00']));
 iAttrs.smartevse_1_plug_state = 'Disconnected';
 iAttrs.intelligent.next_charge = '2026-11-10T02:00:00+00:00';
 await at3('2026-11-09T21:30:00Z');
-check('a running block of a charger without a car does not read Now', /Next start/.test(totals3()) && !/Next start\s*Now/.test(totals3()));
+check('a running block of a charger without a car is not announced',
+  title3() === `Next charge ${el3._formatDateTime('2026-11-10T02:00:00+00:00')}` && rows3('smartevse_1').length === 0);
 iAttrs.smartevse_1_plug_state = 'Connected';
 iAttrs.intelligent = payload10();
 await at3('2026-11-09T18:00:00Z');
@@ -2726,9 +2817,9 @@ iAttrs.intelligent.slots = withPrices([0.2, -0.05, 0, 0.1, -0.1, 0.05, 0.15]);
 await push3();
 const axisLabels = () => all3('.family-chart-axis').map((node) => node.textContent);
 check('negative and zero prices are drawn and mentioned in the description',
-  barFills().length === 7 && priceLines().length >= 1 && priceLines().every((line) => !/NaN|Infinity/.test(line.getAttribute('d') || '')) &&
+  barFills().length === 7 && priceBars().every((bar) => !/NaN|Infinity/.test(`${bar.getAttribute('y')} ${bar.getAttribute('height')}`)) &&
   desc3().includes('Some prices are below zero') && axisLabels().some((label) => /[-−]/.test(label)) &&
-  barFills().filter((fill) => fill.includes('--family-success')).length === 7);
+  greenBars().length === 7);
 iAttrs.intelligent.slots = withPrices(cheapPrices, (index) => (index === 2 || index > 6 ? 'forecast' : 'known'));
 await push3();
 check('each run of hours without a published price is its own hatched band',
@@ -2737,7 +2828,7 @@ iAttrs.intelligent.slots = withPrices(cheapPrices, () => 'forecast');
 await push3();
 check('with no published price at all the frame stays and says so',
   !!chart3() && !svg3() && !!chart3().querySelector('.family-chart-empty') && /No published prices yet/.test(chart3().textContent) &&
-  norm(chart3().querySelector('.family-chart-title')?.textContent) === 'Charging plan' && rows3('smartevse_1').length === 4);
+  norm(chart3().querySelector('.family-chart-title')?.textContent) === 'Charging plan' && rows3('smartevse_1').length === 5);
 iAttrs.intelligent.slots = priceSlots10.flatMap((slot) => {
   const middle = new Date(Date.parse(slot.start) + 1800000).toISOString();
   return [{ ...slot, end: middle }, { ...slot, start: middle }];
@@ -2764,7 +2855,7 @@ await push3();
 check('a connected car without a plan entry keeps an empty lane',
   same(lanes3().map((lane) => [lane.label, lane.tones.length, lane.marker]), [['XC40', 2, true], ['EX30', 0, false]]) &&
   desc3().includes('Volvo EX30: no plan yet') && !desc3().includes('No vehicle connected') &&
-  norm(chart3().querySelector('.family-chart-title')?.textContent) === 'Charging plan' && rows3('smartevse_2').length === 0);
+  norm(chart3().querySelector('.family-chart-title')?.textContent) === 'Charging plan' && same(rows3('smartevse_2'), [CH3]));
 iAttrs.intelligent = payload10();
 iAttrs.smartevse_1_available = false; iAttrs.smartevse_2_available = false;
 await push3();
@@ -2776,10 +2867,11 @@ iAttrs.smartevse_2_error = 'RCM tripped';
 await push3();
 check('a connected charger with an error keeps its lane but not its plan',
   same(lanes3().map((lane) => [lane.tones.length, lane.marker]), [[2, true], [0, false]]) &&
-  desc3().includes('Volvo EX30: charger error') && !root3.querySelector('.ev-pod.smartevse_2 .charger-plan'));
+  desc3().includes('Volvo EX30: charger error') && same(rows3('smartevse_2'), [CH3]) &&
+  norm(root3.querySelector('.ev-pod.smartevse_2 .charger-message')?.textContent) === 'RCM tripped');
 iAttrs.smartevse_2_error = 'None';
 await at3('2026-11-10T07:00:00Z');
-check('a payload whose slots are all in the past draws no chart', !chart3() && el3._planChartData(evA, evB) === null && el3.getCardSize() === 9);
+check('a payload whose slots are all in the past draws no chart', !chart3() && el3._planChartData(evA, evB) === null && el3.getCardSize() === 11);
 await at3('2026-11-09T18:00:00Z');
 check('the chart returns for a current payload', !!svg3());
 // Time labels and row times follow the profile's clock.
@@ -2799,23 +2891,26 @@ iAttrs.smartevse_1_state = 'Charging';
 await at3('2026-11-09T21:30:00Z');
 const phase = (node) => node?.getAttribute('style') || '';
 const expected = (node) => `animation-delay: -${Date.now() % Number(node?.getAttribute('data-anim-ms'))}ms;`;
-const ring1 = root3.querySelector('.ev-pod.smartevse_1 .pod-ring');
+// The glow under each car tile is the LED of its charger: its animation starts at the phase of a
+// shared clock, so two cards (and a replaced tile) pulse together.
+const glowOf = (key) => root3.querySelector(`.ev-node-wrap.${key} > .ev-glow`);
+const ring1 = glowOf('smartevse_1');
 const cardStyle = root3.querySelector('ha-card')?.getAttribute('style') || '';
 const firstPhase = phase(ring1);
-check('animated rings start at the phase of a shared clock, using the CSS duration',
-  ring1?.classList.contains('chase') && ring1.getAttribute('data-anim-ms') === '2450' && cardStyle.includes('--sdc-led-charging-glow-duration: 2.45s') &&
+check('the LED glows start at the phase of a shared clock, using the CSS duration',
+  !!ring1?.closest('.visual-charging') && ring1.getAttribute('data-anim-ms') === '2450' && cardStyle.includes('--sdc-led-charging-glow-duration: 2.45s') &&
   firstPhase === expected(ring1) &&
-  root3.querySelector('.ev-pod.smartevse_2 .pod-ring')?.getAttribute('data-anim-ms') === '2780' && cardStyle.includes('--sdc-led-idle-glow-duration: 2.78s') &&
-  phase(root3.querySelector('.ev-pod.smartevse_2 .pod-ring')) === expected(root3.querySelector('.ev-pod.smartevse_2 .pod-ring')));
+  glowOf('smartevse_2')?.getAttribute('data-anim-ms') === '2780' && cardStyle.includes('--sdc-led-idle-glow-duration: 2.78s') &&
+  phase(glowOf('smartevse_2')) === expected(glowOf('smartevse_2')));
 check('plan periods take the charger’s LED colours through the chart’s theme variables',
   cardStyle.includes('--family-chart-period-planned: rgba(23, 67, 101, 0.75);') && cardStyle.includes('--family-chart-period-active: rgb(44, 199, 88);') &&
   cardStyle.includes('--family-chart-period-active-duration: 2.45s;') && same(lanes3()[0].tones, ['active', 'planned']));
 Date.now = () => Date.parse('2026-11-09T21:30:01.234Z');
 await push3();
-const samePhase = root3.querySelector('.ev-pod.smartevse_1 .pod-ring') === ring1 && phase(ring1) === firstPhase;
+const samePhase = glowOf('smartevse_1') === ring1 && phase(ring1) === firstPhase;
 iAttrs.smartevse_1_battery = '54';
 await push3();
-const ring2 = root3.querySelector('.ev-pod.smartevse_1 .pod-ring');
+const ring2 = glowOf('smartevse_1');
 check('an unchanged render keeps the running animation; a replaced element continues at the clock’s phase',
   samePhase && ring2 !== ring1 && phase(ring2) === expected(ring2) && phase(ring2) !== firstPhase);
 iAttrs.smartevse_1_battery = '53';
@@ -2835,12 +2930,13 @@ const evilBefore = { name: iAttrs.smartevse_1_connected_ev, state: iAttrs.smarte
 Object.assign(iAttrs, { smartevse_1_connected_ev: evilName, smartevse_2_state: evil });
 await push3();
 const overview3 = root3.querySelector('.flow-stage');
-const gauge3 = root3.querySelector('.ev-pod.smartevse_1 .pod-gauge');
+const gauge3 = root3.querySelector('.ev-pod.smartevse_1 .battery-meter');
 const names3 = (node) => (node ? node.getAttributeNames().map((name) => name.toLowerCase()).sort().join(',') : '');
 const noMarkup = () => !overview3.querySelector('img') && ![...overview3.querySelectorAll('*')].some((node) => node.hasAttribute('onerror') || node.hasAttribute('src'));
 check('markup in vehicle names and the currency stays text in the tiles, rows, hero and chart',
   noMarkup() && root3.querySelector('.ev-pod.smartevse_1 .vehicle-name')?.textContent === evilName &&
-  gauge3?.getAttribute('aria-label')?.startsWith(`${evilName} battery `) && names3(gauge3) === 'aria-label,class,role,viewbox' &&
+  gauge3?.getAttribute('aria-label') === `${evilName} battery` &&
+  names3(gauge3) === 'aria-label,aria-valuemax,aria-valuemin,aria-valuenow,aria-valuetext,class,role' &&
   root3.querySelector('.family-chart-lane-label')?.textContent === '<img' && desc3().includes(`${evilName}: `) &&
   same(rows3('smartevse_2')[0], ['Next', `After ${evilName}`]) && title3() === 'Next charge at 21:00' && support3() === `${evilName} by ${t7}` &&
   !!svg3() && barFills().length === 7 && same(legend3(), ['Price', 'Planned', 'No price yet']) && periodLine3().every((text) => !/[<>]/.test(text) || text.startsWith('<img')));
@@ -2850,7 +2946,7 @@ iAttrs.intelligent.chargers.smartevse_1.status = evil;
 await push3();
 check('markup in error and status text stays text',
   noMarkup() && root3.querySelector('.ev-pod.smartevse_2 .charger-message')?.textContent === `Fault ${evil}` &&
-  !root3.querySelector('.ev-pod.smartevse_2 .charger-plan') && root3.querySelectorAll('.ev-pod').length === 2 && root3.querySelectorAll('.pod-gauge').length === 2);
+  same(rows3('smartevse_2'), [CH3]) && root3.querySelectorAll('.ev-pod').length === 2 && root3.querySelectorAll('.ev-pod .battery-meter').length === 2);
 Object.assign(iAttrs, { smartevse_1_connected_ev: evilBefore.name, smartevse_2_error: 'None', smartevse_2_state: evilBefore.state,
   charge_reason: 'intelligent_waiting_for_planned_slot', controller_error: null });
 iAttrs.intelligent = payload10();
@@ -2858,49 +2954,51 @@ await push3();
 // CSS: the card's own rules for the plan layout, and the shared chart styles in the element.
 const css3 = (root3.querySelector('style')?.textContent || '').replace(/\/\*[\s\S]*?\*\//g, '');
 const podRules = [...css3.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter((rule) => rule[1].includes('.ev-pod'));
-check('the plan layout keeps two tiles side by side and car tiles never wrap one letter per line',
-  /\.layout-plan \.ev-row\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/.test(css3) &&
+check('the plan layout gives each charger a tile across the card and car tiles never wrap one letter per line',
+  /\.layout-plan \.ev-row\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/.test(css3) &&
+  /@container charging-overview \(min-width: 620px\)\s*\{\s*\.layout-plan \.ev-row\s*\{[^}]*repeat\(2,/.test(css3) &&
   podRules.length > 5 && !podRules.some((rule) => /overflow-wrap:\s*anywhere/.test(rule[2])) &&
   podRules.some((rule) => /\.vehicle-name/.test(rule[1]) && /overflow-wrap:\s*break-word/.test(rule[2])) &&
-  podRules.some((rule) => /max-width:\s*100%/.test(rule[2])));
+  podRules.some((rule) => /min-width:\s*0/.test(rule[2])));
 check('plan rows keep their label on one line and the hand-drawn timeline styles are gone',
   /\.plan-row dt\s*\{[^}]*white-space:\s*nowrap/.test(css3) && /\.plan-row dd\s*\{[^}]*overflow-wrap:\s*break-word/.test(css3) &&
-  !/\.tl-|\.plan-timeline|\.plan-legend/.test(css3) && /\.pod-unit\s*\{[^}]*font-size:\s*11px/.test(css3) &&
-  root3.querySelector('.pod-unit')?.localName === 'span' && root3.querySelector('.pod-unit')?.textContent === '% · min 80');
+  !/\.tl-|\.plan-timeline|\.plan-legend|\.pod-ring|\.pod-gauge|\.plan-totals/.test(css3) &&
+  /\.plan-rows\s*\{[^}]*grid-template-columns:\s*repeat\(2,/.test(css3));
 const elementCss = (customElements.get(tag).elementStyles || []).map((sheet) => sheet.cssText || '').join('\n');
 check('the element carries the shared chart styles', /\.family-chart-frame\s*\{/.test(elementCss) && /\.family-chart-period\[data-tone="extra"\]/.test(elementCss));
 // Without Intelligent charging there is no plan to draw: tiles only (with and without slots).
 iAttrs.intelligent = { ...payload10(), enabled: false };
 iStates['switch.ic'].state = 'off';
 await push3();
-check('with Intelligent off the plan layout shows gauges but no chart, rows or totals, even when slots are still published',
-  iAttrs.intelligent.slots.length === 13 && !chart3() && !root3.querySelector('.plan-totals') && !root3.querySelector('.plan-rows') &&
+check('with Intelligent off the plan layout shows the car tiles but no chart, plan rows or saving line, even when slots are still published',
+  iAttrs.intelligent.slots.length === 13 && !chart3() && !root3.querySelector('.plan-saving') &&
+  all3('.plan-row').every((row) => row.getAttribute('data-row') === 'charged') && all3('.ev-pod .battery-meter').length === 2 &&
   root3.querySelectorAll('.ev-pod').length === 2 && !root3.querySelector('.status-support'));
 iStates['switch.ic'].state = 'on';
-// One car: the empty charger tile keeps its own height beside the car tile.
+// One car: the charger without a car is a short one-line tile under the car tile.
 iAttrs.intelligent = payload10();
 delete iAttrs.intelligent.chargers.smartevse_2;
 const plugBefore = [iAttrs.smartevse_1_plug_state, iAttrs.smartevse_2_plug_state];
 iAttrs.smartevse_2_plug_state = 'Disconnected';
 await push3();
-check('with one car the empty charger tile is not stretched and the chart has one lane',
-  !!root3.querySelector('.ev-node-wrap.smartevse_2.pod-empty') && !root3.querySelector('.ev-node-wrap.smartevse_1.pod-empty') &&
-  /\.ev-node-wrap\.pod-empty\s*\{[^}]*align-self:\s*start/.test(css3) && lanes3().length === 1 && svg3().getAttribute('viewBox') === '0 0 360 148' &&
-  el3.getCardSize() === 14);
-// No car connected: the chart shows prices only; the charger tiles stay centred tiles.
+check('with one car the charger without a car is a short tile and the chart has one lane',
+  !!root3.querySelector('.ev-pod.smartevse_2.empty') && !root3.querySelector('.ev-pod.smartevse_1.empty') &&
+  !root3.querySelector('.ev-pod.smartevse_2 .battery-meter, .ev-pod.smartevse_2 .plan-rows, .ev-pod.smartevse_2 .pod-details') &&
+  lanes3().length === 1 && svg3().getAttribute('viewBox') === '0 0 360 148' && el3.getCardSize() === 14);
+// No car connected: the chart shows prices only; each charger is a short one-line tile.
 iAttrs.intelligent = { ...payload10(), status: 'no_ev', chargers: {}, next_charge: null, connected_count: 0 };
 iAttrs.smartevse_1_plug_state = 'Disconnected'; iAttrs.smartevse_2_plug_state = 'Disconnected';
 iAttrs.charge_reason = 'intelligent_waiting_for_connected_ev';
 await push3();
 const emptyPods = [...root3.querySelectorAll('.ev-pod.empty')];
-check('chargers without a car use the centred plan tile, not the classic heading row',
-  emptyPods.length === 2 && !root3.querySelector('.layout-plan .charger-heading') && !root3.querySelector('.pod-gauge') &&
+check('chargers without a car use the short plan tile, not the classic heading row',
+  emptyPods.length === 2 && !root3.querySelector('.layout-plan .charger-heading') && !root3.querySelector('.ev-pod .battery-meter') &&
   emptyPods.every((pod) => !!pod.querySelector('.pod-icon') && /SmartEVSE [12]/.test(pod.querySelector('.charger-name')?.textContent || '') &&
     /No vehicle connected/.test(pod.querySelector('.charger-status')?.textContent || '')));
 check('with no car the chart is titled "Electricity price", has no lanes and the hero waits for a vehicle',
   norm(chart3()?.querySelector('.family-chart-title')?.textContent) === 'Electricity price' && !root3.querySelector('.family-chart-lane') &&
   same(legend3(), ['Price']) && desc3().startsWith('Electricity prices until ') && desc3().includes('No vehicle connected') &&
-  svg3().getAttribute('viewBox') === '0 0 360 120' && !root3.querySelector('.pod-empty') && el3.getCardSize() === 8 &&
+  svg3().getAttribute('viewBox') === '0 0 360 120' && el3.getCardSize() === 11 &&
   title3() === 'Waiting for a vehicle' && !root3.querySelector('.status-support'));
 [iAttrs.smartevse_1_plug_state, iAttrs.smartevse_2_plug_state] = plugBefore;
 iAttrs.charge_reason = 'intelligent_waiting_for_planned_slot';

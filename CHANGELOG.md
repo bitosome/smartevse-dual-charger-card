@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.6.0 — 2026-11-11
+
+The plan layout is made compact and its money is said plainly. For SmartEVSE Dual Charger integration 0.0.11.0; needs `@bitosome/ha-card-ui` 1.9.0.
+
+Car tiles:
+
+- The round gauges are gone. Each charger is one compact tile across the card (two side by side on a wide card) with the shared horizontal battery meter and the minimum marked on it, as in the classic layout. Two cars take about 350 px on a phone instead of about 470 px, and the text has the full width. The LED state of the charger stays as the glow under its tile.
+- The cost is two plain rows. **Charged** is what this charge has taken and cost so far ("29.4 kWh · ≈ €7.57"), from the charger's metered session since plug-in. **Planned** is what the plan still charges and what that costs ("≈ 4.6 kWh · ≈ €1.11"; integration 0.0.11.0). Before, one "Cost" row mixed charged and planned money with a "saved" figure, and a second "Session estimate" repeated it.
+- The totals row ("Planned cost", "Saving", "Next start") is replaced by one line that names the comparison: "Saves ≈ €7.41 compared with charging at plug‑in". The next start is in the hero and in each tile's Next row.
+- **Extra** says how far above the minimum the plan gets (integration 0.0.11.0 goes on to the car's own charge limit): "to 100% · car limit", "to ≈ 86% by 07:00" when the night is too short for more, "when prices arrive · ≈ 15:00" while tomorrow's prices are due, "At the car’s limit", "Car stopped charging", or "none before 07:00". No row when the minimum is the car's own limit.
+- The charger details open from an icon button in the tile heading.
+
+Plan chart:
+
+- The prices are drawn like the Real Electricity Price card: one bar per hour in the shared price colours (blue; green at or below the price card's acceptable price, or the new card option `cheap_price_entity`) with H and L. Each bar now fills its hour (`barFit: "interval"`, ha-card-ui 1.9.0), so bars and charging periods share their edges. 0.5.0 had narrow bars centred in the hour, 0.5.1 a grey line.
+- Periods and the plan list say "Above the minimum" (the legend stays "Extra").
+
+Fixed:
+
+- The glow of a car tile was painted over the totals row under it, most visibly while a car charges. Those cells were translucent, unpositioned boxes, so the glow (layer 0) was drawn over their text and showed through them. Every panel next to a glowing tile is now a shared foreground surface (`.family-surface`) with the card's opaque tile background.
+- `npm run test:layout` checks this with real pixels: it takes the card with the glows on and off, in the plan and the classic layout, both themes, 320 and 390 px, and fails when the inside of any tile or any piece of text differs. It failed on 0.5.1 for the totals row only.
+
+Other wording for integration 0.0.11.0: the hero adds "then extra up to the car limit"; a car charging above its minimum reads "Minimum reached · extra up to the car limit"; Settings → Intelligent charging → "Above the minimum" explains the rule and, while tomorrow's prices are due, when they are expected. With integration 0.0.10.0 the "while cheap" wording stays, and 0.0.9.x keeps its top-up controls.
+
+Validation: typecheck, production build, 323 offline smoke checks and the browser run of 114 state, width and theme combinations in Chromium, 36 of them with the glow pixel check. The owner's case (one car at its car limit, the other charging above its minimum) and the one-car, no-car, error and not-enough-time states were looked at at 320 and 390 px. Not verified on a real phone or dashboard.
+
 ## 0.5.1 — 2026-11-11
 
 - The price in the plan chart is now a stepped line with a filled area that covers each whole hour. Before, each price was a narrow bar centred in its hour, so a charging period that started on the hour began to the left of its price bar and the hour labels sat between bars. Prices, hour labels and charging periods now share the same time scale.

@@ -131,80 +131,58 @@ export const OVERVIEW_CSS = `
     .charger-totals { max-width: 44%; }
     .battery-value { font-size: 25px; }
   }
-  /* ---- Plan layout (0.4.0, chart in 0.5.0): plan chart, car gauges with an LED ring, totals. ----
-     Colours of plan periods, rings and glows are the WLED state colours (--sdc-led-*, --node-*). */
+  /* ---- Plan layout (0.4.0; chart 0.5.0; compact tiles 0.6.0): plan chart, one compact tile per
+     charger with the shared battery meter, one saving line. Plan periods and the glows under
+     the tiles take the WLED state colours (--sdc-led-*, --node-*). */
   .layout-choice { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-top: var(--large-gap); }
   .layout-options { display: flex; flex-wrap: wrap; gap: 6px; }
   .layout-option { cursor: pointer; font: inherit; }
   .layout-option[aria-pressed="true"] { box-shadow: inset 0 0 0 1px var(--primary-color); }
-  .layout-plan { --sdc-quiet: color-mix(in srgb, var(--primary-text-color) 16%, transparent); --sdc-quiet-strong: color-mix(in srgb, var(--primary-text-color) 38%, transparent); --sdc-panel: color-mix(in srgb, var(--primary-text-color) 4%, transparent); }
-  /* The plan chart is the shared time-series chart (@bitosome/ha-card-ui); the card only places
-     it, quiets the price bars and, in the card's inline style, maps the period tones to the
-     charger's LED colours. */
-  .flow-stage > .plan-chart { position: relative; z-index: 1; --sdc-chart-price: color-mix(in srgb, var(--primary-text-color) 34%, transparent); }
-  .layout-plan .ev-row { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; }
-  .layout-plan .ev-node-wrap, .layout-plan .ev-pod { height: 100%; box-sizing: border-box; }
-  /* A charger without a car keeps its own short height beside a tall car tile. */
-  .layout-plan .ev-node-wrap.pod-empty { align-self: start; height: auto; }
-  .ev-pod { align-content: start; }
+  .layout-plan { --sdc-quiet: color-mix(in srgb, var(--primary-text-color) 16%, transparent); --sdc-quiet-strong: color-mix(in srgb, var(--primary-text-color) 38%, transparent); }
+  /* The plan chart is the shared time-series chart (@bitosome/ha-card-ui) with the price bars
+     and colours of the Real Electricity Price card; the card only places it and, in its inline
+     style, maps the period tones to the charger's LED colours. */
+  .flow-stage > .plan-chart { position: relative; z-index: 1; }
+  /* Car tiles: one compact tile per charger across the card (two side by side on a wide card).
+     Name and state, the shared horizontal battery meter with the minimum marked, short facts. */
+  .layout-plan .ev-row { grid-template-columns: minmax(0, 1fr); gap: var(--large-gap); }
+  .ev-pod { display: grid; gap: 8px; align-content: start; padding: 12px 14px; }
   .ev-pod, .ev-pod * { min-width: 0; }
+  .pod-head { display: flex; align-items: center; gap: 10px; }
+  .pod-copy { flex: 1 1 auto; display: grid; gap: 1px; }
+  .ev-pod .vehicle-name { margin: 0; font-size: 16px; line-height: 1.3; }
   /* break-word, never "anywhere": "anywhere" shrinks min-content and wraps one letter per line. */
   .ev-pod .charger-name, .ev-pod .vehicle-name, .ev-pod .charger-status { overflow-wrap: break-word; word-break: normal; white-space: normal; }
-  /* Centred grid items size to their content; the cap gives a long single word a width to break in. */
-  .ev-pod > *, .ev-pod .pod-copy > * { max-width: 100%; }
-  .ev-pod.empty { padding-block: 14px; }
-  .ev-pod .pod-icon { margin: 2px 0 4px; }
-  .ev-pod { display: grid; justify-items: center; text-align: center; gap: 4px; }
-  .ev-pod .pod-copy { display: grid; gap: 1px; justify-items: center; min-width: 0; }
-  .ev-pod .charger-status { display: block; text-align: center; }
+  .ev-pod .charger-status { display: block; }
+  .ev-pod .charger-status .charger-name { font-size: inherit; font-weight: inherit; line-height: inherit; color: inherit; }
   .ev-pod .state-dot { display: inline-block; vertical-align: middle; margin-right: 6px; }
-  .layout-plan .ev-pod .pod-icon { display: inline-flex; }
-  .ev-pod.empty { align-content: center; }
-  .ev-pod .charger-plan-line { text-align: center; }
-  /* Plan facts: label left, value right. In a narrow tile the value moves under its label. */
-  .ev-pod .charger-plan { width: 100%; gap: 6px; }
-  .plan-rows { display: grid; gap: 5px; margin: 0; text-align: left; }
-  .plan-row { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0 10px; min-width: 0; }
-  .plan-row dt { flex: none; white-space: nowrap; font-size: 12px; line-height: 1.45; color: var(--secondary-text-color); }
-  .plan-row dd { margin: 0; flex: 1 1 auto; min-width: 0; text-align: right; font-size: 13px; line-height: 1.4; color: var(--primary-text-color);
-    font-variant-numeric: tabular-nums; overflow-wrap: break-word; }
-  .ev-pod .session-cost { align-items: center; text-align: center; }
-  .pod-gauge-wrap { position: relative; width: 100%; max-width: 150px; }
-  .pod-gauge { display: block; width: 100%; height: auto; }
-  /* HTML caption inside the arc: a fixed 11px whatever size the gauge is drawn at. */
-  .pod-unit { position: absolute; left: 0; right: 0; top: 63%; text-align: center; white-space: nowrap; pointer-events: none;
-    font-size: 11px; line-height: 1.2; font-variant-numeric: tabular-nums; color: var(--secondary-text-color); }
-  .pod-ring { fill: none; stroke: rgb(var(--node-rgb, 148, 163, 184)); stroke-width: 3; stroke-linecap: round; stroke-dasharray: 3 8; }
-  .pod-ring.breathe { animation: sdcBreathe var(--node-glow-duration, 2.8s) ease-in-out infinite; }
-  .pod-ring.chase { stroke-dasharray: 22 22; animation: sdcChase var(--node-glow-duration, 2.4s) linear infinite; }
-  .pod-ring.static { opacity: 0.4; }
-  .pod-arcs circle { fill: none; stroke-width: 7; stroke-linecap: round; }
-  .pod-track { stroke: var(--sdc-quiet); }
-  .pod-projected { stroke: var(--secondary-text-color); opacity: 0.45; }
-  /* Level reached with the extra charging while cheap: a thin, lighter arc under the others. */
-  .pod-arcs .pod-extra { stroke: var(--secondary-text-color); opacity: 0.4; stroke-width: 3; }
-  .pod-projected.risk { stroke: var(--family-warning, var(--warning-color, #ff9800)); opacity: 0.9; }
-  .pod-level { stroke: var(--primary-text-color); }
-  .pod-min { stroke: var(--primary-color); stroke-width: 2; }
-  .pod-value { font-size: 26px; font-weight: 600; fill: var(--primary-text-color); font-variant-numeric: tabular-nums; }
-  .plan-totals { display: grid; grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); gap: 8px; margin: 0; }
-  .plan-totals div { padding: 8px; border-radius: 12px; border: 1px solid var(--sdc-quiet); background: var(--sdc-panel); min-width: 0; }
-  .plan-totals dt { font: 500 10px ui-monospace, "SF Mono", Menlo, Consolas, monospace; letter-spacing: 0.04em; white-space: nowrap; text-transform: uppercase; color: var(--secondary-text-color); }
-  .plan-totals dd { margin: 2px 0 0; font-size: 15px; font-weight: 500; font-variant-numeric: tabular-nums; color: var(--primary-text-color); }
-  /* Two tiles on a phone are too narrow for label and value side by side: every row stacks. */
-  @container charging-overview (max-width: 480px) {
-    .plan-rows { gap: 7px; }
-    .plan-row { display: grid; justify-content: normal; justify-items: center; gap: 0; }
-    .plan-row dt { font-size: 11px; }
-    .plan-row dd { text-align: center; }
-    /* A separator becomes the line break, so no line starts or ends with a dot. */
-    .ev-pod .sep { display: block; height: 0; overflow: hidden; font-size: 0; }
+  .ev-pod.empty .charger-status .charger-name { color: var(--primary-text-color); font-weight: 600; }
+  .ev-pod .pod-icon { display: inline-flex; flex: none; margin: 0; }
+  .ev-pod .battery-value { flex: none; font-size: 24px; }
+  .pod-details { flex: none; display: inline-grid; place-items: center; width: 44px; height: 44px; margin: -8px -10px -8px -4px; padding: 0; border: 0;
+    border-radius: 50%; background: transparent; color: var(--secondary-text-color); cursor: pointer; }
+  .pod-details ha-icon { --mdc-icon-size: 20px; width: 20px; height: 20px; }
+  .pod-details:focus-visible { outline: 2px solid var(--primary-color); outline-offset: -4px; }
+  .ev-pod .battery-meter { margin-top: 0; }
+  .ev-pod .charger-message { margin: 0; }
+  .ev-pod .charger-plan { width: 100%; gap: 6px; margin: 2px 0 0; }
+  /* Plan facts: two columns of label over value; one column in a very narrow tile. */
+  .plan-rows { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px; margin: 0; }
+  .plan-row { display: grid; gap: 0; align-content: start; }
+  .plan-row dt { font-size: 11px; line-height: 1.4; color: var(--secondary-text-color); white-space: nowrap; }
+  .plan-row dd { margin: 0; font-size: 13px; line-height: 1.4; color: var(--primary-text-color); font-variant-numeric: tabular-nums; overflow-wrap: break-word; }
+  /* What the plan saves: a slim foreground surface (opaque, above the glows), not a row of tiles. */
+  .plan-saving { display: flex; align-items: center; gap: 8px; margin: 0; padding: 8px 12px; border-radius: 12px; background: var(--sdc-surface-control);
+    font-size: 12px; line-height: 1.4; color: var(--secondary-text-color); font-variant-numeric: tabular-nums; }
+  .plan-saving ha-icon { flex: none; --mdc-icon-size: 16px; width: 16px; height: 16px; }
+  @container charging-overview (min-width: 620px) {
+    .layout-plan .ev-row { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; }
+    .layout-plan .ev-node-wrap, .layout-plan .ev-pod { height: 100%; box-sizing: border-box; }
   }
-  @keyframes sdcBreathe { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
-  @keyframes sdcChase { to { stroke-dashoffset: -88; } }
-
+  @container charging-overview (max-width: 250px) {
+    .plan-rows { grid-template-columns: minmax(0, 1fr); }
+  }
   @media (prefers-reduced-motion: reduce) {
-    .pod-ring { animation: none !important; }
     .glow-under, .glow-overlay { animation: none !important; }
     *, *::before, *::after { transition: none !important; }
   }

@@ -5,13 +5,13 @@ import {
   familyStyles, dialogStyles, componentStyles, glowStyles, FamilyFlowController, renderFamilyDialog, showEntityMoreInfo,
   UI_ICONS, TONE_ICONS, pendingIndicator, formatHassNumber, formatHassCurrency, formatHassTime, formatHassDate, formatHassDateTime,
   formatHassDuration, hassTimeZone, UNAVAILABLE_TEXT, levelMeterMarkup, batteryTone, type Tone,
-  FamilyChartController, chartFrame, chartLegend, chartStyles, chartTotalHeight, stepDecimals,
+  FamilyChartController, chartFrame, chartLegend, chartStyles, chartTotalHeight, stepDecimals, electricityPriceColor,
   CHART_FRAME_CHROME_PX, CHART_LEGEND_PX, CHART_PERIOD_LINE_PX,
   type ChartBand, type ChartLane, type ChartPeriod, type ChartPeriodTone, type ChartPoint,
 } from "@bitosome/ha-card-ui";
 import { buildGlow, type PulseColors } from "./shared/glow";
 
-const CARD_VERSION = "0.5.1";
+const CARD_VERSION = "0.6.0";
 
 // String twin of the shared pendingIndicator(); this card renders through unsafeHTML.
 const PENDING_INDICATOR = `<span class="family-pending-indicator" aria-hidden="true"></span>`;
@@ -34,15 +34,18 @@ const LAYOUT_EVENT = "smartevse-flow-card:layout";
 // Plan chart (shared time-series chart): plot height, period wording and bar colours.
 const PLAN_CHART_HEIGHT = 120;
 const PERIOD_LABELS: Record<string, string> = {
-  planned: "Planned", active: "Charging", extra: "Extra while cheap", warning: "Not enough time",
+  planned: "Planned", active: "Charging", extra: "Above the minimum", warning: "Not enough time",
 };
+// Integration 0.0.10.0 charged above the minimum only in hours under a learned price.
+const EXTRA_WHILE_CHEAP = "Extra while cheap";
 // The legend is short so it stays within two lines on a phone; the tile rows and the period
 // line under the chart keep the full wording.
 const LEGEND_LABELS: Record<string, string> = { ...PERIOD_LABELS, extra: "Extra" };
 const PAUSED_BY_FORCE = "Paused by Force charge";
 const NO_PRICE_YET = "No price yet";
-const CHART_CHEAP = "var(--family-success, var(--success-color, #43a047))";
-const CHART_NEUTRAL = "var(--sdc-chart-price, var(--family-chart-series-2, color-mix(in srgb, var(--primary-text-color) 55%, transparent)))";
+// The plan chart paints prices like the Real Electricity Price card: green at or below its
+// acceptable price. The card option `cheap_price_entity` names another limit.
+const DEFAULT_CHEAP_PRICE_ENTITY = "number.real_electricity_price_acceptable_price";
 // Each card instance has its own chart selection.
 let chartInstances = 0;
 
@@ -142,6 +145,7 @@ interface SmartEvseCardConfig {
   force_price_entity?: string;
   force_timer_entity?: string;
   acceptable_price_entity?: string;
+  cheap_price_entity?: string;
   charge_policy_entity?: string;
   duty_cycle_entity?: string;
   force_charge_duration_entity?: string;
@@ -317,7 +321,9 @@ class SmartEVSEFlowCard extends LitElement {
     const lanes = chart ? chart.lanes.length : 0;
     const chartPx = chart ? CHART_FRAME_CHROME_PX + CHART_LEGEND_PX * (lanes ? 2 : 1) + (lanes ? CHART_PERIOD_LINE_PX : 0) +
       chartTotalHeight(PLAN_CHART_HEIGHT, lanes) : 0;
-    return Math.max(6, (ev1.connected || ev2.connected ? 9 : 4) + Math.ceil(chartPx / 50));
+    // Hero and history launcher, then a compact tile per charger (a car tile has its meter and facts).
+    const tiles = [ev1, ev2].reduce((sum, ev) => sum + (ev.connected ? 3.5 : 1.5), 0);
+    return Math.max(6, Math.ceil(4 + tiles + chartPx / 50));
   }
 
   connectedCallback() {
@@ -632,9 +638,9 @@ class SmartEVSEFlowCard extends LitElement {
     if (status === "reached" || status === "done") {
       if (charger.top_up && (this._blocks(charger).some((block) => block.topUp && block.end > now))) {
         const limit = this._num(charger.car_limit);
-        // 0.0.9.x names its top-up; from 0.0.10.0 the charge above the minimum is "extra while cheap".
+        // 0.0.9.x names its top-up; later versions charge "above the minimum" (0.0.10.0: while cheap).
         const head = this._legacyTopUp() ? `Topping up${limit !== null ? ` to ${this._formatPercent(limit)}` : ""}`
-          : ["Extra while cheap", this._intelligentExtraLevel(charger)].filter(Boolean).join(" · ");
+          : [this._extraLabel(), this._intelligentExtraLevel(charger)].filter(Boolean).join(" · ");
         lines.push({ text: [`${prefix}${head}`, time].filter(Boolean).join(" · ") });
       } else if (status === "reached" || (soc !== null && target !== null && soc >= target)) {
         lines.push({ text: `${prefix}${this._formatPercent(target)} reached` });
@@ -668,6 +674,50 @@ class SmartEVSEFlowCard extends LitElement {
     return Boolean(id && this._entity(id));
   }
 
+  // How the integration charges above the minimum: "limit" (0.0.11.0: on to the car's own charge
+  // limit in the cheapest hours left, no price limit), "cheap" (0.0.10.0: only in hours under a
+  // learned price), "legacy" (0.0.9.x: the user's top-up switch and price) or "" (not published).
+  _extraMode(): "limit" | "cheap" | "legacy" | "" {
+    if (this._legacyTopUp()) return "legacy";
+    const source = this._intelligent()?.top_up?.source;
+    return source === "car_limit" ? "limit" : source === "learned" ? "cheap" : "";
+  }
+
+  _extraLabel() {
+    return this._extraMode() === "cheap" ? EXTRA_WHILE_CHEAP : PERIOD_LABELS.extra;
+  }
+
+  // The "Extra" row of a car tile: how far above its minimum the plan takes the car, or why it
+  // does not. "" leaves the row out (level unknown, or the minimum is the car's own limit).
+  _intelligentExtraValue(charger, payload, short: boolean, now = Date.now()) {
+    const soc = this._num(charger.soc);
+    if (charger.estimated === true || soc === null) return "";
+    const target = this._num(charger.target ?? charger.minimum);
+    const limit = this._num(charger.car_limit);
+    const room = target === null || limit === null || limit > target;
+    if (this._extraMode() !== "limit") {
+      if (!room) return "";
+      if (charger.top_up === true) return [this._intelligentExtraLevel(charger), "while cheap"].filter(Boolean).join(" ");
+      return payload.top_up?.enabled === true && !short ? "none tonight" : "";
+    }
+    // The car stops by itself at the charge limit set in the car.
+    if (limit !== null && soc >= limit - 0.5) return "At the car’s limit";
+    if (!room) return "";
+    // It stopped by itself below the limit the integration reads from it.
+    if (charger.extra_done === true) return "Car stopped charging";
+    const readyBy = this._intelligentDeadlineClock(charger);
+    if (charger.top_up === true) {
+      const extra = this._num(charger.extra_soc);
+      if (extra !== null && limit !== null && extra >= limit - 0.5) return `to ${this._formatPercent(limit)} · car limit`;
+      if (extra !== null) return `to ≈ ${this._formatPercent(extra)} by ${readyBy}`;
+      return limit !== null ? `up to ${this._formatPercent(limit)}` : "planned";
+    }
+    // Tomorrow's prices are due: the night is planned when they arrive.
+    const waits = Date.parse(charger.extra_waits_until);
+    if (Number.isFinite(waits) && waits > now) return `when prices arrive · ≈ ${this._formatPlanTime(waits, now)}`;
+    return short ? "" : `none before ${readyBy}`;
+  }
+
   // "to ≈ 96%" from the level the extra charging reaches, else "up to 90%" from the car's limit.
   _intelligentExtraLevel(charger) {
     const extra = this._num(charger?.extra_soc);
@@ -676,8 +726,8 @@ class SmartEVSEFlowCard extends LitElement {
   }
 
   // Plan facts of one connected car for the plan layout: at most one note or warning line, then
-  // short labelled rows (Guaranteed, Extra, Next, Cost). The minimum is a floor: it is guaranteed
-  // by the ready-by time, and above it the car keeps charging while electricity is cheap.
+  // short labelled rows (Guaranteed, Extra, Next, Planned). The minimum is a floor: it is guaranteed
+  // by the ready-by time, and above it the car goes on charging to its own charge limit.
   _intelligentTileRows(ev, now = Date.now()): { note: { text: string; tone?: string } | null; rows: Array<{ id: string; label: string; value: string }> } {
     const payload = this._intelligent();
     const charger = payload?.chargers?.[ev.key];
@@ -708,16 +758,8 @@ class SmartEVSEFlowCard extends LitElement {
     // A plan that cannot keep the minimum guarantees nothing; its warning names what to expect.
     if (reached) rows.push({ id: "guaranteed", label: "Guaranteed", value: soc !== null ? `Reached · ${this._formatPercent(soc)}` : "Reached" });
     else if (!finished && !short) rows.push({ id: "guaranteed", label: "Guaranteed", value: this._intelligentTargetClause(charger) });
-    // Extra: only with a known level and room between the minimum and the car's own limit.
-    const limit = this._num(charger.car_limit);
-    const room = target === null || limit === null || limit > target;
-    if (!estimated && soc !== null && room) {
-      if (charger.top_up === true) {
-        rows.push({ id: "extra", label: "Extra", value: [this._intelligentExtraLevel(charger), "while cheap"].filter(Boolean).join(" ") });
-      } else if (payload.top_up?.enabled === true && !short) {
-        rows.push({ id: "extra", label: "Extra", value: "none tonight" });
-      }
-    }
+    const extra = this._intelligentExtraValue(charger, payload, short, now);
+    if (extra) rows.push({ id: "extra", label: "Extra", value: extra });
     const [first] = blocks;
     const queued = charger.queue_after && charger.queue_after !== ev.key ? payload.chargers?.[charger.queue_after] : null;
     const next = ev.isCharging ? (first && first.start <= now ? `Charging until ${this._formatPlanTime(first.end, now)}` : "Charging now")
@@ -726,8 +768,18 @@ class SmartEVSEFlowCard extends LitElement {
       : queued && !finished ? `After ${this._intelligentVehicleName(queued, charger.queue_after)}`
       : finished ? "Done" : "";
     if (next) rows.push({ id: "next", label: "Next", value: next });
-    const cost = estimated ? "" : this._intelligentMoneyLine(charger, payload.currency, finished ? "saved" : "saves");
-    if (cost) rows.push({ id: "cost", label: "Cost", value: cost });
+    // What the plan still charges and what that costs (integration 0.0.11.0). What was charged so
+    // far is the "Charged" row the tile adds from the charger's metered session.
+    const plannedKwh = this._num(charger.planned_kwh);
+    if (plannedKwh === null) {
+      // Older integrations publish one figure for the window: charged so far plus planned.
+      const amount = estimated || charger.partial ? "" : this._formatMoney(charger.session_cost ?? charger.cost, payload.currency);
+      if (amount) rows.push({ id: "cost", label: "Cost", value: `≈ ${amount}${charger.includes_forecast ? " forecast" : ""}` });
+    } else if (plannedKwh >= 0.1 && !estimated) {
+      const amount = this._formatMoney(charger.planned_cost, payload.currency);
+      rows.push({ id: "planned", label: "Planned", value: [`≈ ${formatHassNumber(this._hass, plannedKwh, { digits: 1 })} kWh`,
+        amount ? `≈ ${amount}${charger.includes_forecast ? " forecast" : ""}` : ""].filter(Boolean).join(" · ") });
+    }
     return { note, rows };
   }
 
@@ -774,14 +826,15 @@ class SmartEVSEFlowCard extends LitElement {
         ? `Next charge at ${formatHassTime(this._hass, starts[0].start)}` : `Next charge ${this._formatDateTime(starts[0].start)}`;
     } else if (allReached && cars.length === inPlan.length) return { title: cars.length > 1 ? "Both cars ready" : `${name(cars[0])} ready`, support: "" };
     else return null;
-    if (allReached) return { title, support: `Minimum reached${extraPlanned ? " · extra while cheap" : ""}` };
+    const extraText = !extraPlanned ? "" : this._extraMode() === "limit" ? "extra up to the car limit" : "extra while cheap";
+    if (allReached) return { title, support: ["Minimum reached", extraText].filter(Boolean).join(" · ") };
     // "Ready by" speaks for the cars the plan will have ready; a car that is short has its warning.
     const pending = cars.filter((ev) => !reached(ev));
     const onTime = pending.filter((ev) => !["at_risk", "catch_up"].includes(statusOf(ev)) && Date.parse(chargers[ev.key].deadline) > now);
     const clocks = onTime.map((ev) => this._intelligentDeadlineClock(chargers[ev.key]));
     const ready = !onTime.length ? "" : onTime.length === pending.length && new Set(clocks).size === 1 ? `Ready by ${clocks[0]}`
       : onTime.map((ev, index) => `${name(ev)} by ${clocks[index]}`).join(" · ");
-    return { title, support: [ready, extraPlanned ? `${ready ? "then " : ""}extra while cheap` : ""].filter(Boolean).join(" · ") };
+    return { title, support: [ready, extraText ? `${ready ? "then " : ""}${extraText}` : ""].filter(Boolean).join(" · ") };
   }
 
   _planPreferenceStorageKey() {
@@ -923,34 +976,6 @@ class SmartEVSEFlowCard extends LitElement {
     return Math.round(Number(this._wledGlowDuration({ [key]: visuals?.[key] || visuals?.off }, key)) * 1000);
   }
 
-  // Segmented LED ring and arc gauge of one car: level, projected level and a tick at the minimum.
-  // The caption under the number is HTML, so it keeps its size when the gauge scales.
-  // `extra` is the level reached with the extra charging while cheap: a thin, lighter arc.
-  _podGauge({ value, minimum, projected, extra = null, risk, ringClass, ringMs = 0, label }) {
-    const R = 42;
-    const C = 2 * Math.PI * R;
-    const sweep = C * 0.75;
-    const arc = (v) => (Math.min(100, Math.max(0, v)) / 100 * sweep).toFixed(1);
-    let tick = "";
-    if (minimum !== null) {
-      const t = (135 + Math.min(100, Math.max(0, minimum)) / 100 * 270) * Math.PI / 180;
-      const point = (r) => [(60 + Math.cos(t) * r).toFixed(1), (60 + Math.sin(t) * r).toFixed(1)];
-      const [x1, y1] = point(34), [x2, y2] = point(50);
-      tick = `<line class="pod-min" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`;
-    }
-    return `<div class="pod-gauge-wrap"><svg class="pod-gauge" viewBox="0 0 120 116" role="img" aria-label="${this._safe(label)}">
-      <circle class="pod-ring ${ringClass}"${ringClass !== "static" && ringMs > 0 ? ` data-anim-ms="${Number(ringMs)}"` : ""} cx="60" cy="60" r="52"/>
-      <g transform="rotate(135 60 60)" class="pod-arcs">
-        <circle class="pod-track" cx="60" cy="60" r="${R}" stroke-dasharray="${sweep.toFixed(1)} ${C.toFixed(1)}"/>
-        ${extra !== null && value !== null && extra > value ? `<circle class="pod-extra" cx="60" cy="60" r="${R}" stroke-dasharray="${arc(extra)} ${C.toFixed(1)}"/>` : ""}
-        ${projected !== null && value !== null && projected > value ? `<circle class="pod-projected${risk ? " risk" : ""}" cx="60" cy="60" r="${R}" stroke-dasharray="${arc(projected)} ${C.toFixed(1)}"/>` : ""}
-        ${value !== null ? `<circle class="pod-level" cx="60" cy="60" r="${R}" stroke-dasharray="${arc(value)} ${C.toFixed(1)}"/>` : ""}
-      </g>
-      ${tick}
-      <text class="pod-value" x="60" y="66" text-anchor="middle">${value !== null ? this._safe(Math.round(value)) : "–"}</text>
-    </svg><span class="pod-unit" aria-hidden="true">${minimum !== null ? `% · min ${this._safe(Math.round(minimum))}` : "%"}</span></div>`;
-  }
-
   _knownVehicleName(ev) {
     return ev?.connectedEvName && !["unknown", "unavailable", "none", "?", "n/a"].includes(ev.connectedEvName.toLowerCase())
       ? ev.connectedEvName : "";
@@ -1037,7 +1062,7 @@ class SmartEVSEFlowCard extends LitElement {
         const tone: ChartPeriodTone = block.start <= now && block.end > now && car.ev.isCharging ? "active"
           : block.topUp ? "extra" : risk ? "warning" : "planned";
         tones.add(tone);
-        return { start: block.start, end: block.end, tone, label: PERIOD_LABELS[tone] };
+        return { start: block.start, end: block.end, tone, label: tone === "extra" ? this._extraLabel() : PERIOD_LABELS[tone] };
       });
       const deadline = car.planned ? Date.parse(car.charger.deadline) : NaN;
       const ready = Number.isFinite(deadline) && deadline >= start && deadline <= end;
@@ -1059,7 +1084,10 @@ class SmartEVSEFlowCard extends LitElement {
       readyText ? `Ready by ${readyText}` : "",
       known.some((slot) => slot.price < 0) ? "Some prices are below zero" : "",
       unpricedFrom ? `No published price from ${this._formatPlanTime(unpricedFrom.start, now)}` : ""].filter(Boolean).join(". ");
-    const cheap = this._num(payload.top_up?.price);
+    // Green hours: at or below the price limit of the electricity price card (or, with
+    // integration 0.0.10.0, the price it learned for charging above the minimum).
+    const cheapEntity = this._config.cheap_price_entity || DEFAULT_CHEAP_PRICE_ENTITY;
+    const cheap = this._num(payload.top_up?.price) ?? (this._entity(cheapEntity) ? this._numberState(cheapEntity) : null);
     const prices = known.map((slot) => slot.price);
     return {
       title, description, domain: { start, end }, lanes, bands, legend, cheap,
@@ -1083,12 +1111,12 @@ class SmartEVSEFlowCard extends LitElement {
   _planChart(data: PlanChartData, now = Date.now()) {
     const HOUR = 3600000;
     const series = [{
-      // A stepped line with its area: each price covers its whole hour, so it lines up with
-      // the periods underneath (bars are narrow and centred in their hour).
-      id: "price", label: "Price", kind: "line" as const, curve: "step" as const, colorBlend: "hard" as const,
-      intervalMs: data.intervalMs, points: data.points, extremes: false,
-      // Hours at or below the learned cheap limit read in the success colour.
-      colorAt: (point: ChartPoint) => data.cheap !== null && point.v !== null && point.v <= data.cheap ? CHART_CHEAP : CHART_NEUTRAL,
+      // The price chart of the Real Electricity Price card: one bar per hour in the shared price
+      // colours (past, current, to come; green when cheap) with H and L. Each bar fills its
+      // hour, so its edges line up with the charging periods under it.
+      id: "price", label: "Price", kind: "bar" as const, curve: "step" as const, barFit: "interval" as const,
+      intervalMs: data.intervalMs, points: data.points, extremes: true,
+      colorAt: (point: ChartPoint) => electricityPriceColor({ start: point.t, end: point.t + data.intervalMs, now, value: point.v, cheap: data.cheap }),
       format: (value: number) => `${this._formatChartPrice(value, data.currency, data.digits)}/kWh`,
     }];
     const view = this._charts.render({
@@ -1107,28 +1135,20 @@ class SmartEVSEFlowCard extends LitElement {
       legend: chartLegend(series, { periods: data.legend, bands: data.bandLegend }) });
   }
 
-  _planTotals(ev1, ev2, now = Date.now()) {
+  // One line under the car tiles: what the plan saves, and compared with what. The cost of each
+  // charge is on its car tile ("Charged", "Planned"); there is no separate totals row.
+  _planSaving(ev1, ev2, now = Date.now()) {
     const payload = this._isIntelligentPlanActive() ? this._intelligent() : null;
     if (!payload || this._isForcePlanActive() || payload.overridden_by === "force") return "";
     const chargers = this._intelligentChargers();
     const keys = Object.keys(chargers);
     const totals = payload.totals && typeof payload.totals === "object" ? payload.totals : {};
-    const estimated = keys.some((key) => chargers[key].estimated === true);
-    const cost = keys.length && !totals.partial && !estimated ? this._formatMoney(totals.cost, payload.currency) : "";
-    const saving = keys.length && !totals.partial && !totals.includes_forecast && !estimated ? this._formatSaving(totals.saving, payload.currency) : "";
-    // "Now" while a planned block of a connected car is running, whatever the overall status says
-    // (at-risk and similar statuses rank above "charging"), and never a start time in the past.
-    const running = [ev1, ev2].some((ev) => ev?.connected && chargers[ev.key] &&
-      this._blocks(chargers[ev.key]).some((block) => block.start <= now && block.end > now));
-    const nextAt = Date.parse(payload.next_charge);
-    const next = String(payload.status || "") === "charging" || running || (Number.isFinite(nextAt) && nextAt <= now) ? "Now"
-      : Number.isFinite(nextAt) ? this._formatPlanTime(payload.next_charge, now) : "";
-    const cells = [
-      cost ? `<div><dt>Planned cost</dt><dd>≈ ${this._safe(cost)}${totals.includes_forecast ? " forecast" : ""}</dd></div>` : "",
-      saving ? `<div><dt>Saving</dt><dd>${this._safe(saving)}</dd></div>` : "",
-      next ? `<div><dt>Next start</dt><dd>${this._safe(next)}</dd></div>` : "",
-    ].filter(Boolean);
-    return cells.length ? `<dl class="plan-totals">${cells.join("")}</dl>` : "";
+    if (!keys.length || totals.partial || totals.includes_forecast || keys.some((key) => chargers[key].estimated === true)) return "";
+    const saving = this._formatSaving(totals.saving, payload.currency);
+    if (!saving) return "";
+    const planned = [ev1, ev2].some((ev) => ev?.connected && chargers[ev.key] && this._blocks(chargers[ev.key]).some((block) => block.end > now));
+    return `<p class="plan-saving family-surface"><ha-icon icon="mdi:piggy-bank-outline" aria-hidden="true"></ha-icon><span>${
+      planned ? "Saves" : "Saved"} ≈ ${this._safe(saving)} compared with charging at plug\u2011in</span></p>`;
   }
 
   _loadPlanPreferences() {
@@ -2795,7 +2815,7 @@ class SmartEVSEFlowCard extends LitElement {
       // "done" also means no further charge (retries used up, battery level unknown); like the
       // tile, only a known level at or above the target reads as reached.
       const reached = status === "reached" || (soc !== null && targetValue !== null && soc >= targetValue);
-      progress = topUp && !this._legacyTopUp() ? ["Extra while cheap", this._intelligentExtraLevel(charger)].filter(Boolean).join(" · ")
+      progress = topUp && !this._legacyTopUp() ? [this._extraLabel(), this._intelligentExtraLevel(charger)].filter(Boolean).join(" · ")
         : topUp ? `Topping up${limit !== null ? ` to ${this._formatPercent(limit)}` : ""}`
         : reached ? `${this._formatPercent(target)} reached` : "Charging complete";
     } else if (charger?.estimated === true) {
@@ -2991,20 +3011,25 @@ class SmartEVSEFlowCard extends LitElement {
     `;
   }
 
-  // What happens above the minimum (integration 0.0.10.0): the car keeps charging in hours at or
-  // below a cheap-price limit the integration learns. Read-only: there is nothing to set.
-  _intelligentAboveMinimum() {
+  // What happens above the minimum. Read-only: there is nothing to set. Integration 0.0.11.0
+  // goes on to the car's own charge limit; 0.0.10.0 did so only under a learned price.
+  _intelligentAboveMinimum(now = Date.now()) {
     const payload = this._intelligent();
     const topUp = payload?.top_up;
     if (!topUp || typeof topUp !== "object" || typeof topUp.source !== "string") return "";
     const price = this._num(topUp.price);
-    const learned = topUp.enabled === true && price !== null;
+    const toLimit = topUp.source === "car_limit";
+    const learned = toLimit || (topUp.enabled === true && price !== null);
     const digits = price !== null && Math.abs(price * 100 - Math.round(price * 100)) > 1e-6 ? 3 : 2;
-    const text = learned
+    const waits = Date.parse(topUp.waits_until);
+    const text = toLimit
+      ? `The minimum is what the plan guarantees by the ready-by time. After it each car goes on charging to its own charge limit in the cheapest hours that are left.${
+        Number.isFinite(waits) && waits > now ? ` Tomorrow’s prices are due about ${this._formatPlanTime(waits, now)}; the charging above the minimum is planned when they arrive.` : ""}`
+      : learned
       ? `The car keeps charging up to its own limit in hours at or below ≈ ${this._formatChartPrice(price, typeof payload.currency === "string" ? payload.currency : "", digits)} per kWh. That is what your cheap hours usually cost.`
       : "Extra charging starts once five days of prices are known. Until then charging stops at the minimum.";
     return `
-      <section class="intelligent-extra" aria-label="Above the minimum" data-state="${learned ? "learned" : "learning"}">
+      <section class="intelligent-extra" aria-label="Above the minimum" data-state="${toLimit ? "car-limit" : learned ? "learned" : "learning"}">
         <h3 class="intelligent-section-title">Above the minimum</h3>
         <p class="intelligent-fact">${this._safe(text)}</p>
       </section>
@@ -3029,7 +3054,8 @@ class SmartEVSEFlowCard extends LitElement {
       // A block that is already running counts from now, so after midnight the plan is still tonight's.
       const firstStart = blocks.length ? Math.max(blocks[0].start, now) : null;
       const firstDay = firstStart !== null ? this._localDayKey(firstStart) : "";
-      const extraTag = this._legacyTopUp() ? "top-up" : "extra while cheap";
+      const extraMode = this._extraMode();
+      const extraTag = extraMode === "legacy" ? "top-up" : extraMode === "cheap" ? "extra while cheap" : "above the minimum";
       const blockRows = blocks.map((block) => {
         const start = this._localDayKey(Math.max(block.start, now)) === firstDay ? formatHassTime(this._hass, block.start) : this._formatDateTime(block.start);
         return `<li class="intelligent-block"><span class="intelligent-block-time">${this._safe(start)}–${this._safe(formatHassTime(this._hass, block.end))}</span> · <span class="intelligent-block-vehicle">${this._safe(this._intelligentVehicleName(chargers[block.key], block.key))}</span>${block.topUp ? `<span class="intelligent-block-tag"> · ${extraTag}</span>` : ""}</li>`;
@@ -3275,6 +3301,16 @@ class SmartEVSEFlowCard extends LitElement {
     return formatHassCurrency(this._hass, record.cost, { currency: record.currency, digits: 2 });
   }
 
+  // "12.4 kWh · ≈ €0.92": what the charger's metered session since plug-in has taken and cost.
+  _chargedValue(record) {
+    if (!record || typeof record !== "object") return "";
+    const energy = this._num(record.energy_kwh);
+    if (energy === null) return "";
+    if (energy < 0.05) return "Nothing yet";
+    const amount = this._costAmount(record);
+    return [`${formatHassNumber(this._hass, energy, { digits: 1 })} kWh`, amount === UNAVAILABLE_TEXT ? "" : `≈ ${amount}`].filter(Boolean).join(" · ");
+  }
+
   _costLabel(record) {
     const amount = this._costAmount(record);
     return amount === UNAVAILABLE_TEXT ? amount : `≈ ${amount}`;
@@ -3413,39 +3449,48 @@ class SmartEVSEFlowCard extends LitElement {
     }) : "";
     const nodeStyle = this._wledNodeStyle(visual, ev.visual);
     if (this._layout() === "plan") {
+      // A compact tile per charger: name and state, the shared horizontal battery meter with the
+      // minimum marked, then short labelled facts. The LED state shows as the glow under the tile.
       const level = battery !== null ? battery : this._num(planCharger?.soc);
-      const projected = planCharger ? this._num(planCharger.projected_soc) : null;
-      const ringClass = !nodeStyle || this._wledNumber({ [ev.visual]: visual?.[ev.visual] || visual?.off }, ev.visual, "fx") === 0 ? "static"
-        : ev.visual === "charging" ? "chase" : "breathe";
-      // A charger without a car is a short, centred tile: icon, name, status and its last session.
       const ringMs = this._glowDurationMs(visual, ev.visual);
-      const extra = planCharger?.top_up === true ? this._num(planCharger.extra_soc) : null;
-      const gauge = ev.connected ? this._podGauge({
-        value: level, minimum, projected, extra, risk: planCharger?.status === "at_risk", ringClass, ringMs,
-        label: `${vehicleTitle} battery ${level !== null ? this._formatPercent(level) : "unknown"}${minimum !== null ? `, minimum ${this._formatPercent(minimum)}` : ""}${extra !== null ? `, up to ${this._formatPercent(extra)} while cheap` : ""}`,
-      }) : `<span class="charger-icon pod-icon"><ha-icon icon="mdi:ev-station" aria-hidden="true"></ha-icon></span>`;
+      const podMeter = ev.connected && level !== null ? levelMeterMarkup({
+        value: level,
+        label: `${vehicleTitle} battery`,
+        tone: batteryTone(level),
+        className: "battery-meter",
+        ...(minimum !== null ? { target: minimum, valueText: `${this._formatPercent(level)}, minimum ${this._formatPercent(minimum)}` } : {}),
+      }) : "";
       // Plan facts as short labelled rows; a note or warning line sits above them.
       const plan = ev.connected && planCharger && typeof planCharger === "object" ? this._intelligentTileRows(ev) : { note: null, rows: [] };
+      // What this charge has cost so far: the charger's metered session since plug-in.
+      const charged = ev.connected ? this._chargedValue(record) : "";
+      if (charged) {
+        const at = plan.rows.findIndex((row) => row.id === "planned" || row.id === "cost");
+        plan.rows.splice(at < 0 ? plan.rows.length : at, 0, { id: "charged", label: "Charged", value: charged });
+      }
       const noteMarkup = plan.note ? `<p class="charger-plan-line"${plan.note.tone ? ` data-tone="${this._safe(plan.note.tone)}"` : ""}>${plan.note.tone === "warning" ? WARNING_GLYPH : ""}${this._wrapGlue(plan.note.text)}</p>` : "";
       const rowsMarkup = plan.rows.length ? `<dl class="plan-rows">${plan.rows.map((row) => `<div class="plan-row" data-row="${this._safe(row.id)}"><dt>${this._safe(row.label)}</dt><dd>${this._wrapGlue(row.value)}</dd></div>`).join("")}</dl>` : "";
       const podPlan = noteMarkup || rowsMarkup ? `<div class="charger-plan">${noteMarkup}${rowsMarkup}</div>`
-        : lastSaving ? `<div class="charger-plan"><p class="charger-plan-line">Last charge saved ≈ ${this._safe(lastSaving)}</p></div>` : "";
+        : lastSaving ? `<div class="charger-plan"><p class="charger-plan-line">Last charge saved ≈ ${this._safe(lastSaving)} compared with charging at plug-in</p></div>` : "";
+      const detailsButton = ev.available && ev.connected ? `
+            <button class="pod-details" type="button" data-action="open-charger-details" aria-haspopup="dialog" data-charger="${this._safe(ev.key)}" aria-label="${this._safe(ev.smartevseName)} charger details"><ha-icon icon="${UI_ICONS.details}" aria-hidden="true"></ha-icon></button>` : "";
       return `
-      <div class="family-tile-wrap ev-node-wrap ${this._safe(ev.key)} tone-${this._safe(ev.tone)} visual-${this._safe(ev.visual)}${!ev.connected && besideCar ? " pod-empty" : ""}"
+      <div class="family-tile-wrap ev-node-wrap ${this._safe(ev.key)} tone-${this._safe(ev.tone)} visual-${this._safe(ev.visual)}"
         style="${this._safe(nodeStyle)}">
         <div class="glow-under ev-glow"${nodeStyle && ringMs > 0 ? ` data-anim-ms="${ringMs}"` : ""} aria-hidden="true"><div class="glow-overlay"></div></div>
         <section class="ev-node ev-pod ${this._safe(ev.key)} tone-${this._safe(ev.tone)} visual-${this._safe(ev.visual)}${ev.connected ? "" : " empty"}"
           aria-label="${this._safe(ev.smartevseName)}">
-          ${gauge}
-          <div class="pod-copy">
-            ${ev.connected ? `<div class="vehicle-name">${this._safe(vehicleTitle)}</div>` : ""}
-            <div class="charger-name">${this._safe(ev.smartevseName)}</div>
-            <div class="charger-status"><span class="state-dot" aria-hidden="true"></span>${this._safe(status)}</div>
+          <div class="pod-head">
+            ${ev.connected ? "" : `<span class="charger-icon pod-icon"><ha-icon icon="mdi:ev-station" aria-hidden="true"></ha-icon></span>`}
+            <div class="pod-copy">
+              ${ev.connected ? `<div class="vehicle-name">${this._safe(vehicleTitle)}</div>` : ""}
+              <div class="charger-status"><span class="state-dot" aria-hidden="true"></span><span class="charger-name">${this._safe(ev.smartevseName)}</span><span class="sep-dot" aria-hidden="true"> · </span><span class="charger-state">${this._safe(status)}</span></div>
+            </div>
+            ${ev.connected && level !== null ? `<div class="battery-value">${this._safe(Math.round(level))}<span>%</span></div>` : ""}${detailsButton}
           </div>
+          ${podMeter}
           ${ev.hasError ? `<p class="charger-message" role="status">${this._safe(ev.error)}</p>` : !ev.available ? `<p class="charger-message">Status cannot be read. Check the charger connection.</p>` : ""}
           ${podPlan}
-          ${record ? `<button class="session-cost" data-action="open-history" data-charger="${this._safe(ev.key)}" aria-haspopup="dialog" aria-label="${this._safe(ev.smartevseName)} charging cost ${this._safe(this._costLabel(record))}; open history"><strong>${this._safe(this._costLabel(record))}</strong><small>${this._costData()?.error ? "History not saved" : record.partial ? "Partial estimate" : ev.connected && record.status !== "finished" ? "Session estimate" : "Last session"}</small></button>` : ""}
-          ${diagnostics}
         </section>
       </div>`;
     }
@@ -3925,7 +3970,7 @@ class SmartEVSEFlowCard extends LitElement {
               ${this._evNode(ev1, ev2.connected)}
               ${this._evNode(ev2, ev1.connected)}
             </div>
-            ${layout === "plan" ? this._planTotals(ev1, ev2) : ""}
+            ${layout === "plan" ? this._planSaving(ev1, ev2) : ""}
             <button class="advanced-settings charging-history-launcher" data-action="open-history" type="button" aria-haspopup="dialog"><ha-icon icon="${UI_ICONS.history}" aria-hidden="true"></ha-icon><span>Charging history</span><ha-icon icon="${UI_ICONS.next}" aria-hidden="true"></ha-icon></button>
     `;
     // Plan periods take the charger's LED colours, like the ring on the car tile.
