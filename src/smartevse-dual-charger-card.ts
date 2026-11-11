@@ -29,8 +29,9 @@ const INTELLIGENT_VEHICLE_CONFIG_PREFIX: Record<IntelligentVehicleKey, string> =
   other: "other_vehicle",
 };
 const UNIDENTIFIED_VEHICLE = "Unidentified vehicle";
-// Other cards on the same controller follow a layout choice made in this document.
-const LAYOUT_EVENT = "smartevse-flow-card:layout";
+// What a saving is compared with (intelligent.baseline_kind, integration 0.0.11.0): the owner's
+// "Charge with schedule" plan, or charging as soon as the car is plugged in (the default).
+const baselineName = (kind: unknown, hyphen = "\u2011") => kind === "schedule" ? "Charge with schedule" : `charging at plug${hyphen}in`;
 // Plan chart (shared time-series chart): plot height, period wording and bar colours.
 const PLAN_CHART_HEIGHT = 120;
 const PERIOD_LABELS: Record<string, string> = {
@@ -42,6 +43,7 @@ const EXTRA_WHILE_CHEAP = "Extra while cheap";
 // line under the chart keep the full wording.
 const LEGEND_LABELS: Record<string, string> = { ...PERIOD_LABELS, extra: "Extra" };
 const PAUSED_BY_FORCE = "Paused by Force charge";
+const NOTHING_CHARGED = "Nothing yet";
 const NO_PRICE_YET = "No price yet";
 // The plan chart paints prices like the Real Electricity Price card: green at or below its
 // acceptable price. The card option `cheap_price_entity` names another limit.
@@ -165,10 +167,9 @@ interface SmartEvseCardConfig {
   intelligent_planned_cost_entity?: string;
   intelligent_planned_saving_entity?: string;
   intelligent_next_charge_entity?: string;
-  // "plan" (plan chart and car gauges) or "classic" (the pre-0.4.0 tiles). Without it:
-  // "plan" when the integration supports Intelligent charging. The card's Settings page can
-  // override it per browser.
-  layout?: "plan" | "classic";
+  // Cards 0.4.0 to 0.5.x had two layouts. There is one now; the key is accepted and ignored so
+  // an existing dashboard configuration keeps loading.
+  layout?: unknown;
   [key: string]: unknown;
 }
 
@@ -276,15 +277,12 @@ class SmartEVSEFlowCard extends LitElement {
     if (!config.controller_entity) {
       throw new Error("controller_entity is required");
     }
-    // The remembered default layout belongs to one controller.
-    if (config.controller_entity !== this._config?.controller_entity) this._layoutDefaultPlan = false;
     this._config = {
       schedule_price_entity: "switch.smartevse_dual_charger_schedule_acceptable_price",
       ...config,
     };
     this._currency = config.currency || "EUR/kWh";
     this._loadPlanPreferences();
-    this._loadLayoutPreference();
     this.requestUpdate();
   }
 
@@ -309,10 +307,11 @@ class SmartEVSEFlowCard extends LitElement {
     this._render();
   }
 
-  // Rows of about 50 px: the classic tiles are 6; the plan layout adds the tall car tiles and
-  // the chart with one lane per connected car.
+  // Rows of about 50 px: the hero and the history launcher, a tile per charger (a car tile has
+  // its meter, its facts and the details row) and the plan chart with one lane per connected car
+  // while Intelligent charging is enabled.
   getCardSize() {
-    if (!this._config || !this._hass || this._layout() !== "plan") return 6;
+    if (!this._config || !this._hass) return 6;
     const attrs = this._entity(this._config.controller_entity)?.attributes || {};
     const ev1 = this._evData(attrs, "smartevse_1", "SmartEVSE 1");
     const ev2 = this._evData(attrs, "smartevse_2", "SmartEVSE 2");
@@ -321,8 +320,8 @@ class SmartEVSEFlowCard extends LitElement {
     const lanes = chart ? chart.lanes.length : 0;
     const chartPx = chart ? CHART_FRAME_CHROME_PX + CHART_LEGEND_PX * (lanes ? 2 : 1) + (lanes ? CHART_PERIOD_LINE_PX : 0) +
       chartTotalHeight(PLAN_CHART_HEIGHT, lanes) : 0;
-    // Hero and history launcher, then a compact tile per charger (a car tile has its meter and facts).
-    const tiles = [ev1, ev2].reduce((sum, ev) => sum + (ev.connected ? 3.5 : 1.5), 0);
+    const planned = this._isIntelligentPlanActive() && !this._isForcePlanActive();
+    const tiles = [ev1, ev2].reduce((sum, ev) => sum + (!ev.connected ? 2 : planned ? 5.5 : 4), 0);
     return Math.max(6, Math.ceil(4 + tiles + chartPx / 50));
   }
 
@@ -331,15 +330,11 @@ class SmartEVSEFlowCard extends LitElement {
     // A press may end outside the card; its release still completes a deferred field commit.
     window.addEventListener("pointerup", this._pointerReleased, true);
     window.addEventListener("pointercancel", this._pointerReleased, true);
-    window.addEventListener("storage", this._layoutChanged);
-    window.addEventListener(LAYOUT_EVENT, this._layoutChanged);
   }
 
   disconnectedCallback() {
     window.removeEventListener("pointerup", this._pointerReleased, true);
     window.removeEventListener("pointercancel", this._pointerReleased, true);
-    window.removeEventListener("storage", this._layoutChanged);
-    window.removeEventListener(LAYOUT_EVENT, this._layoutChanged);
     this._pointerDown = false;
     this._flushDeferredCommits();
     super.disconnectedCallback();
@@ -600,74 +595,6 @@ class SmartEVSEFlowCard extends LitElement {
     return saving ? `≈ ${amount} · ${savingWord} ≈ ${saving}` : `≈ ${amount}`;
   }
 
-  // The time clause of a charger's plan line; physical truth decides "charging".
-  _intelligentTimeClause(charger, ev, now = Date.now()) {
-    const blocks = this._blocks(charger).filter((block) => block.end > now);
-    if (!blocks.length) return "";
-    const [first] = blocks;
-    const current = first.start <= now;
-    if (current && ev?.isCharging) return `charging until ${this._formatPlanTime(first.end, now)}`;
-    const more = blocks.length > 1 ? ` +${blocks.length - 1} more` : "";
-    if (current || this._localDayKey(first.start) === this._localDayKey(new Date(now))) {
-      return `${formatHassTime(this._hass, first.start)}–${formatHassTime(this._hass, first.end)}${more}`;
-    }
-    return `starts ${this._formatDateTime(first.start)}${more}`;
-  }
-
-  // Tile plan lines for one connected charger; null when the plan has nothing to say.
-  _intelligentTileLines(ev, now = Date.now()): Array<{ text: string; tone?: string }> {
-    const payload = this._intelligent();
-    const charger = payload?.chargers?.[ev.key];
-    if (!charger || typeof charger !== "object") return [];
-    const currency = payload.currency;
-    const status = String(charger.status || "");
-    const name = (key) => this._intelligentVehicleName(payload.chargers?.[key], key);
-    const lines: Array<{ text: string; tone?: string }> = [];
-    const money = (word = "saving") => {
-      const text = this._intelligentMoneyLine(charger, currency, word);
-      if (text) lines.push({ text });
-    };
-    if (status === "identifying") return [{ text: "Identifying vehicle" }];
-    if (status === "excluded") return [{ text: "Not planned · charge policy" }];
-    if (charger.car_timer) return [{ text: "Car’s own charging timer is on", tone: "warning" }];
-    if (status === "not_accepting" || charger.not_accepting) return [{ text: "Car isn’t accepting charge", tone: "warning" }];
-    const prefix = charger.vehicle ? "" : `${UNIDENTIFIED_VEHICLE} · `;
-    const soc = this._num(charger.soc);
-    const target = this._num(charger.target ?? charger.minimum);
-    const time = this._intelligentTimeClause(charger, ev, now);
-    if (status === "reached" || status === "done") {
-      if (charger.top_up && (this._blocks(charger).some((block) => block.topUp && block.end > now))) {
-        const limit = this._num(charger.car_limit);
-        // 0.0.9.x names its top-up; later versions charge "above the minimum" (0.0.10.0: while cheap).
-        const head = this._legacyTopUp() ? `Topping up${limit !== null ? ` to ${this._formatPercent(limit)}` : ""}`
-          : [this._extraLabel(), this._intelligentExtraLevel(charger)].filter(Boolean).join(" · ");
-        lines.push({ text: [`${prefix}${head}`, time].filter(Boolean).join(" · ") });
-      } else if (status === "reached" || (soc !== null && target !== null && soc >= target)) {
-        lines.push({ text: `${prefix}${this._formatPercent(target)} reached` });
-      } else {
-        lines.push({ text: `${prefix}Charging complete` });
-      }
-      money("saved");
-      return lines;
-    }
-    // An estimated plan already names its energy in the first line; no second "≈ 30 kWh" line.
-    const estimated = charger.estimated === true;
-    if (status === "at_risk" || status === "catch_up") {
-      const projected = this._num(charger.projected_soc);
-      const parts = [`${prefix}${this._intelligentShortHead(charger, status)}`];
-      if (status === "at_risk" && projected !== null && !estimated) parts.push(`≈ ${this._formatPercent(projected)}`);
-      if (ev.isCharging) parts.push("charging now");
-      else if (charger.queue_after && payload.chargers?.[charger.queue_after]) parts.push(`after ${name(charger.queue_after)}`);
-      else if (time) parts.push(time);
-      lines.push({ text: parts.join(" · "), tone: "warning" });
-      if (!estimated) money();
-      return lines;
-    }
-    lines.push({ text: [`${prefix}${this._intelligentTargetClause(charger)}`, time].filter(Boolean).join(" · ") });
-    if (!estimated) money();
-    return lines;
-  }
-
   // Integration 0.0.9.x publishes a top-up switch and price: its controls and wording stay.
   _legacyTopUp() {
     const id = this._intelligentEntityIds().topUp;
@@ -725,7 +652,7 @@ class SmartEVSEFlowCard extends LitElement {
     return extra !== null ? `to ≈ ${this._formatPercent(extra)}` : limit !== null ? `up to ${this._formatPercent(limit)}` : "";
   }
 
-  // Plan facts of one connected car for the plan layout: at most one note or warning line, then
+  // Plan facts of one connected car for its tile: at most one note or warning line, then
   // short labelled rows (Guaranteed, Extra, Next, Planned). The minimum is a floor: it is guaranteed
   // by the ready-by time, and above it the car goes on charging to its own charge limit.
   _intelligentTileRows(ev, now = Date.now()): { note: { text: string; tone?: string } | null; rows: Array<{ id: string; label: string; value: string }> } {
@@ -774,7 +701,8 @@ class SmartEVSEFlowCard extends LitElement {
     if (plannedKwh === null) {
       // Older integrations publish one figure for the window: charged so far plus planned.
       const amount = estimated || charger.partial ? "" : this._formatMoney(charger.session_cost ?? charger.cost, payload.currency);
-      if (amount) rows.push({ id: "cost", label: "Cost", value: `≈ ${amount}${charger.includes_forecast ? " forecast" : ""}` });
+      // It is the whole charge, so it is labelled as that.
+      if (amount) rows.push({ id: "cost", label: "Total", value: `≈ ${amount}${charger.includes_forecast ? " forecast" : ""}` });
     } else if (plannedKwh >= 0.1 && !estimated) {
       const amount = this._formatMoney(charger.planned_cost, payload.currency);
       rows.push({ id: "planned", label: "Planned", value: [`≈ ${formatHassNumber(this._hass, plannedKwh, { digits: 1 })} kWh`,
@@ -783,8 +711,8 @@ class SmartEVSEFlowCard extends LitElement {
     return { note, rows };
   }
 
-  // Escaped text for a car tile. "≈" stays with its number, and each " · " is a span the narrow
-  // layout turns into the line break, so no line starts or ends with a dot.
+  // Escaped text for a car tile. "≈" stays with its number, and each " · " is its own span, so a
+  // value wraps at a separator and not inside a figure.
   _wrapGlue(value) {
     return this._safe(value).replace(/\b(saves|saved|to) ≈/g, "$1&nbsp;≈").replaceAll("≈ ", "≈&nbsp;")
       .replaceAll(" · ", `<span class="sep"> · </span>`);
@@ -864,103 +792,10 @@ class SmartEVSEFlowCard extends LitElement {
     return `smartevse-flow-card:plan-preferences:${identity}`;
   }
 
-  // ---- Card layout: "plan" (0.4.0) or "classic" -------------------------------------------
-  private _layoutOverride: "plan" | "classic" | null = null;
-  // The default resolved to "plan" once (Intelligent support was seen). It stays while the
-  // controller cannot say otherwise, e.g. while it is unavailable during a restart.
-  private _layoutDefaultPlan = false;
   // The shared chart measures its own width and redraws every 30 s for the now marker; that
   // redraw also keeps the hero, tiles and totals current ("Now", "Charging until …").
   private _charts = new FamilyChartController(this);
   private _chartGroup = `smartevse-plan-${++chartInstances}`;
-  // Another card (this document) or another tab (storage) changed the layout of this controller.
-  private _layoutChanged = (event: Event) => {
-    const detail = (event as CustomEvent<{ key?: string; value?: string; source?: unknown }>).detail;
-    if (detail && typeof detail === "object") {
-      if (detail.source === this || detail.key !== this._layoutStorageKey()) return;
-      this._layoutOverride = detail.value === "plan" || detail.value === "classic" ? detail.value : null;
-    } else {
-      const key = (event as StorageEvent).key ?? null;
-      if (key !== null && key !== this._layoutStorageKey() && key !== this._layoutDefaultStorageKey()) return;
-      this._loadLayoutPreference();
-    }
-    if (this._config) this._render();
-  };
-
-  _layoutStorageKey() {
-    return `smartevse-flow-card:layout:${this._config?.controller_entity || ""}`;
-  }
-
-  // The resolved default, kept apart from the explicit device override above.
-  _layoutDefaultStorageKey() {
-    return `smartevse-flow-card:layout-default:${this._config?.controller_entity || ""}`;
-  }
-
-  _loadLayoutPreference() {
-    this._layoutOverride = null;
-    try {
-      const saved = window.localStorage?.getItem(this._layoutStorageKey());
-      if (saved === "plan" || saved === "classic") this._layoutOverride = saved;
-      if (window.localStorage?.getItem(this._layoutDefaultStorageKey()) === "plan") this._layoutDefaultPlan = true;
-    } catch {
-      // Storage can be unavailable; the configured layout still applies.
-    }
-  }
-
-  _rememberLayoutDefault(plan: boolean) {
-    this._layoutDefaultPlan = plan;
-    try {
-      if (plan) window.localStorage?.setItem(this._layoutDefaultStorageKey(), "plan");
-      else window.localStorage?.removeItem(this._layoutDefaultStorageKey());
-    } catch {
-      // Kept for this card instance only.
-    }
-  }
-
-  // "plan" or "classic" saves a device override; "auto" clears it so the card option or default applies.
-  _setLayout(value) {
-    if (value !== "plan" && value !== "classic" && value !== "auto") return;
-    this._layoutOverride = value === "auto" ? null : value;
-    try {
-      if (value === "auto") window.localStorage?.removeItem(this._layoutStorageKey());
-      else window.localStorage?.setItem(this._layoutStorageKey(), value);
-    } catch {
-      // Kept for this card instance only.
-    }
-    try {
-      window.dispatchEvent(new CustomEvent(LAYOUT_EVENT, { detail: { key: this._layoutStorageKey(), value, source: this } }));
-    } catch {
-      // Other cards follow on their next load.
-    }
-    this._render();
-  }
-
-  _layout(): "plan" | "classic" {
-    if (this._layoutOverride) return this._layoutOverride;
-    const configured = this._config?.layout;
-    if (configured === "plan" || configured === "classic") return configured;
-    if (this._intelligentSupported()) {
-      if (!this._layoutDefaultPlan) this._rememberLayoutDefault(true);
-      return "plan";
-    }
-    // Support is not visible right now. Only a readable controller without an Intelligent payload
-    // (an older integration) means "unsupported"; an unavailable controller keeps the default.
-    if (this._layoutDefaultPlan && this._isAvailable(this._config?.controller_entity) && !this._intelligent()) {
-      this._rememberLayoutDefault(false);
-    }
-    return this._layoutDefaultPlan ? "plan" : "classic";
-  }
-
-  _layoutChoice() {
-    const current = this._layout();
-    const chosen = this._layoutOverride || "auto";
-    const option = (value, label, detail) => `<button class="family-chip layout-option" type="button" data-action="set-layout" data-value="${value}" aria-pressed="${chosen === value}" data-tone="${chosen === value ? "accent" : "neutral"}" title="${this._safe(detail)}">${this._safe(label)}</button>`;
-    return `<div class="layout-choice" role="group" aria-label="Card layout">
-      <div class="setting-copy"><div class="setting-label">Card layout</div><div class="setting-value">${chosen === "auto" ? `Automatic · ${current === "plan" ? "Plan" : "Classic"}` : "Saved on this device"}</div></div>
-      <div class="layout-options">${option("auto", "Auto", "Follow the card option or the default")}${option("plan", "Plan", "Plan chart and car gauges")}${option("classic", "Classic", "The earlier charger tiles")}</div>
-    </div>`;
-  }
-
   // Each re-render replaces the animated elements. A new one starts at the phase of a shared
   // clock, so rings, glows and charging blocks continue instead of restarting from zero.
   _syncAnimationPhase() {
@@ -1148,7 +983,7 @@ class SmartEVSEFlowCard extends LitElement {
     if (!saving) return "";
     const planned = [ev1, ev2].some((ev) => ev?.connected && chargers[ev.key] && this._blocks(chargers[ev.key]).some((block) => block.end > now));
     return `<p class="plan-saving family-surface"><ha-icon icon="mdi:piggy-bank-outline" aria-hidden="true"></ha-icon><span>${
-      planned ? "Saves" : "Saved"} ≈ ${this._safe(saving)} compared with charging at plug\u2011in</span></p>`;
+      planned ? "Saves" : "Saved"} ≈ ${this._safe(saving)} compared with ${this._safe(baselineName(payload.baseline_kind))}</span></p>`;
   }
 
   _loadPlanPreferences() {
@@ -2425,7 +2260,6 @@ class SmartEVSEFlowCard extends LitElement {
           value: this._formatMinutes(dutyCycleMinutes),
         })}
       </div>
-      ${this._layoutChoice()}
     `;
   }
 
@@ -2629,7 +2463,7 @@ class SmartEVSEFlowCard extends LitElement {
                 })
                 .join("")}
             </div>
-            <button class="advanced-settings" data-action="open-settings" type="button" aria-haspopup="dialog"><ha-icon icon="${UI_ICONS.settings}" aria-hidden="true"></ha-icon><span>Settings</span><ha-icon icon="${UI_ICONS.next}" aria-hidden="true"></ha-icon></button>
+            ${this._entity(this._config.charge_policy_entity) || this._entity(this._config.duty_cycle_entity) ? `<button class="advanced-settings" data-action="open-settings" type="button" aria-haspopup="dialog"><ha-icon icon="${UI_ICONS.settings}" aria-hidden="true"></ha-icon><span>Settings</span><ha-icon icon="${UI_ICONS.next}" aria-hidden="true"></ha-icon></button>` : ""}
             ${error}${status}</div>
           </div>
       `;
@@ -2836,7 +2670,8 @@ class SmartEVSEFlowCard extends LitElement {
   _intelligentLearningFact(vehicle) {
     const sessions = Math.max(0, Math.round(this._num(vehicle?.learned_sessions) ?? 0));
     if (vehicle?.model?.kwh_per_pct_source === "learned") return `Learned from ${sessions} ${sessions === 1 ? "charge" : "charges"}`;
-    return `Learning · ${Math.min(sessions, 3)} of 3 charges`;
+    // Planning does not wait for these: they only make its estimates more exact.
+    return `Refining estimates · ${Math.min(sessions, 3)} of 3 charges`;
   }
 
   _intelligentTimeField(entityId, vehicleName) {
@@ -3075,7 +2910,7 @@ class SmartEVSEFlowCard extends LitElement {
         estimated && totalEnergy !== null && totalEnergy > 0
           ? `<div><dt>Planned energy</dt><dd>≈ ${this._safe(formatHassNumber(this._hass, totalEnergy, { digits: totalEnergy >= 10 ? 0 : 1, unit: "kWh" }))}</dd></div>` : "",
         totalCost ? `<div><dt>Planned cost</dt><dd>≈ ${this._safe(totalCost)}${totals.includes_forecast ? " forecast" : ""}</dd></div>` : "",
-        totalSaving ? `<div><dt>Saving vs charging at plug-in</dt><dd>≈ ${this._safe(totalSaving)}</dd></div>` : "",
+        totalSaving ? `<div><dt>Saving vs ${this._safe(baselineName(payload?.baseline_kind, "-"))}</dt><dd>≈ ${this._safe(totalSaving)}</dd></div>` : "",
       ].join("");
       const policyEntity = this._config.charge_policy_entity;
       const firstLabel = order.length >= 2 ? order[0].replace("smartevse_", "SmartEVSE ") : "";
@@ -3103,7 +2938,7 @@ class SmartEVSEFlowCard extends LitElement {
         else if (beyondPrices) facts.push("Hours without prices are used only if needed");
       }
       const learnedDays = this._num(payload?.household?.learned_days);
-      if (learnedDays !== null && learnedDays < 7) facts.push(`Learning household load (${Math.max(0, Math.round(learnedDays))} of 7 days)`);
+      if (learnedDays !== null && learnedDays < 7) facts.push(`Refining household load · ${Math.max(0, Math.round(learnedDays))} of 7 days`);
       plan = `
         <section class="intelligent-plan" aria-label="Plan">
           <h3 class="intelligent-section-title">${this._safe(this._intelligentPlanHeading(firstStart, now))}</h3>
@@ -3117,10 +2952,13 @@ class SmartEVSEFlowCard extends LitElement {
     }
     const vehicles = INTELLIGENT_VEHICLES.map((key) => this._intelligentVehicleSettings(key, ids)).join("");
     const hasMinimum = INTELLIGENT_VEHICLES.some((key) => ids.vehicles[key].minimum && this._entity(ids.vehicles[key].minimum));
+    // The counters above ("Refining … 1 of 3 charges", "… 1 of 7 days") are not a gate.
+    const refining = /class="intelligent-fact">Refining /.test(`${plan}${vehicles}`);
     return `
       ${warning?.level === "warning" ? this._notice("warning", warning.message) : ""}
       ${plan}
-      ${vehicles ? `<div class="intelligent-settings">${vehicles}${hasMinimum ? `<p class="intelligent-fact intelligent-minimum-help">Charges to at least this level by the ready-by time.</p>` : ""}</div>` : ""}
+      ${vehicles ? `<div class="intelligent-settings">${vehicles}${hasMinimum ? `<p class="intelligent-fact intelligent-minimum-help">Charges to at least this level by the ready-by time.</p>` : ""}${
+        refining ? `<p class="intelligent-fact intelligent-refining-help">Planning works from the first night. These only make its estimates more exact.</p>` : ""}</div>` : ""}
       ${this._legacyTopUp() ? this._intelligentTopUp(ids, now) : this._intelligentAboveMinimum()}
     `;
   }
@@ -3258,7 +3096,9 @@ class SmartEVSEFlowCard extends LitElement {
   // span several deadline windows with the same ledger id (one per night, and an empty one opened
   // by the last deadline roll before the car leaves): windows too small to carry a saving are
   // ignored and the rest combine. The sum is shown only when every remaining window has one.
-  _intelligentSession(ledgerId): { saving: number | null; mixed: boolean; partial: boolean } | null {
+  // `kind` is what the saving is compared with (each window's baseline_kind; plug-in when absent),
+  // or "" when the windows of one plug-in disagree.
+  _intelligentSession(ledgerId): { saving: number | null; mixed: boolean; partial: boolean; kind: string } | null {
     if (!ledgerId || !this._intelligentSupported()) return null;
     const sessions = this._intelligent()?.sessions;
     if (!Array.isArray(sessions)) return null;
@@ -3271,17 +3111,21 @@ class SmartEVSEFlowCard extends LitElement {
       saving: complete ? Math.round(savings.reduce((sum: number, saving) => sum + (saving as number), 0) * 100) / 100 : null,
       mixed: windows.some((session) => session.mixed === true),
       partial: windows.some((session) => session.partial === true),
+      kind: new Set(windows.map((session) => (session.baseline_kind === "schedule" ? "schedule" : "plug_in"))).size === 1
+        ? (windows[0].baseline_kind === "schedule" ? "schedule" : "plug_in") : "",
     };
   }
 
-  // "≈ €1.25" for the disconnected tile until the next plug-in; "" when not trustworthy.
-  _lastChargeSaving(record) {
+  // The saving of the last charge and what it is compared with, for the tile without a car until
+  // the next plug-in; null when there is none to stand behind.
+  _lastChargeSaving(record): { amount: string; kind: string } | null {
     const session = this._intelligentSession(record?.id);
-    if (!session || session.mixed || session.partial) return "";
-    return this._formatSaving(session.saving, this._intelligent()?.currency || record?.currency);
+    if (!session || session.mixed || session.partial || !session.kind) return null;
+    const amount = this._formatSaving(session.saving, this._intelligent()?.currency || record?.currency);
+    return amount ? { amount, kind: session.kind } : null;
   }
 
-  // History detail line comparing a recorded session with charging at plug-in.
+  // History detail line: what a recorded session saved, and compared with what.
   _historySaving(record) {
     const session = this._intelligentSession(record?.id);
     if (!session) return "";
@@ -3292,7 +3136,9 @@ class SmartEVSEFlowCard extends LitElement {
     if (saving === null || Math.abs(saving) < MIN_SAVING) return "";
     const amount = this._formatMoney(Math.abs(saving), currency);
     if (!amount) return "";
-    return saving > 0 ? `Saved ≈ ${amount} vs charging at plug-in` : `≈ ${amount} more than charging at plug-in`;
+    if (!session.kind) return saving > 0 ? `Saved ≈ ${amount}` : "";
+    const baseline = baselineName(session.kind, "-");
+    return saving > 0 ? `Saved ≈ ${amount} vs ${baseline}` : `≈ ${amount} more than ${baseline}`;
   }
 
   _costAmount(record) {
@@ -3306,9 +3152,11 @@ class SmartEVSEFlowCard extends LitElement {
     if (!record || typeof record !== "object") return "";
     const energy = this._num(record.energy_kwh);
     if (energy === null) return "";
-    if (energy < 0.05) return "Nothing yet";
+    if (energy < 0.05) return NOTHING_CHARGED;
     const amount = this._costAmount(record);
-    return [`${formatHassNumber(this._hass, energy, { digits: 1 })} kWh`, amount === UNAVAILABLE_TEXT ? "" : `≈ ${amount}`].filter(Boolean).join(" · ");
+    // A session with gaps (time not observed, hours without a price) says so.
+    return [`${formatHassNumber(this._hass, energy, { digits: 1 })} kWh`, amount === UNAVAILABLE_TEXT ? "" : `≈ ${amount}`,
+      record.partial ? "partial estimate" : ""].filter(Boolean).join(" · ");
   }
 
   _costLabel(record) {
@@ -3351,16 +3199,92 @@ class SmartEVSEFlowCard extends LitElement {
       }).join("")}</section>`;
   }
 
-  _chargerDetails(ev1, ev2) {
+  // One titled section of the charger details: label/value rows, or a line of text.
+  _detailsSection(id: string, title: string, rows: Array<[string, string]>, note = "") {
+    const filled = rows.filter(([, value]) => value);
+    if (!filled.length && !note) return "";
+    return `<section class="details-section" data-section="${this._safe(id)}" aria-label="${this._safe(title)}">
+        <h3 class="intelligent-section-title">${this._safe(title)}</h3>
+        ${note ? `<p class="intelligent-fact details-note">${this._safe(note)}</p>` : ""}
+        ${filled.length ? `<dl class="charger-diagnostics">${filled.map(([label, value]) => `<div><dt>${this._safe(label)}</dt><dd>${this._safe(value)}</dd></div>`).join("")}</dl>` : ""}
+      </section>`;
+  }
+
+  // Everything about one charger in short titled sections: the car, its plan, this charge, the
+  // charger itself and what the planner works from. Every value comes from the controller's
+  // payload or the charger's metered session; a missing value leaves its row out.
+  _chargerDetails(ev1, ev2, now = Date.now()) {
     const ev = [ev1, ev2].find(item => item.key === this._chargerDetailsKey);
     if (!ev) return "";
-    return `<section class="dialog-panel diagnostics-panel">
-      <div class="dialog-content"><dl class="charger-diagnostics">
+    const payload = this._isIntelligentPlanActive() ? this._intelligent() : null;
+    const charger = this._planCharger(ev);
+    const paused = Boolean(charger) && this._planPaused();
+    const record = this._costData()?.chargers?.[ev.key]?.session;
+    const percent = (value) => (this._num(value) === null ? "" : this._formatPercent(value));
+    const sections: string[] = [];
+    if (ev.connected) {
+      const battery = this._knownVehicleName(ev) ? this._batteryPercent(ev.battery) : null;
+      const deadline = charger && (Number.isFinite(Date.parse(charger.deadline)) || this._normaliseClock(charger.ready_by))
+        ? this._intelligentDeadlineClock(charger) : "";
+      sections.push(this._detailsSection("car", "Car", [
+        ["Vehicle", this._knownVehicleName(ev) || (charger ? this._intelligentVehicleName(charger, ev.key) : "Vehicle connected")],
+        ["Battery level", percent(battery !== null ? battery : charger?.soc)],
+        ["At least", percent(charger?.minimum)],
+        ["Car limit", percent(charger?.car_limit)],
+        ["Ready by", deadline],
+      ]));
+    }
+    // The plan of this car: what it guarantees, what follows above the minimum, and each period.
+    const planned = ev.connected && charger && !ev.hasError && !paused ? this._intelligentTileRows(ev, now) : null;
+    if (planned) {
+      const pick = (id) => planned.rows.find((row) => row.id === id)?.value || "";
+      // A car the plan does not work for (identifying, left out by the policy, refusing charge)
+      // has its note only, as on its tile.
+      const blocks = planned.note && !planned.rows.length ? [] : this._blocks(charger).filter((block) => block.end > now).map((block): [string, string] => [
+        `${this._formatPlanTime(block.start, now)}–${formatHassTime(this._hass, block.end)}`, block.topUp ? this._extraLabel() : "Guaranteed"]);
+      sections.push(this._detailsSection("plan", "Plan", [["Guaranteed", pick("guaranteed")], ["Extra", pick("extra")], ...blocks],
+        planned.note?.text || (!blocks.length && !pick("guaranteed") ? "Nothing planned" : "")));
+    } else if (ev.connected && charger && paused) {
+      sections.push(this._detailsSection("plan", "Plan", [], "Paused while Force charge is on"));
+    }
+    if (ev.connected) {
+      const charged = this._chargedValue(record);
+      const since = charged && record?.started_at ? this._costTime(record.started_at) : "";
+      const pick = (id) => planned?.rows.find((row) => row.id === id);
+      const later = pick("planned") || pick("cost");
+      sections.push(this._detailsSection("charge", "This charge", [
+        ["Charged", charged],
+        ["Since", since === "Time unavailable" ? "" : since],
+        [later?.label || "Planned", later?.value || ""],
+        ["Saving", planned ? this._chargerSaving(charger, payload) : ""],
+      ]));
+    }
+    sections.push(`<section class="details-section" data-section="charger" aria-label="Charger">
+        <h3 class="intelligent-section-title">Charger</h3>
+        <dl class="charger-diagnostics">
         <div><dt>State</dt>${this._diagnosticValue(ev.available, ev.state)}</div>
         <div><dt>Mode</dt>${this._diagnosticValue(ev.available, ev.mode)}</div>
         <div><dt>Current offered</dt>${this._diagnosticValue(ev.available, this._formatCurrent(ev.chargeCurrent))}</div>
         <div><dt>Limit</dt>${this._diagnosticValue(ev.available, this._formatCurrent(ev.maxCurrent))}</div>
-      </dl></div>
+        </dl>
+      </section>`);
+    // What the planner works from for this vehicle. These refine its estimates; none is a gate.
+    const vehicle = ev.connected && charger ? payload?.vehicles?.[charger.settings_key] : null;
+    const model = vehicle && typeof vehicle === "object" && vehicle.model && typeof vehicle.model === "object" ? vehicle.model : null;
+    if (model) {
+      const perPercent = this._num(model.kwh_per_pct);
+      const power = this._num(model.cap_kw);
+      const sessions = Math.max(0, Math.round(this._num(vehicle.learned_sessions) ?? 0));
+      const learned = model.kwh_per_pct_source === "learned";
+      sections.push(this._detailsSection("planner", "What the planner uses", [
+        ["Energy per percent", perPercent === null ? "" : `${formatHassNumber(this._hass, perPercent, { digits: 2 })} kWh · ${
+          learned ? "learned" : model.kwh_per_pct_source === "capacity" ? "from the battery capacity" : "estimated"}`],
+        ["Charging power", power === null ? "" : `${formatHassNumber(this._hass, power, { digits: 1 })} kW`],
+        ["Estimates", learned && sessions > 3 ? `Refined from ${sessions} charges` : `Refined from ${Math.min(sessions, 3)} of 3 charges`],
+      ]));
+    }
+    return `<section class="dialog-panel diagnostics-panel">
+      <div class="dialog-content">${sections.join("")}</div>
     </section>`;
   }
 
@@ -3417,88 +3341,84 @@ class SmartEVSEFlowCard extends LitElement {
       : this._forceWizardStep === "intelligent" ? "Intelligent charging" : "Charging plan";
   }
 
-  // `besideCar`: the other charger has a car, so an empty tile here keeps its own short height.
-  _evNode(ev, besideCar = false) {
+  // The Intelligent payload entry of one charger, or null: Intelligent charging is off, the
+  // charger cannot be read, or it has no entry.
+  _planCharger(ev) {
+    const payload = this._isIntelligentPlanActive() ? this._intelligent() : null;
+    const charger = payload && ev.available ? payload.chargers?.[ev.key] : null;
+    return charger && typeof charger === "object" ? charger : null;
+  }
+
+  // Force charge overrides the Intelligent plan: it is shown paused and its facts are left out.
+  _planPaused() {
+    return this._isForcePlanActive() || this._intelligent()?.overridden_by === "force";
+  }
+
+  // What the saving of one car's plan is, with what it is compared with: "≈ €1.29 vs Charge with
+  // schedule". "" when the payload carries none it can stand behind.
+  _chargerSaving(charger, payload) {
+    if (!charger || charger.estimated === true || charger.partial || charger.includes_forecast) return "";
+    const saving = this._formatSaving(charger.saving, payload?.currency);
+    return saving ? `≈ ${saving} vs ${baselineName(payload?.baseline_kind)}` : "";
+  }
+
+  // The facts of a charger tile as label/value rows. `history` rows are the control that opens
+  // that charger's history: the money of a charge is one tap from its sessions.
+  _factRows(ev, rows: Array<{ id: string; label: string; value: string; history?: boolean }>) {
+    if (!rows.length) return "";
+    return `<dl class="plan-rows">${rows.map((row) => `<div class="plan-row" data-row="${this._safe(row.id)}"><dt>${this._safe(row.label)}</dt><dd>${row.history
+      ? `<button class="row-history" type="button" data-action="open-history" data-charger="${this._safe(ev.key)}" aria-haspopup="dialog" aria-label="${this._safe(`${ev.smartevseName} ${row.label.toLowerCase()} ${row.value}; open history`)}"><span>${this._wrapGlue(row.value)}</span><ha-icon icon="${UI_ICONS.next}" aria-hidden="true"></ha-icon></button>`
+      : this._wrapGlue(row.value)}</dd></div>`).join("")}</dl>`;
+  }
+
+  // One tile per charger: icon, charger, vehicle and state with the battery level, the shared
+  // level meter with the minimum marked, at most one note or warning line, then short labelled
+  // facts. "Charged" is what this charge has taken and cost since plug-in, in every mode; the
+  // other facts need an Intelligent plan for the car. The LED state is the glow under the tile.
+  _evNode(ev) {
     const record = this._costData()?.chargers?.[ev.key]?.session;
-    const knownVehicle = ev.connectedEvName && !["unknown", "unavailable", "none", "?", "n/a"].includes(ev.connectedEvName.toLowerCase());
-    const vehicleTitle = knownVehicle ? ev.connectedEvName : "Vehicle connected";
-    const battery = knownVehicle ? this._batteryPercent(ev.battery) : null;
+    const vehicleTitle = this._knownVehicleName(ev) || "Vehicle connected";
     const status = !ev.available ? "Unavailable" : ev.hasError ? "Charger error" : !ev.connected ? "No vehicle connected"
       : ev.isCharging ? "Charging" : ev.sessionComplete ? "Session complete" : ev.active ? "Ready to charge" : "Connected · waiting";
     const visual = this._wledVisuals(this._entity(this._config.controller_entity)?.attributes || {});
-    const diagnostics = ev.available && ev.connected ? `
-      <button class="charger-details" type="button" data-action="open-charger-details" aria-haspopup="dialog" data-charger="${this._safe(ev.key)}" aria-label="${this._safe(ev.smartevseName)} charger details">
-        Charger details<ha-icon icon="${UI_ICONS.details}" aria-hidden="true"></ha-icon>
-      </button>` : "";
-    // Intelligent plan facts: only for a healthy charger, and not while Force overrides the plan.
-    const intelligent = this._isIntelligentPlanActive() ? this._intelligent() : null;
-    const planCharger = intelligent && ev.available && !ev.hasError && !this._isForcePlanActive() && intelligent.overridden_by !== "force"
-      ? intelligent.chargers?.[ev.key] : null;
-    const planLines = this._layout() !== "plan" && ev.connected && planCharger && typeof planCharger === "object" ? this._intelligentTileLines(ev) : [];
+    // Plan facts: only for a healthy charger, and not while Force charge overrides the plan.
+    const payload = this._isIntelligentPlanActive() ? this._intelligent() : null;
+    const planCharger = !ev.hasError && !this._planPaused() ? this._planCharger(ev) : null;
     const minimum = planCharger ? this._num(planCharger.target ?? planCharger.minimum) : null;
-    const lastSaving = !ev.connected && ev.available && !ev.hasError ? this._lastChargeSaving(record) : "";
-    const planMarkup = planLines.length
-      ? `<div class="charger-plan">${planLines.map((line) => `<p class="charger-plan-line"${line.tone ? ` data-tone="${this._safe(line.tone)}"` : ""}>${line.tone === "warning" ? WARNING_GLYPH : ""}${this._safe(line.text)}</p>`).join("")}</div>`
-      : lastSaving ? `<div class="charger-plan"><p class="charger-plan-line">Last charge saved ≈ ${this._safe(lastSaving)}</p></div>` : "";
-    const meter = ev.connected && battery !== null ? levelMeterMarkup({
-      value: battery,
+    const battery = this._knownVehicleName(ev) ? this._batteryPercent(ev.battery) : null;
+    const level = battery !== null ? battery : this._num(planCharger?.soc);
+    const meter = ev.connected && level !== null ? levelMeterMarkup({
+      value: level,
       label: `${vehicleTitle} battery`,
-      tone: batteryTone(battery),
+      tone: batteryTone(level),
       className: "battery-meter",
-      ...(minimum !== null ? { target: minimum, valueText: `${this._formatPercent(battery)}, minimum ${this._formatPercent(minimum)}` } : {}),
+      ...(minimum !== null ? { target: minimum, valueText: `${this._formatPercent(level)}, minimum ${this._formatPercent(minimum)}` } : {}),
     }) : "";
-    const nodeStyle = this._wledNodeStyle(visual, ev.visual);
-    if (this._layout() === "plan") {
-      // A compact tile per charger: name and state, the shared horizontal battery meter with the
-      // minimum marked, then short labelled facts. The LED state shows as the glow under the tile.
-      const level = battery !== null ? battery : this._num(planCharger?.soc);
-      const ringMs = this._glowDurationMs(visual, ev.visual);
-      const podMeter = ev.connected && level !== null ? levelMeterMarkup({
-        value: level,
-        label: `${vehicleTitle} battery`,
-        tone: batteryTone(level),
-        className: "battery-meter",
-        ...(minimum !== null ? { target: minimum, valueText: `${this._formatPercent(level)}, minimum ${this._formatPercent(minimum)}` } : {}),
-      }) : "";
-      // Plan facts as short labelled rows; a note or warning line sits above them.
-      const plan = ev.connected && planCharger && typeof planCharger === "object" ? this._intelligentTileRows(ev) : { note: null, rows: [] };
-      // What this charge has cost so far: the charger's metered session since plug-in.
-      const charged = ev.connected ? this._chargedValue(record) : "";
+    const plan = ev.connected && planCharger ? this._intelligentTileRows(ev) : { note: null, rows: [] };
+    const rows: Array<{ id: string; label: string; value: string; history?: boolean }> = [...plan.rows];
+    let note = plan.note ? `<p class="charger-plan-line"${plan.note.tone ? ` data-tone="${this._safe(plan.note.tone)}"` : ""}>${plan.note.tone === "warning" ? WARNING_GLYPH : ""}${this._wrapGlue(plan.note.text)}</p>` : "";
+    if (ev.connected) {
+      // What this charge has taken and cost so far: the charger's metered session since plug-in.
+      const charged = this._chargedValue(record);
       if (charged) {
-        const at = plan.rows.findIndex((row) => row.id === "planned" || row.id === "cost");
-        plan.rows.splice(at < 0 ? plan.rows.length : at, 0, { id: "charged", label: "Charged", value: charged });
+        const at = rows.findIndex((row) => row.id === "planned" || row.id === "cost");
+        rows.splice(at < 0 ? rows.length : at, 0, { id: "charged", label: "Charged", value: charged, history: true });
       }
-      const noteMarkup = plan.note ? `<p class="charger-plan-line"${plan.note.tone ? ` data-tone="${this._safe(plan.note.tone)}"` : ""}>${plan.note.tone === "warning" ? WARNING_GLYPH : ""}${this._wrapGlue(plan.note.text)}</p>` : "";
-      const rowsMarkup = plan.rows.length ? `<dl class="plan-rows">${plan.rows.map((row) => `<div class="plan-row" data-row="${this._safe(row.id)}"><dt>${this._safe(row.label)}</dt><dd>${this._wrapGlue(row.value)}</dd></div>`).join("")}</dl>` : "";
-      const podPlan = noteMarkup || rowsMarkup ? `<div class="charger-plan">${noteMarkup}${rowsMarkup}</div>`
-        : lastSaving ? `<div class="charger-plan"><p class="charger-plan-line">Last charge saved ≈ ${this._safe(lastSaving)} compared with charging at plug-in</p></div>` : "";
-      const detailsButton = ev.available && ev.connected ? `
-            <button class="pod-details" type="button" data-action="open-charger-details" aria-haspopup="dialog" data-charger="${this._safe(ev.key)}" aria-label="${this._safe(ev.smartevseName)} charger details"><ha-icon icon="${UI_ICONS.details}" aria-hidden="true"></ha-icon></button>` : "";
-      return `
-      <div class="family-tile-wrap ev-node-wrap ${this._safe(ev.key)} tone-${this._safe(ev.tone)} visual-${this._safe(ev.visual)}"
-        style="${this._safe(nodeStyle)}">
-        <div class="glow-under ev-glow"${nodeStyle && ringMs > 0 ? ` data-anim-ms="${ringMs}"` : ""} aria-hidden="true"><div class="glow-overlay"></div></div>
-        <section class="ev-node ev-pod ${this._safe(ev.key)} tone-${this._safe(ev.tone)} visual-${this._safe(ev.visual)}${ev.connected ? "" : " empty"}"
-          aria-label="${this._safe(ev.smartevseName)}">
-          <div class="pod-head">
-            ${ev.connected ? "" : `<span class="charger-icon pod-icon"><ha-icon icon="mdi:ev-station" aria-hidden="true"></ha-icon></span>`}
-            <div class="pod-copy">
-              ${ev.connected ? `<div class="vehicle-name">${this._safe(vehicleTitle)}</div>` : ""}
-              <div class="charger-status"><span class="state-dot" aria-hidden="true"></span><span class="charger-name">${this._safe(ev.smartevseName)}</span><span class="sep-dot" aria-hidden="true"> · </span><span class="charger-state">${this._safe(status)}</span></div>
-            </div>
-            ${ev.connected && level !== null ? `<div class="battery-value">${this._safe(Math.round(level))}<span>%</span></div>` : ""}${detailsButton}
-          </div>
-          ${podMeter}
-          ${ev.hasError ? `<p class="charger-message" role="status">${this._safe(ev.error)}</p>` : !ev.available ? `<p class="charger-message">Status cannot be read. Check the charger connection.</p>` : ""}
-          ${podPlan}
-        </section>
-      </div>`;
+    } else if (ev.available && !ev.hasError) {
+      // No car: the last charge here, and what Intelligent charging saved on it.
+      const last = this._chargedValue(record);
+      if (last && last !== NOTHING_CHARGED) rows.push({ id: "last", label: "Last charge", value: last, history: true });
+      const lastSaving = this._lastChargeSaving(record);
+      if (lastSaving) note = `<p class="charger-plan-line">Last charge saved ≈ ${this._safe(lastSaving.amount)} compared with ${this._safe(baselineName(lastSaving.kind))}</p>`;
     }
+    const facts = this._factRows(ev, rows);
+    const nodeStyle = this._wledNodeStyle(visual, ev.visual);
+    const glowMs = this._glowDurationMs(visual, ev.visual);
     return `
       <div class="family-tile-wrap ev-node-wrap ${this._safe(ev.key)} tone-${this._safe(ev.tone)} visual-${this._safe(ev.visual)}"
         style="${this._safe(nodeStyle)}">
-        <div class="glow-under ev-glow" aria-hidden="true"><div class="glow-overlay"></div></div>
-        <section class="ev-node ${this._safe(ev.key)} tone-${this._safe(ev.tone)} visual-${this._safe(ev.visual)} ${!ev.connected ? "compact" : ""}"
+        <div class="glow-under ev-glow"${nodeStyle && glowMs > 0 ? ` data-anim-ms="${glowMs}"` : ""} aria-hidden="true"><div class="glow-overlay"></div></div>
+        <section class="ev-node ${this._safe(ev.key)} tone-${this._safe(ev.tone)} visual-${this._safe(ev.visual)}${ev.connected ? "" : " compact"}"
           aria-label="${this._safe(ev.smartevseName)}">
           <div class="charger-heading">
             <span class="charger-icon"><ha-icon icon="mdi:ev-station" aria-hidden="true"></ha-icon></span>
@@ -3507,15 +3427,15 @@ class SmartEVSEFlowCard extends LitElement {
               ${ev.connected ? `<div class="vehicle-name">${this._safe(vehicleTitle)}</div>` : ""}
               <div class="charger-status"><span class="state-dot" aria-hidden="true"></span>${this._safe(status)}</div>
             </div>
-            <div class="charger-totals">
-              ${ev.connected && battery !== null ? `<div class="battery-value">${this._safe(battery)}<span>%</span></div>` : ""}
-              ${record ? `<button class="session-cost" data-action="open-history" data-charger="${this._safe(ev.key)}" aria-haspopup="dialog" aria-label="${this._safe(ev.smartevseName)} charging cost ${this._safe(this._costLabel(record))}; open history"><strong>${this._safe(this._costLabel(record))}</strong><small>${this._costData()?.error ? "History not saved" : record.partial ? "Partial estimate" : ev.connected && record.status !== "finished" ? "Session estimate" : "Last session"}</small></button>` : ev.connected && this._costData() ? `<span class="session-cost empty"><small>No cost recorded yet</small></span>` : ""}
-            </div>
+            ${ev.connected && level !== null ? `<div class="charger-totals"><div class="battery-value">${this._safe(Math.round(level))}<span>%</span></div></div>` : ""}
           </div>
           ${meter}
           ${ev.hasError ? `<p class="charger-message" role="status">${this._safe(ev.error)}</p>` : !ev.available ? `<p class="charger-message">Status cannot be read. Check the charger connection.</p>` : ""}
-          ${planMarkup}
-          ${diagnostics}
+          ${note || facts ? `<div class="charger-plan">${note}${facts}</div>` : ""}
+          ${ev.available && ev.connected ? `
+          <button class="charger-details" type="button" data-action="open-charger-details" aria-haspopup="dialog" data-charger="${this._safe(ev.key)}" aria-label="${this._safe(ev.smartevseName)} charger details">
+            Charger details<ha-icon icon="${UI_ICONS.details}" aria-hidden="true"></ha-icon>
+          </button>` : ""}
         </section>
       </div>`;
   }
@@ -3931,8 +3851,8 @@ class SmartEVSEFlowCard extends LitElement {
     // The overview is a Lit template around three parts: the hero and notices (HTML string), the
     // shared chart (a Lit template that keeps its DOM, selection and focus), and the tiles, totals
     // and history launcher (HTML string). Each string is complete, balanced markup.
-    const layout = this._layout();
-    const chartData = layout === "plan" ? this._planChartData(ev1, ev2) : null;
+    // The plan chart shows while Intelligent charging is enabled (prices only without a car).
+    const chartData = this._planChartData(ev1, ev2);
     const headMarkup = `
             <section class="house-node">
               <div class="family-tile-wrap status-hero-wrap visual-${this._safe(heroVisual)}">
@@ -3967,10 +3887,10 @@ class SmartEVSEFlowCard extends LitElement {
     `;
     const bodyMarkup = `
             <div class="ev-row">
-              ${this._evNode(ev1, ev2.connected)}
-              ${this._evNode(ev2, ev1.connected)}
+              ${this._evNode(ev1)}
+              ${this._evNode(ev2)}
             </div>
-            ${layout === "plan" ? this._planSaving(ev1, ev2) : ""}
+            ${this._planSaving(ev1, ev2)}
             <button class="advanced-settings charging-history-launcher" data-action="open-history" type="button" aria-haspopup="dialog"><ha-icon icon="${UI_ICONS.history}" aria-hidden="true"></ha-icon><span>Charging history</span><ha-icon icon="${UI_ICONS.next}" aria-hidden="true"></ha-icon></button>
     `;
     // Plan periods take the charger's LED colours, like the ring on the car tile.
@@ -3985,7 +3905,7 @@ class SmartEVSEFlowCard extends LitElement {
       this._settingsModal(this._settingsControls({ policy, dutyCycleMinutes: this._numberState(this._config.duty_cycle_entity) }));
     // Pending state is announced on the triggering control, not the whole page.
     return html`${unsafeHTML(`<style>${CARD_CSS}</style>`)}
-      <ha-card class="layout-${layout}" style=${cardStyle}>
+      <ha-card style=${cardStyle}>
         <div class="wrap">
           <div class="flow-stage family-tile-group">${unsafeHTML(headMarkup)}${chartData ? this._planChart(chartData) : nothing}${unsafeHTML(bodyMarkup)}</div>
         </div>
@@ -4128,10 +4048,6 @@ class SmartEVSEFlowCard extends LitElement {
       }
       if (action === "open-settings") {
         this._openSettingsModal(element);
-        return;
-      }
-      if (action === "set-layout") {
-        this._setLayout(value);
         return;
       }
       if (action === "open-force-wizard") {

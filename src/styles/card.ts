@@ -803,7 +803,8 @@ ha-card {
   box-shadow: var(--tile-shadow-default);
 }
 
-.intelligent-minimum-help {
+.intelligent-minimum-help,
+.intelligent-refining-help {
   margin: 0;
   padding: 0 var(--tile-padding);
 }

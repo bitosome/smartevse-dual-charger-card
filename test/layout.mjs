@@ -1,4 +1,4 @@
-// Browser layout checks for the plan layout (card 0.5.0: shared chart and labelled plan rows). Not part of `npm test`: they need
+// Browser layout checks (card 0.6.0: one layout — plan chart, charger tiles with labelled facts). Not part of `npm test`: they need
 // Playwright with a Chromium build, which this repository does not install.
 //   npm run build && npm run test:layout
 // Optional environment:
@@ -167,13 +167,13 @@ const STATES = {
     ctx.plan.top_up = { enabled: true, price: 0.2 };
     for (const charger of Object.values(ctx.plan.chargers)) delete charger.extra_soc;
   },
-  // The classic layout keeps the same rule: glows stay beneath its tiles.
-  'classic-charging': (ctx) => {
+  // No Intelligent charging: the same tiles without a chart; the glow rule is the same.
+  'schedule-charging': (ctx) => {
+    ctx.states['switch.smartevse_dual_charger_intelligent_charging'].state = 'off';
+    ctx.plan.enabled = false;
+    ctx.states['switch.smartevse_dual_charger_charge_with_schedule'].state = 'on';
     Object.assign(ctx.attrs, { smartevse_1_state: 'Charging', smartevse_1_charge_current: 16, active_smartevse_raw: 'smartevse_1',
-      charge_allowed: true, charge_reason: 'intelligent_charging' });
-    ctx.plan.status = 'charging';
-    ctx.plan.chargers.smartevse_1.status = 'charging';
-    ctx.card._layoutOverride = 'classic';
+      charge_allowed: true, charge_reason: 'schedule' });
   },
   'negative-prices': (ctx) => {
     const known = ctx.plan.slots.filter((slot) => slot.kind === 'known');
@@ -192,7 +192,7 @@ const STATES = {
 // foreground surface, and shows through one that is not opaque (the 0.5.x totals row was both).
 const GLOW_WIDTHS = new Set([320, 390]);
 const GLOW_STATES = new Set(['two-cars', 'above-minimum-charging', 'one-car', 'no-car', 'charging', 'charging-at-risk', 'charger-error',
-  'both-ready', 'classic-charging']);
+  'both-ready', 'force-override', 'schedule-charging']);
 const SURFACES = '.status-hero, .ev-node, .plan-saving, .plan-chart, .charging-history-launcher, .family-notice, .family-surface';
 async function glowLeaks(page) {
   const prepare = (hideGlows) => page.evaluate(({ hideGlows, selector }) => {
@@ -302,7 +302,6 @@ for (const theme of THEMES) {
         // eslint-disable-next-line no-undef
         resetScenario('intelligent');
         const card = document.querySelector('smartevse-flow-card');
-        card._layoutOverride = null;
         await card.updateComplete;
         const hass = card._hass;
         const controller = Object.keys(hass.states).find((id) => hass.states[id]?.attributes?.intelligent);
@@ -322,7 +321,7 @@ for (const theme of THEMES) {
         const haCard = shadow.querySelector('ha-card');
         const cardRect = haCard.getBoundingClientRect();
         const problems = [];
-        const classic = haCard.classList.contains('layout-classic');
+        const intelligentOn = attrs.intelligent?.enabled !== false;
         const inside = (inner, outer, slack = 1) => inner.left >= outer.left - slack && inner.right <= outer.right + slack &&
           inner.top >= outer.top - slack && inner.bottom <= outer.bottom + slack;
         const describe = (node) => `${node.parentElement?.getAttribute('class') || node.parentElement?.localName}: "${node.textContent.trim().slice(0, 40)}"`;
@@ -346,12 +345,12 @@ for (const theme of THEMES) {
           if (!rect.width || !rect.height) continue;
           texts++;
           if (!inside(rect, cardRect)) problems.push(`text leaves the card — ${describe(node)}`);
-          const box = parent.closest('.ev-pod, .family-chart-frame, .status-hero, .plan-saving');
+          const box = parent.closest('.ev-node, .family-chart-frame, .status-hero, .plan-saving');
           if (box && !inside(rect, box.getBoundingClientRect())) problems.push(`text leaves its tile — ${describe(node)}`);
         }
         if (!texts) problems.push('no visible text was found');
         // 2. The 0.4.0 bug: a narrow element that wraps its text one or two letters per line.
-        for (const element of shadow.querySelectorAll('.ev-pod, .ev-pod *')) {
+        for (const element of shadow.querySelectorAll('.ev-node, .ev-node *')) {
           const own = [...element.childNodes].filter((child) => child.nodeType === Node.TEXT_NODE && child.textContent.trim());
           const text = own.map((child) => child.textContent.trim()).join(' ');
           if (text.length <= 3 || element.closest('svg')) continue;
@@ -399,13 +398,17 @@ for (const theme of THEMES) {
           const hasLanes = !!svg.querySelector('.family-chart-lane');
           if (hasLanes !== !!periodLine) problems.push(hasLanes ? 'the period line under the chart is missing' : 'a period line is shown without lanes');
           if (periodLine && periodLine.getBoundingClientRect().height > 24) problems.push(`the period line is ${Math.round(periodLine.getBoundingClientRect().height)}px tall`);
-        } else if (!classic) problems.push('the plan chart is missing');
-        for (const unit of shadow.querySelectorAll('.pod-unit')) {
-          const size = Number.parseFloat(getComputedStyle(unit).fontSize);
-          if (!(size >= 10.5)) problems.push(`gauge caption is ${size.toFixed(1)}px`);
+        } else if (intelligentOn) problems.push('the plan chart is missing');
+        if (svg && !intelligentOn) problems.push('a plan chart is shown without Intelligent charging');
+        // 4. One layout: the classic tile with its heading, and no layout classes or chooser left.
+        if (haCard.className.includes('layout-') || shadow.querySelector('.ev-pod, .session-cost')) problems.push('a removed layout is still rendered');
+        if (shadow.querySelectorAll('.ev-node .charger-heading').length !== 2) problems.push('a charger tile has no classic heading');
+        // The history control in the Charged row is touch-sized.
+        for (const control of shadow.querySelectorAll('.row-history')) {
+          const size = control.getBoundingClientRect();
+          if (size.height < 40) problems.push(`the history control is ${Math.round(size.height)}px tall`);
         }
         if (Math.abs(cardRect.width - width) > 1) problems.push(`the card is ${cardRect.width}px wide, expected ${width}px`);
-        if (!classic && !haCard.classList.contains('layout-plan')) problems.push('the card is not in the plan layout');
         return { problems, texts };
       }, { width, mutateSource: mutate.toString(), longName: LONG_NAME });
       checks++;

@@ -47,19 +47,16 @@ export const OVERVIEW_CSS = `
   }
   .charger-icon ha-icon { --mdc-icon-size: 24px; height: 24px; width: 24px; }
   .charger-copy { flex: 1; min-width: 0; }
-  .charger-name { overflow-wrap: anywhere; color: var(--secondary-text-color); font-size: 11px; font-weight: 600; line-height: 1.45; }
-  .vehicle-name { margin: 3px 0 6px; font-size: 17px; line-height: 1.3; font-weight: 600; overflow-wrap: anywhere; letter-spacing: -.015em; }
-  .charger-status { overflow-wrap: anywhere; display: flex; align-items: center; gap: 6px; color: var(--secondary-text-color); font-size: 12px; line-height: 1.5; }
+  /* break-word, never "anywhere": "anywhere" shrinks min-content and wraps one letter per line. */
+  .charger-name { overflow-wrap: break-word; color: var(--secondary-text-color); font-size: 11px; font-weight: 600; line-height: 1.45; }
+  .vehicle-name { margin: 3px 0 6px; font-size: 17px; line-height: 1.3; font-weight: 600; overflow-wrap: break-word; letter-spacing: -.015em; }
+  .charger-status { overflow-wrap: break-word; display: flex; align-items: center; gap: 6px; color: var(--secondary-text-color); font-size: 12px; line-height: 1.5; }
   .state-dot { height: 6px; width: 6px; flex: 0 0 6px; border-radius: 50%; background: currentColor; }
   .tone-charging .charger-status, .tone-complete .charger-status { color: var(--family-success); }
   .tone-error .charger-status { color: var(--family-error); }
   .tone-unavailable .charger-status { color: var(--family-unavailable); }
   .visual-charging .charger-icon { color: var(--family-success); }
-  .charger-totals { min-width: 0; display: grid; gap: 5px; text-align: right; flex: 0 0 auto; max-width: 38%; }
-  .session-cost { display: grid; gap: 3px; padding: 6px 0; min-height: 44px; border: 0; background: none; color: var(--primary-text-color); text-align: right; font: inherit; cursor: pointer; }
-  .session-cost strong { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-  .session-cost small { font-size: 11px; line-height: 1.4; color: var(--secondary-text-color); }
-  .session-cost.empty { cursor: default; }
+  .charger-totals { min-width: 0; text-align: right; flex: 0 0 auto; }
   .cost-history > .cost-note:first-child { margin-top: 0; }
   .cost-note, .cost-record-details { font-size: 12px; color: var(--secondary-text-color); line-height: 1.5; }
   .cost-charger { margin: 10px 0; padding: 0 10px; background: var(--chip-background-color); border-radius: var(--tile-border-radius); }
@@ -85,8 +82,9 @@ export const OVERVIEW_CSS = `
   /* The bar is the shared levelMeter(); the card only places it. */
   .battery-meter { margin-top: 18px; }
   .charger-message { font-size: 12px; line-height: 1.5; margin: var(--large-gap) 0 0; color: var(--secondary-text-color); overflow-wrap: anywhere; }
-  /* Intelligent plan facts: quiet 12px lines under the meter; no glow, no extra € in the totals column. */
-  .charger-plan { display: grid; gap: 2px; margin: var(--large-gap) 0 0; }
+  /* Under the meter: at most one note or warning line, then the facts. The block is a size
+     container, so the facts go to one column in a narrow tile whatever the card width is. */
+  .charger-plan { display: grid; gap: 8px; margin: var(--large-gap) 0 0; container: charger-facts / inline-size; }
   .charger-plan-line { margin: 0; font-size: 12px; line-height: 1.5; color: var(--secondary-text-color); overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
   /* A warning line reads in the primary text colour; the shared warning glyph carries the tone. */
   .charger-plan-line[data-tone="warning"] { color: var(--primary-text-color); }
@@ -100,6 +98,13 @@ export const OVERVIEW_CSS = `
   .charger-diagnostics div { display: flex; justify-content: space-between; gap: 16px; }
   .charger-diagnostics dt { color: var(--secondary-text-color); }
   .charger-diagnostics dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  /* Charger details: short titled sections of the same label/value rows. */
+  .details-section + .details-section { margin-top: 16px; padding-top: 14px; border-top: var(--sdc-border-faint); }
+  .details-section .intelligent-section-title { margin-bottom: 10px; }
+  .details-section .details-note { margin: 0 0 10px; }
+  /* A label keeps its line; the value takes the rest and wraps by words. */
+  .details-section .charger-diagnostics dt { flex: none; white-space: nowrap; }
+  .details-section .charger-diagnostics dd { flex: 1 1 auto; overflow-wrap: break-word; }
   .advanced-settings { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 44px; border: 0; background: transparent; color: var(--secondary-text-color); font: inherit; font-size: 13px; margin-top: var(--large-gap); cursor: pointer; }
   .advanced-settings { gap: 8px; text-align: left; position: relative; z-index: 1; background: var(--sdc-surface-panel); }
   .charging-history-launcher { margin-top: 0; padding: 12px 16px; border-radius: 16px; }
@@ -118,8 +123,9 @@ export const OVERVIEW_CSS = `
   .setting-input, .setting-select { font-size: 16px; min-height: 44px; min-width: 0; }
   .charger-diagnostics dt, .charger-diagnostics dd { min-width: 0; overflow-wrap: anywhere; }
   button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 3px; }
+  /* On a phone the two tiles stack. minmax(0, …): a long word must wrap, not widen the card. */
   @container charging-overview (max-width: 540px) {
-    .ev-row { grid-template-columns: 1fr; }
+    .ev-row { grid-template-columns: minmax(0, 1fr); }
   }
   @container charging-overview (max-width: 340px) {
     .status-hero, .ev-node { padding-left: 14px; padding-right: 14px; }
@@ -128,58 +134,33 @@ export const OVERVIEW_CSS = `
     /* The charger name already identifies the port; the decorative icon gives
        its space to the vehicle and cost on a narrow dashboard column. */
     .charger-icon { display: none; }
-    .charger-totals { max-width: 44%; }
     .battery-value { font-size: 25px; }
   }
-  /* ---- Plan layout (0.4.0; chart 0.5.0; compact tiles 0.6.0): plan chart, one compact tile per
-     charger with the shared battery meter, one saving line. Plan periods and the glows under
-     the tiles take the WLED state colours (--sdc-led-*, --node-*). */
-  .layout-choice { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-top: var(--large-gap); }
-  .layout-options { display: flex; flex-wrap: wrap; gap: 6px; }
-  .layout-option { cursor: pointer; font: inherit; }
-  .layout-option[aria-pressed="true"] { box-shadow: inset 0 0 0 1px var(--primary-color); }
-  .layout-plan { --sdc-quiet: color-mix(in srgb, var(--primary-text-color) 16%, transparent); --sdc-quiet-strong: color-mix(in srgb, var(--primary-text-color) 38%, transparent); }
+  /* ---- Plan chart, facts and saving line. Plan periods and the glows under the tiles take the
+     WLED state colours (--sdc-led-*, --node-*). */
   /* The plan chart is the shared time-series chart (@bitosome/ha-card-ui) with the price bars
      and colours of the Real Electricity Price card; the card only places it and, in its inline
      style, maps the period tones to the charger's LED colours. */
   .flow-stage > .plan-chart { position: relative; z-index: 1; }
-  /* Car tiles: one compact tile per charger across the card (two side by side on a wide card).
-     Name and state, the shared horizontal battery meter with the minimum marked, short facts. */
-  .layout-plan .ev-row { grid-template-columns: minmax(0, 1fr); gap: var(--large-gap); }
-  .ev-pod { display: grid; gap: 8px; align-content: start; padding: 12px 14px; }
-  .ev-pod, .ev-pod * { min-width: 0; }
-  .pod-head { display: flex; align-items: center; gap: 10px; }
-  .pod-copy { flex: 1 1 auto; display: grid; gap: 1px; }
-  .ev-pod .vehicle-name { margin: 0; font-size: 16px; line-height: 1.3; }
-  /* break-word, never "anywhere": "anywhere" shrinks min-content and wraps one letter per line. */
-  .ev-pod .charger-name, .ev-pod .vehicle-name, .ev-pod .charger-status { overflow-wrap: break-word; word-break: normal; white-space: normal; }
-  .ev-pod .charger-status { display: block; }
-  .ev-pod .charger-status .charger-name { font-size: inherit; font-weight: inherit; line-height: inherit; color: inherit; }
-  .ev-pod .state-dot { display: inline-block; vertical-align: middle; margin-right: 6px; }
-  .ev-pod.empty .charger-status .charger-name { color: var(--primary-text-color); font-weight: 600; }
-  .ev-pod .pod-icon { display: inline-flex; flex: none; margin: 0; }
-  .ev-pod .battery-value { flex: none; font-size: 24px; }
-  .pod-details { flex: none; display: inline-grid; place-items: center; width: 44px; height: 44px; margin: -8px -10px -8px -4px; padding: 0; border: 0;
-    border-radius: 50%; background: transparent; color: var(--secondary-text-color); cursor: pointer; }
-  .pod-details ha-icon { --mdc-icon-size: 20px; width: 20px; height: 20px; }
-  .pod-details:focus-visible { outline: 2px solid var(--primary-color); outline-offset: -4px; }
-  .ev-pod .battery-meter { margin-top: 0; }
-  .ev-pod .charger-message { margin: 0; }
-  .ev-pod .charger-plan { width: 100%; gap: 6px; margin: 2px 0 0; }
-  /* Plan facts: two columns of label over value; one column in a very narrow tile. */
+  /* Facts of a charger tile: two columns of label over value; one column in a narrow tile. */
   .plan-rows { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px; margin: 0; }
-  .plan-row { display: grid; gap: 0; align-content: start; }
+  .plan-row { display: grid; gap: 0; align-content: start; min-width: 0; }
+  /* A last row without a neighbour takes the whole width, so its value stays on one line. */
+  .plan-row:last-child:nth-child(odd) { grid-column: 1 / -1; }
   .plan-row dt { font-size: 11px; line-height: 1.4; color: var(--secondary-text-color); white-space: nowrap; }
-  .plan-row dd { margin: 0; font-size: 13px; line-height: 1.4; color: var(--primary-text-color); font-variant-numeric: tabular-nums; overflow-wrap: break-word; }
+  .plan-row dd { margin: 0; min-width: 0; font-size: 13px; line-height: 1.4; color: var(--primary-text-color); font-variant-numeric: tabular-nums; overflow-wrap: break-word; }
+  /* "Charged" (and "Last charge") open that charger's history: the value is the control, with a
+     touch-sized hit area that does not make the row taller. */
+  .row-history { display: inline-flex; align-items: center; gap: 2px; max-width: 100%; margin: -13px -4px -13px 0; padding: 13px 4px 13px 0; border: 0;
+    background: none; color: inherit; font: inherit; font-variant-numeric: inherit; text-align: left; cursor: pointer; }
+  .row-history > span { min-width: 0; overflow-wrap: break-word; }
+  .row-history ha-icon { flex: none; --mdc-icon-size: 16px; width: 16px; height: 16px; color: var(--secondary-text-color); }
+  .row-history:focus-visible { outline-offset: -8px; }
   /* What the plan saves: a slim foreground surface (opaque, above the glows), not a row of tiles. */
   .plan-saving { display: flex; align-items: center; gap: 8px; margin: 0; padding: 8px 12px; border-radius: 12px; background: var(--sdc-surface-control);
     font-size: 12px; line-height: 1.4; color: var(--secondary-text-color); font-variant-numeric: tabular-nums; }
   .plan-saving ha-icon { flex: none; --mdc-icon-size: 16px; width: 16px; height: 16px; }
-  @container charging-overview (min-width: 620px) {
-    .layout-plan .ev-row { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; }
-    .layout-plan .ev-node-wrap, .layout-plan .ev-pod { height: 100%; box-sizing: border-box; }
-  }
-  @container charging-overview (max-width: 250px) {
+  @container charger-facts (max-width: 250px) {
     .plan-rows { grid-template-columns: minmax(0, 1fr); }
   }
   @media (prefers-reduced-motion: reduce) {

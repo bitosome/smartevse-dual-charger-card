@@ -2,29 +2,60 @@
 
 ## 0.6.0 — 2026-11-11
 
-The plan layout is made compact and its money is said plainly. For SmartEVSE Dual Charger integration 0.0.11.0; needs `@bitosome/ha-card-ui` 1.9.0.
+One layout, with the plan chart on top while Intelligent charging is enabled, and more and clearer data in the tiles and dialogs. For SmartEVSE Dual Charger integration 0.0.11.0; needs `@bitosome/ha-card-ui` 1.9.0.
 
-Car tiles:
+One layout:
 
-- The round gauges are gone. Each charger is one compact tile across the card (two side by side on a wide card) with the shared horizontal battery meter and the minimum marked on it, as in the classic layout. Two cars take about 350 px on a phone instead of about 470 px, and the text has the full width. The LED state of the charger stays as the glow under its tile.
-- The cost is two plain rows. **Charged** is what this charge has taken and cost so far ("29.4 kWh · ≈ €7.57"), from the charger's metered session since plug-in. **Planned** is what the plan still charges and what that costs ("≈ 4.6 kWh · ≈ €1.11"; integration 0.0.11.0). Before, one "Cost" row mixed charged and planned money with a "saved" figure, and a second "Session estimate" repeated it.
-- The totals row ("Planned cost", "Saving", "Next start") is replaced by one line that names the comparison: "Saves ≈ €7.41 compared with charging at plug‑in". The next start is in the hero and in each tile's Next row.
+- The separate "plan" layout of cards 0.4.0 to 0.5.x is removed, together with the Auto / Plan / Classic chooser in Settings and the choice stored per device. There is one card: the hero, the plan chart, the two charger tiles, the saving line and the history launcher.
+- The plan chart shows whenever Intelligent charging is enabled. With no car connected it is the "Electricity price" chart. Without Intelligent charging the card is the same tiles without the chart.
+- A `layout:` key left in a dashboard configuration is accepted and ignored.
+- Settings is offered in the plan chooser only when there is a charge-policy or duty-cycle entity to set, as before 0.4.2.
+
+Charger tiles:
+
+- Each charger is the classic tile: the charger and vehicle name, the status and the big battery percentage, then the shared horizontal battery meter with the minimum marked. The round gauges of 0.4.0 to 0.5.1 are gone. Two tiles stack on a phone and sit side by side on a wide card.
+- Under the meter there is at most one note or warning line ("Not enough time · ≈ 74% by 07:00"), then short facts as label over value, in two columns (one column in a narrow tile): **Guaranteed**, **Extra**, **Next**, **Charged** and **Planned**.
+- **Charged** is what this charge has taken and cost so far since plug-in ("29.4 kWh · ≈ €7.57"), from the charger's metered session. It is shown for every connected car in every mode: Force charge, Schedule and Intelligent.
+- **Planned** is what the plan still charges and what that costs ("≈ 4.6 kWh · ≈ €1.11"; integration 0.0.11.0). With older integrations one **Total** row shows the figure for the whole charge. The tile rows no longer say "Cost", "Session estimate" or "saves".
+- The "≈ €… / Session estimate" button in the tile heading is removed. Its figure is the Charged row, and the Charged value is now the control that opens that charger's history. Focus returns to it when the history closes.
 - **Extra** says how far above the minimum the plan gets (integration 0.0.11.0 goes on to the car's own charge limit): "to 100% · car limit", "to ≈ 86% by 07:00" when the night is too short for more, "when prices arrive · ≈ 15:00" while tomorrow's prices are due, "At the car’s limit", "Car stopped charging", or "none before 07:00". No row when the minimum is the car's own limit.
-- The charger details open from an icon button in the tile heading.
+- A charger without a car is the compact tile. It shows a **Last charge** row ("19.3 kWh · ≈ €4.28") that opens its history, and what Intelligent charging saved on that charge.
+- The "Charger details" row stays under the facts.
+
+What a saving is compared with:
+
+- Every saving now names its comparison, from the integration's `baseline_kind` (0.0.11.0). With "schedule" the line under the tiles reads "Saves ≈ €7.41 compared with Charge with schedule"; otherwise it reads "… compared with charging at plug‑in". It reads "Saved" when nothing more is planned.
+- History uses the same names: "Saved ≈ €1.25 vs Charge with schedule" or "≈ €0.40 more than Charge with schedule". Each recorded session carries its own comparison.
+- The last-charge line of a tile without a car, the totals on the Intelligent page and the charger details name the comparison too.
+
+Charger details:
+
+- The dialog is now the place to read everything about one charger, in short titled sections of label and value.
+- **Car**: vehicle, battery level, "At least" (the minimum), car limit and ready by.
+- **Plan**: Guaranteed, Extra, and each planned block as "21:00–22:00 · Guaranteed" or "… · Above the minimum". A car without a plan shows its note instead ("Identifying vehicle", "Paused while Force charge is on").
+- **This charge**: Charged and since when, Planned, and the saving with its comparison.
+- **Charger**: State, Mode, Current offered and Limit, as before.
+- **What the planner uses**: energy per percent and whether it is learned or taken from the battery capacity, the charging power, and "Refined from 2 of 3 charges".
+- A value the controller does not report leaves its row out. Nothing is made up.
+
+Intelligent page:
+
+- The counters that only refine the planner's estimates no longer read as a condition. "Learning · 1 of 3 charges" is now "Refining estimates · 1 of 3 charges", and "Learning household load (1 of 7 days)" is now "Refining household load · 1 of 7 days".
+- One line under the vehicle settings says: "Planning works from the first night. These only make its estimates more exact."
+- "Above the minimum" explains the rule of integration 0.0.11.0 and, while tomorrow's prices are due, when they are expected. With integration 0.0.10.0 the "while cheap" wording stays, and 0.0.9.x keeps its top-up controls.
 
 Plan chart:
 
-- The prices are drawn like the Real Electricity Price card: one bar per hour in the shared price colours (blue; green at or below the price card's acceptable price, or the new card option `cheap_price_entity`) with H and L. Each bar now fills its hour (`barFit: "interval"`, ha-card-ui 1.9.0), so bars and charging periods share their edges. 0.5.0 had narrow bars centred in the hour, 0.5.1 a grey line.
+- The prices are drawn like the Real Electricity Price card: one bar per hour in the shared price colours (blue; green at or below the price card's acceptable price, or the card option `cheap_price_entity`) with H and L. Each bar fills its hour (`barFit: "interval"`, ha-card-ui 1.9.0), so bars and charging periods share their edges.
 - Periods and the plan list say "Above the minimum" (the legend stays "Extra").
 
 Fixed:
 
-- The glow of a car tile was painted over the totals row under it, most visibly while a car charges. Those cells were translucent, unpositioned boxes, so the glow (layer 0) was drawn over their text and showed through them. Every panel next to a glowing tile is now a shared foreground surface (`.family-surface`) with the card's opaque tile background.
-- `npm run test:layout` checks this with real pixels: it takes the card with the glows on and off, in the plan and the classic layout, both themes, 320 and 390 px, and fails when the inside of any tile or any piece of text differs. It failed on 0.5.1 for the totals row only.
+- The glow of a car tile was painted over the panel under it, most visibly while a car charges. Every panel next to a glowing tile is now a shared foreground surface (`.family-surface`) with the card's opaque tile background.
+- `npm run test:layout` checks this with real pixels: it takes the card with the glows on and off, in both themes, at 320 and 390 px, with and without Intelligent charging, and fails when the inside of any tile or any piece of text differs.
+- A very long vehicle name without spaces wraps inside its tile on a phone. It could widen the stacked tiles before.
 
-Other wording for integration 0.0.11.0: the hero adds "then extra up to the car limit"; a car charging above its minimum reads "Minimum reached · extra up to the car limit"; Settings → Intelligent charging → "Above the minimum" explains the rule and, while tomorrow's prices are due, when they are expected. With integration 0.0.10.0 the "while cheap" wording stays, and 0.0.9.x keeps its top-up controls.
-
-Validation: typecheck, production build, 323 offline smoke checks and the browser run of 114 state, width and theme combinations in Chromium, 36 of them with the glow pixel check. The owner's case (one car at its car limit, the other charging above its minimum) and the one-car, no-car, error and not-enough-time states were looked at at 320 and 390 px. Not verified on a real phone or dashboard.
+Validation: typecheck, production build, 333 offline smoke checks and the browser run of 114 state, width and theme combinations in Chromium and in WebKit, 40 of them with the glow pixel check. Screenshots at 320 and 390 px in both themes were looked at for two cars, a car charging above its minimum, one car, no car, a charger error, not enough time and Force charge, and the Charger details dialog, the Intelligent page and the history were looked at open at 390 px. Not verified on a real phone or dashboard.
 
 ## 0.5.1 — 2026-11-11
 

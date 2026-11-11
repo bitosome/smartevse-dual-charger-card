@@ -19,6 +19,8 @@
       :root[data-theme="light"] {
         color-scheme: light; --primary-text-color: #242638; --secondary-text-color: #555c70;
         --primary-color: #8054b4; --card-background-color: #f3f1f8; --ha-card-background: #f3f1f8;
+        /* The page's pale error colour is unreadable on a light tile. */
+        --error-color: #b3261e;
       }
       :root[data-theme="light"] body { background: #eef0f5; }
       * {
@@ -812,7 +814,7 @@
           smartevse_2_state: "Ready to Charge", smartevse_2_mode: "Off", smartevse_2_battery: "30%",
           intelligent: {
             enabled: true, status: "planned", reason: "intelligent_waiting_for_planned_slot", overridden_by: null,
-            connected_count: 2, currency: "EUR", known_until: at(6), forecast_used: true, baseline_kind: "plug_in",
+            connected_count: 2, currency: "EUR", known_until: at(6), forecast_used: true, baseline_kind: "schedule",
             model_error: null, planner_error: null,
             totals: { cost: 6.1, saving: 1.34, energy_kwh: 46.5, includes_forecast: false, partial: false },
             next_charge: at(1), order: ["smartevse_1", "smartevse_2"],
@@ -835,7 +837,7 @@
             },
             household: { learned_days: 3, night_expected_kw: 9.1 },
             slots,
-            sessions: [{ ledger_id: "demo-session", outlet: "smartevse_1", vehicle_name: "Volvo XC40", closed: true, energy_kwh: 19.3,
+            sessions: [{ ledger_id: "demo-session", baseline_kind: "schedule", outlet: "smartevse_1", vehicle_name: "Volvo XC40", closed: true, energy_kwh: 19.3,
               cost: 4.28, baseline_cost: 5.53, saving: 1.25, mixed: false, partial: false }],
             top_up: { enabled: true, price: null, source: "car_limit", waits_until: at(2) },
             entities: deepClone(intelligentEntities),
