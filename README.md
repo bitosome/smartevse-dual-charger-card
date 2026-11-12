@@ -2,19 +2,19 @@
 
 Standalone Lovelace card for the SmartEVSE Dual Charger Home Assistant integration.
 
-Version: `0.8.0`
+Version: `0.9.0`
 
 This repository contains only the frontend card and local preview assets.
 
 ## Features
 
-- Clear charging-state headline with an explicit **Edit plan** action.
-- Only enabled Schedule/Force plans and active timer/price constraints in the overview. Enabled plan names use accented pills with on-switch icons, alongside quieter timer/price/time pills. The icon describes the plan setting even while charging waits for time or price. Force appears first while overriding the standing schedule.
+- A slim header with the charging mode as one chip (Intelligent, Schedule, Force charge or Off) that opens the mode sheet. There is no hero tile (0.9.0): each car's tile says what happens next.
+- Outside the normal Intelligent case the status sentence, with only the enabled Schedule/Force plans and their active timer/price constraints, is shown in a panel under the header. Enabled plan names use accented pills with on-switch icons, alongside quieter timer/price/time pills. The icon describes the plan setting even while charging waits for time or price. Force appears first while overriding the standing schedule.
 - One layout. With **Intelligent charging** enabled the plan chart sits above the charger tiles; without it the card is the same tiles without the chart.
-- One tile per charger: charger, vehicle, status and battery percentage, the shared battery meter, then short labelled facts. **Charged** (what this charge has taken and cost since plug-in) is shown for every connected car in every mode and opens that charger's history. Disconnected ports stay compact; unavailable and faulted chargers are identified explicitly.
+- One tile per charger: charger, vehicle, status and battery percentage, the shared battery meter, then short labelled facts. **Charged** (what this charge has taken and cost since plug-in) is shown for every connected car in every mode. History opens from the one row under the tiles. Disconnected ports stay compact; unavailable and faulted chargers are identified explicitly.
 - **Charger details** opens a dialog with everything about one charger in short sections: the car, its plan, this charge, the charger (State, Mode, Current offered, Limit) and what the planner uses. Offered current is the charger pilot setting, not measured current or power consumption.
 - Space Hub shared surfaces, radii, theme colors and underglow helpers. Glow colors and effects follow the controller's physical WLED configuration.
-- Responsive: the two charger tiles stack on a phone and sit side by side on a wide card. In a car tile the guaranteed level and the extra level sit under the battery bar, and Next, Charged and Planned are three figures side by side (rows in a narrow tile).
+- Responsive: the two charger tiles stack on a phone and sit side by side on a wide card. In a car tile the guaranteed level and the extra level sit under the battery bar, and Charged, Planned and Saves are three figures side by side (rows in a narrow tile).
 - Charging-plan editor with schedule, immediate charging, timer and acceptable-price controls, plus **Intelligent charging** with integration 0.0.9.0+. Unsupported options are omitted; temporarily unavailable controls are identified and guarded.
 - Keyboard focus management, Escape/back navigation, visible focus, touch-sized controls and reduced-motion support. Expanded details survive live state updates.
 - Local interactive preview backed by mocked Home Assistant services.
@@ -93,7 +93,7 @@ The card also expects the related control entities configured in `card_flow.yaml
 
 ## Interaction Model
 
-- Tap **Edit plan** (or the hero tile) to configure charging. Available plans remain configurable when off; only enabled plans appear on the dashboard.
+- Tap the mode chip in the header to configure charging. Available plans remain configurable when off; only enabled plans appear on the dashboard.
 - Use each plan's main-menu switch to enable or stop it. Open its row to change saved options. Numeric edits save on change/Enter, not every keystroke.
 - Scheduled charging supports an optional acceptable-price limit. Both time and price conditions must then be satisfied.
 - Force charge supports unrestricted charging, timer only, price only, or timer plus price. It overrides the standing schedule without disabling it; Schedule resumes when Force ends.
@@ -215,7 +215,7 @@ and its price.
   never changes the other. While both are on, Intelligent has priority (the Schedule
   tile says so), and the schedule takes over again when Intelligent is turned off.
   Force charge still overrides both; the Intelligent group then reads "Resumes after force charge".
-- **Hero.** While Intelligent charging governs, the title is one plain sentence: "Charging
+- **Status sentence (the hero until 0.8.x).** Since 0.9.0 it is read out by screen readers in the normal Intelligent case and shown under the header in every other state; each car's tile shows what happens next. While Intelligent charging governs, the title is one plain sentence: "Charging
   Volvo XC40", "Next charge at 22:00" (or "Next charge Tue 22:00"), "Both cars ready" or
   "Volvo XC40 ready" when every planned car has its minimum and nothing more is planned, or
   "Waiting for a vehicle". One line under it says when the cars are ready ("Ready by 07:00",
@@ -315,7 +315,7 @@ exactly as before. A price chart on the Intelligent page follows in 0.3.1.
 ### Session costs
 
 With SmartEVSE Dual Charger integration 0.0.8.7+, each charger tile shows what its
-charge has taken and cost in the **Charged** row (**Last charge** on a tile without a car). Tap that value or the **Charging history** button below the charger tiles to open the shared history modal with records grouped by charger. History is separate from Settings. Expand a record
+charge has taken and cost in the **Charged** row (**Last charge** on a tile without a car). Tap the **Charging history** row below the charger tiles to open history: it is the one way in (0.9.0). History is one list for both chargers, newest first, with the totals of the last 30 days and one filter chip per car. Each charge shows its car, day and charger, its energy and cost, what it saved, and, with integration 0.0.14.0, the parts it went through (Guaranteed, Extra, Schedule, Force charge) as a timeline and one line per kind with its times, energy and cost. History is separate from Settings. Open **Details** of a charge
 for the energy-weighted average rate and missing-data details. All amounts are
 estimates from the integration's measured-power accounting and Real Electricity
 Price tariff; the card never calculates or persists authoritative costs locally.

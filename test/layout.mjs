@@ -486,9 +486,50 @@ for (const theme of THEMES) {
   }
 }
 
+// A reader scrolled to the second tile stays there while the tiles are redrawn (0.8.1). WebKit, the
+// iPhone app's engine, moved the page up to the chart at every redraw while a car charged; run
+// with LAYOUT_BROWSER=webkit to check that engine.
+{
+  const scrollPage = await browser.newPage({ viewport: { width: 390, height: 700 }, deviceScaleFactor: 1 });
+  await scrollPage.goto(`${origin}/preview/index.html?theme=dark`);
+  await scrollPage.waitForFunction(() => customElements.get('smartevse-flow-card'));
+  const seen = await scrollPage.evaluate(async () => {
+    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    document.getElementById('frame').style.width = '390px';
+    // eslint-disable-next-line no-undef
+    resetScenario('intelligent');
+    const card = document.querySelector('smartevse-flow-card');
+    await card.updateComplete;
+    const hass = card._hass;
+    const attrs = hass.states[Object.keys(hass.states).find((id) => hass.states[id]?.attributes?.intelligent)].attributes;
+    Object.assign(attrs, { smartevse_1_state: 'Charging', smartevse_1_charge_current: 16, active_smartevse_raw: 'smartevse_1', charge_allowed: true });
+    card._lastRenderKey = '';
+    card.hass = { ...hass };
+    await card.updateComplete;
+    await wait(200);
+    card.shadowRoot.querySelector('.ev-node.smartevse_2').scrollIntoView({ block: 'center' });
+    await wait(200);
+    const page = document.scrollingElement;
+    const tops = [page.scrollTop];
+    for (let step = 0; step < 4; step++) {
+      attrs.smartevse_1_battery = `${54 + step}%`;
+      card.hass = { ...hass };
+      await card.updateComplete;
+      await wait(120);
+      tops.push(page.scrollTop);
+    }
+    return tops;
+  });
+  checks++;
+  const steady = seen[0] > 300 && seen.every((top) => Math.abs(top - seen[0]) <= 1);
+  console.log(`${steady ? 'PASS' : 'FAIL'}: the page stays where it was scrolled to while the tiles are redrawn (${seen.join(', ')})`);
+  if (!steady) failures.push('scroll position');
+  await scrollPage.close();
+}
+
 await browser.close();
 server.close();
 for (const note of notes) console.log(`NOTE: the page reported "${note}"`);
 console.log(failures.length ? `\nLAYOUT TEST FAILED (${failures.length} of ${checks})`
-  : `\nLAYOUT TEST OK (${checks} states, ${glowChecks} of them with the glow paint check)`);
+  : `\nLAYOUT TEST OK (${checks - 1} states, ${glowChecks} of them with the glow paint check, and the scroll check)`);
 process.exit(failures.length ? 1 : 0);

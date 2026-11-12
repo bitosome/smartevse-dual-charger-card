@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.9.0 — 2026-11-12
+
+The card is rebuilt around the tiles: no hero, the charging mode in the header, one way into history, and a history that shows what each charge went through. For SmartEVSE Dual Charger integration 0.0.14.0 (it works with 0.0.10.0 to 0.0.13.0; the parts of a charge then stay empty). Needs `@bitosome/ha-card-ui` 1.11.0.
+
+**Header instead of the hero**
+
+- The big status tile at the top is gone. The header is the title and one chip that names the charging mode (Intelligent, Schedule, Force charge or Off) and opens the mode sheet.
+- What the hero said is now on each car's tile: its status line reads what happens next ("Charging until 0:22", "Starts 23:00", "Done").
+- In any state the tiles do not tell (a schedule waiting for its window, Force charge with its timer, an error, no plan) the status sentence, its notes and its pills are shown in a panel under the header. In the normal Intelligent case they are kept for screen readers only.
+
+**Car tiles**
+
+- The three figures are Charged, Planned and Saves: what this car's plan saves and compared with what ("≈ €1.29" over "vs Charge with schedule"). "Next" moved to the status line.
+- The figures are no longer controls.
+
+**One way into history**
+
+- History opens from the row under the tiles only. The Charged figure and the Last charge row of a tile no longer open it: two controls led to the same place.
+- That row also says what the whole plan saves, under its title; the separate saving line is gone.
+
+**Charging history**
+
+- One list for both chargers, newest first, with the totals of the last 30 days (energy, cost, number of charges) and one filter chip per car when there are charges of more than one.
+- Each charge shows its car, day and charger, its energy and cost, and what it saved compared with what.
+- **The parts of a charge** (integration 0.0.14.0): a timeline from the first to the last charging minute and one line per kind of part with its times, energy and cost: Guaranteed, Extra, Schedule, Force charge, Other. Charges recorded before that integration version show their totals only.
+- Accounting notes (average price, energy without a price, gaps) are under "Details" of each charge.
+
+**Mode sheet**
+
+- The plan dialog lists Intelligent charging first, marked as the default, then the schedule, then Force charge. Each says what it does; Intelligent charging also shows each car's minimum and ready-by time. The switches work as before: Intelligent charging and the schedule stay independent, and Force charge overrides both until it ends.
+
+**Fixes**
+
+- **The page no longer jumps up to the chart while a car charges.** The tiles are redrawn as a whole whenever their data changes, every few seconds during charging. WebKit, the engine of the iPhone app, moved the page while the old tiles were out and the new ones not in yet. The overview now keeps its height across the redraw and every scrolled container is put back before the page is painted. Reproduced and checked in WebKit; `test/layout.mjs` has a scroll check.
+- **Green bars mean the same as on the electricity price card.** A bar is green when its price is at or below the price integration's acceptable price (`number.real_electricity_price_acceptable_price`, or `cheap_price_entity`). With integration 0.0.13.0 the card had used the planner's own limit for charging above the minimum (`top_up.price`), so the same hour was green here and blue on the price card.
+
 ## 0.8.0 — 2026-11-12
 
 The facts of a car tile are laid out instead of listed. Same facts, same wording; needs `@bitosome/ha-card-ui` 1.11.0.
