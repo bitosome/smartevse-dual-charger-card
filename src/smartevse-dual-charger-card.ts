@@ -14,7 +14,7 @@ import {
 import { buildGlow, type PulseColors } from "./shared/glow";
 import { ChargeHistory, chargedIntervals, joinIntervals, withLiveState } from "./charge-history";
 
-const CARD_VERSION = "0.10.0";
+const CARD_VERSION = "0.10.1";
 
 // String twin of the shared pendingIndicator(); this card renders through unsafeHTML.
 const PENDING_INDICATOR = `<span class="family-pending-indicator" aria-hidden="true"></span>`;
@@ -347,9 +347,7 @@ class SmartEVSEFlowCard extends LitElement {
     const chartPx = chart ? CHART_FRAME_CHROME_PX + CHART_LEGEND_PX * (lanes ? 2 : 1) + (lanes ? CHART_PERIOD_LINE_PX : 0) +
       chartTotalHeight(PLAN_CHART_HEIGHT, lanes) : 0;
     const planned = this._isIntelligentPlanActive() && !this._isForcePlanActive();
-    // A charger without a car shows its last charge (0.10.0): two more rows than its heading alone.
-    const lastCharge = (ev) => (this._num(this._costData()?.chargers?.[ev.key]?.session?.energy_kwh) ?? 0) >= PERIOD_MIN_KWH;
-    const tiles = [ev1, ev2].reduce((sum, ev) => sum + (!ev.connected ? (lastCharge(ev) ? 4 : 2) : planned ? 5 : 4), 0);
+    const tiles = [ev1, ev2].reduce((sum, ev) => sum + (!ev.connected ? 2 : planned ? 5 : 4), 0);
     return Math.max(6, Math.ceil(2.5 + tiles + chartPx / 50));
   }
 
@@ -3233,7 +3231,7 @@ class SmartEVSEFlowCard extends LitElement {
   }
 
   // How a recorded charge came out against what Intelligent charging is compared with, for
-  // history and for the tile without a car: "saved" or "more" with the amount, "same" when the
+  // history: "saved" or "more" with the amount, "same" when the
   // difference is negligible, "mixed" when Force charge was used and "partial" when the charge
   // was not fully observed (neither is compared). null when nothing was recorded to compare.
   // `kind` is the baseline ("schedule", "plug_in", or "" when the nights of one plug-in differ).
@@ -3306,40 +3304,6 @@ class SmartEVSEFlowCard extends LitElement {
     const value = formatHassNumber(this._hass, paid / kwh, { digits: 2 });
     const label = unit ? this._chartPriceUnit(currency) : "";
     return label ? `${value} ${label}` : value;
-  }
-
-  // The tile of a charger without a car: its last charge as a titled block with the figures
-  // Energy, Cost (and the average price) and what it saved, like the figures of a charging car.
-  _lastCharge(record, key = "") {
-    const energy = this._num(record?.energy_kwh);
-    if (!record || typeof record !== "object" || energy === null || energy < PERIOD_MIN_KWH) return "";
-    const rows: Array<{ id: string; label: string; value: string; tone?: string }> = [
-      { id: "last-energy", label: "Energy", value: `${formatHassNumber(this._hass, energy, { digits: 1 })} kWh` },
-    ];
-    const amount = this._costAmount(record);
-    if (amount !== UNAVAILABLE_TEXT) {
-      const price = record.priced_kwh > 0 ? this._averagePrice(record.cost, record.priced_kwh, record.currency) : "";
-      rows.push({ id: "last-cost", label: "Cost", value: `≈ ${amount}${price ? ` · ${price}` : ""}` });
-    }
-    const result = this._chargeComparison(record);
-    const baseline = result?.kind ? baselineShort(result.kind) : "";
-    if (result?.state === "saved") rows.push({ id: "last-saving", label: "Saved", value: `≈ ${result.amount}${baseline ? ` vs ${baseline}` : ""}`, tone: "success" });
-    else if (result?.state === "more") rows.push({ id: "last-saving", label: "Cost more", value: `≈ ${result.amount}${baseline ? ` than ${baseline}` : ""}`, tone: "caution" });
-    else if (result?.state === "same") rows.push({ id: "last-saving", label: "Saved", value: `– · same cost${baseline ? ` as ${baseline}` : ""}` });
-    else if (result?.state === "mixed") rows.push({ id: "last-saving", label: "Saved", value: "– · Force charge used" });
-    const vehicle = record.vehicle && !["unknown", "unavailable", "none"].includes(String(record.vehicle).toLowerCase()) ? String(record.vehicle) : "";
-    const periods = this._chargePeriods(record);
-    const day = formatHassDate(this._hass, periods[0]?.start ?? record.started_at, { year: false, weekday: true });
-    const when = [day === UNAVAILABLE_TEXT ? "" : day,
-      periods.length ? `${this._formatHistoryClock(periods[0].start)}–${this._formatHistoryClock(periods[periods.length - 1].end)}` : ""].filter(Boolean).join(" · ");
-    return `<section class="last-charge" aria-label="Last charge"${key ? ` data-charger="${this._safe(key)}"` : ""}>
-        <div class="last-charge-head">
-          <div class="last-charge-copy"><span class="last-charge-label">Last charge</span>${vehicle ? `<b class="last-charge-car">${this._safe(vehicle)}</b>` : ""}</div>
-          ${when ? `<span class="last-charge-when">${this._safe(when)}</span>` : ""}
-        </div>
-        ${this._statRows(rows)}
-        ${record.partial ? `<p class="charger-plan-line last-charge-note">Estimate: part of this charge was not observed.</p>` : ""}
-      </section>`;
   }
 
   _costAmount(record) {
@@ -3743,7 +3707,6 @@ class SmartEVSEFlowCard extends LitElement {
     }) : "";
     const plan = ev.connected && planCharger ? this._intelligentTileRows(ev) : { note: null, rows: [] };
     const rows: Array<{ id: string; label: string; value: string; tone?: string }> = [...plan.rows];
-    let lastCharge = "";
     const note = plan.note ? `<p class="charger-plan-line"${plan.note.tone ? ` data-tone="${this._safe(plan.note.tone)}"` : ""}>${plan.note.tone === "warning" ? WARNING_GLYPH : ""}${this._wrapGlue(plan.note.text)}</p>` : "";
     if (ev.connected) {
       // What this charge has taken and cost so far: the charger's metered session since plug-in.
@@ -3757,10 +3720,8 @@ class SmartEVSEFlowCard extends LitElement {
       // What this car's plan saves, and compared with what (the whole plan's is under the tiles).
       const saving = planCharger ? this._chargerSaving(planCharger, payload, true) : "";
       if (saving && plan.rows.length) rows.push({ id: "saving", label: "Saves", value: saving, tone: "success" });
-    } else if (ev.available && !ev.hasError) {
-      // No car: the last charge here, and what Intelligent charging saved on it.
-      lastCharge = this._lastCharge(record, ev.key);
     }
+    // A charger without a car is its name and state only (0.10.1): past charges are in history.
     // With a bar and a minimum on it, Guaranteed and Extra sit under the bar; the figures
     // (Next, Charged, Planned) are side by side. A charger without a car keeps its one row.
     const onBar = Boolean(meter) && minimum !== null;
@@ -3792,7 +3753,7 @@ class SmartEVSEFlowCard extends LitElement {
           </div>
           ${meter}${scale}
           ${ev.hasError ? `<p class="charger-message" role="status">${this._safe(ev.error)}</p>` : !ev.available ? `<p class="charger-message">Status cannot be read. Check the charger connection.</p>` : ""}
-          ${note || facts || lastCharge ? `<div class="charger-plan">${note}${facts}${lastCharge}</div>` : ""}
+          ${note || facts ? `<div class="charger-plan">${note}${facts}</div>` : ""}
           ${ev.available && ev.connected ? `
           <button class="charger-details" type="button" data-action="open-charger-details" aria-haspopup="dialog" data-charger="${this._safe(ev.key)}" aria-label="${this._safe(ev.smartevseName)} charger details">
             Charger details<ha-icon icon="${UI_ICONS.details}" aria-hidden="true"></ha-icon>

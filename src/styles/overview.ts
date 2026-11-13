@@ -172,17 +172,7 @@ export const OVERVIEW_CSS = `
   /* A warning line reads in the primary text colour; the shared warning glyph carries the tone. */
   .charger-plan-line[data-tone="warning"] { color: var(--primary-text-color); }
   .plan-tone-icon { --mdc-icon-size: 14px; width: 14px; height: 14px; margin-inline-end: 4px; vertical-align: -2px; color: var(--family-tone, var(--family-warning)); }
-  /* A charger without a car: its last charge, set off from the heading, with the same figures
-     as a charging car. */
-  .compact .charger-plan { margin-top: var(--large-gap); }
-  .last-charge { display: grid; gap: 8px; padding-top: 12px; border-top: 1px solid var(--family-divider, color-mix(in srgb, var(--primary-text-color) 10%, transparent)); }
-  .last-charge-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 4px 12px; flex-wrap: wrap; }
-  .last-charge-copy { display: grid; gap: 1px; min-width: 0; }
-  .last-charge-label { font-size: 10px; line-height: 1.4; letter-spacing: .06em; text-transform: uppercase; color: var(--secondary-text-color); }
-  .last-charge-car { font-size: 14px; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
-  .last-charge-when { font-size: 12px; line-height: 1.5; color: var(--secondary-text-color); font-variant-numeric: tabular-nums; }
-  .last-charge .plan-stats { border-block: 0; }
-  .last-charge .plan-stats .plan-row { padding-top: 0; padding-bottom: 0; }
+  .compact .charger-plan { margin-top: var(--medium-gap); }
   .plan-stats .plan-row[data-tone="success"] .fact-main { color: color-mix(in srgb, var(--family-success, var(--success-color)) 68%, var(--primary-text-color)); }
   .plan-stats .plan-row[data-tone="caution"] .fact-main { color: color-mix(in srgb, var(--family-caution, var(--warning-color)) 58%, var(--primary-text-color)); }
   .compact { padding-bottom: 18px; }
@@ -307,7 +297,6 @@ export const OVERVIEW_CSS = `
     .plan-stats .plan-row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 7px 0; border-inline-start: 0;
       border-top: 1px solid var(--family-divider, color-mix(in srgb, var(--primary-text-color) 10%, transparent)); }
     .plan-stats .plan-row:first-child { border-top: 0; }
-    .last-charge .plan-stats .plan-row { padding: 6px 0; }
     .plan-stats dd { margin: 0; text-align: right; }
     .plan-stats .fact { align-items: flex-end; }
   }

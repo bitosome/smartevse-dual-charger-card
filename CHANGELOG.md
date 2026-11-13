@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.10.1 — 2026-11-13
+
+- **A charger without a car no longer shows its last charge.** The tile is the charger's name and state only; what the last charge took, cost and saved is in the charging history, which the row under the tiles opens. The block introduced in 0.10.0 is removed.
+- Nothing else changes: the header, the tiles of connected cars and the history are as in 0.10.0.
+
 ## 0.10.0 — 2026-11-13
 
 The figures of a charger without a car and the charging history are laid out again, after the owner's first day with 0.9.0. For SmartEVSE Dual Charger integration 0.0.14.0 (the periods of a charge); still built with `@bitosome/ha-card-ui` 1.11.0.
