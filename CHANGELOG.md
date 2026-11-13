@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.10.0 — 2026-11-13
+
+The figures of a charger without a car and the charging history are laid out again, after the owner's first day with 0.9.0. For SmartEVSE Dual Charger integration 0.0.14.0 (the periods of a charge); still built with `@bitosome/ha-card-ui` 1.11.0.
+
+**Charger without a car**
+
+- Its last charge is a titled block instead of two lines of text: the car and when it charged, then three figures like a charging car's: **Energy**, **Cost** with the average price per kWh under it, and **Saved** in green with what it is compared with.
+- A charge that cost more than the comparison reads **Cost more**; one that used Force charge reads "–" over "Force charge used"; a charge that was not compared has two figures.
+- The comparison in a figure is short so it stays on one line: "vs schedule", "vs plug‑in" (also in the Saves figure of a charging car). Dialogs keep the full name.
+
+**Header**
+
+- The status of a state the tiles do not tell ("Waiting for a vehicle", "Charger connection unavailable") is the line under the title. The panel under the header is left for notes and pills and is gone when there are none.
+
+**Charging history**
+
+- **One selector** for the car: a track with equal segments (All and one per car) instead of chips of different shapes.
+- **Each charge is a table, with nothing to expand.** One row per period it went through: its hours, its kind, its energy, the average price per kWh it paid and its cost. Then the total, what the comparison would have cost ("Charge with schedule would have cost ≈ €5.53") and the difference: **Saved** or **Cost more**. A badge beside the car's name says the outcome at a glance.
+- The timeline runs from the first to the last charging minute (it ran to the unplugging before, so a short charge was a sliver).
+- A period on another day than the charge began names the day.
+- What used to be under "Details" is said in plain lines under the table: energy without a price, unobserved time, and why a charge is not compared.
+- The totals of the last 30 days show the average price per kWh under the cost.
+- The columns of all charges line up down the list.
+
+**Fixes**
+
+- **No more "Other 2:59–2:59 · 0.0 kWh" rows.** The seconds after the plan stops the charger are recorded as their own part. A stretch of under a minute or under 0.05 kWh is now counted with the period before it, and neighbouring periods of one kind are one.
+- **A car that has not charged since it was plugged in no longer shows the previous charge as "Charged".** The integration opens a session with the first charging; until then its newest record is the charge before this plug-in.
+- Energy that no period holds (a charge that began before integration 0.0.14.0) is listed as "Earlier · Not recorded by period", so the rows add up to the total.
+- Saved and Cost more read in the light theme (the tone is mixed towards the text colour).
+
+**Not changed**
+
+- The chart, the mode sheet, the tiles of connected cars (apart from the short comparison name) and the charger details.
+
 ## 0.9.0 — 2026-11-12
 
 The card is rebuilt around the tiles: no hero, the charging mode in the header, one way into history, and a history that shows what each charge went through. For SmartEVSE Dual Charger integration 0.0.14.0 (it works with 0.0.10.0 to 0.0.13.0; the parts of a charge then stay empty). Needs `@bitosome/ha-card-ui` 1.11.0.

@@ -14,7 +14,7 @@ import {
 import { buildGlow, type PulseColors } from "./shared/glow";
 import { ChargeHistory, chargedIntervals, joinIntervals, withLiveState } from "./charge-history";
 
-const CARD_VERSION = "0.9.0";
+const CARD_VERSION = "0.10.0";
 
 // String twin of the shared pendingIndicator(); this card renders through unsafeHTML.
 const PENDING_INDICATOR = `<span class="family-pending-indicator" aria-hidden="true"></span>`;
@@ -35,6 +35,8 @@ const UNIDENTIFIED_VEHICLE = "Unidentified vehicle";
 // What a saving is compared with (intelligent.baseline_kind, integration 0.0.11.0): the owner's
 // "Charge with schedule" plan, or charging as soon as the car is plugged in (the default).
 const baselineName = (kind: unknown, hyphen = "\u2011") => kind === "schedule" ? "Charge with schedule" : `charging at plug${hyphen}in`;
+// The same in a figure's second line, where the full name wraps: "vs schedule", "vs plug\u2011in".
+const baselineShort = (kind: unknown) => kind === "schedule" ? "schedule" : "plug\u2011in";
 // Plan chart (shared time-series chart): plot height, period wording and bar colours.
 const PLAN_CHART_HEIGHT = 150;
 const PERIOD_LABELS: Record<string, string> = {
@@ -53,6 +55,9 @@ const NOTHING_CHARGED = "Nothing yet";
 const HISTORY_PART_LABELS: Record<string, string> = {
   guaranteed: "Guaranteed", extra: "Extra", schedule: "Schedule", force: "Force charge", other: "Other",
 };
+// A stretch shorter than this, or with less energy, is not shown as a period of its own.
+const PERIOD_MIN_MS = 60_000;
+const PERIOD_MIN_KWH = 0.05;
 const NO_PRICE_YET = "No price yet";
 // The plan chart paints prices like the Real Electricity Price card: green at or below its
 // acceptable price. The card option `cheap_price_entity` names another limit.
@@ -342,7 +347,9 @@ class SmartEVSEFlowCard extends LitElement {
     const chartPx = chart ? CHART_FRAME_CHROME_PX + CHART_LEGEND_PX * (lanes ? 2 : 1) + (lanes ? CHART_PERIOD_LINE_PX : 0) +
       chartTotalHeight(PLAN_CHART_HEIGHT, lanes) : 0;
     const planned = this._isIntelligentPlanActive() && !this._isForcePlanActive();
-    const tiles = [ev1, ev2].reduce((sum, ev) => sum + (!ev.connected ? 2 : planned ? 5 : 4), 0);
+    // A charger without a car shows its last charge (0.10.0): two more rows than its heading alone.
+    const lastCharge = (ev) => (this._num(this._costData()?.chargers?.[ev.key]?.session?.energy_kwh) ?? 0) >= PERIOD_MIN_KWH;
+    const tiles = [ev1, ev2].reduce((sum, ev) => sum + (!ev.connected ? (lastCharge(ev) ? 4 : 2) : planned ? 5 : 4), 0);
     return Math.max(6, Math.ceil(2.5 + tiles + chartPx / 50));
   }
 
@@ -3225,29 +3232,114 @@ class SmartEVSEFlowCard extends LitElement {
     };
   }
 
-  // The saving of the last charge and what it is compared with, for the tile without a car until
-  // the next plug-in; null when there is none to stand behind.
-  _lastChargeSaving(record): { amount: string; kind: string } | null {
+  // How a recorded charge came out against what Intelligent charging is compared with, for
+  // history and for the tile without a car: "saved" or "more" with the amount, "same" when the
+  // difference is negligible, "mixed" when Force charge was used and "partial" when the charge
+  // was not fully observed (neither is compared). null when nothing was recorded to compare.
+  // `kind` is the baseline ("schedule", "plug_in", or "" when the nights of one plug-in differ).
+  _chargeComparison(record): { state: "saved" | "more" | "same" | "mixed" | "partial"; amount: string; saving: number; kind: string } | null {
     const session = this._intelligentSession(record?.id);
-    if (!session || session.mixed || session.partial || !session.kind) return null;
-    const amount = this._formatSaving(session.saving, this._intelligent()?.currency || record?.currency);
-    return amount ? { amount, kind: session.kind } : null;
+    if (!session) return null;
+    if (session.mixed) return { state: "mixed", amount: "", saving: 0, kind: session.kind };
+    if (session.partial) return { state: "partial", amount: "", saving: 0, kind: session.kind };
+    const saving = this._num(session.saving);
+    if (saving === null) return null;
+    if (Math.abs(saving) < MIN_SAVING) return { state: "same", amount: "", saving: 0, kind: session.kind };
+    const amount = this._formatMoney(Math.abs(saving), this._intelligent()?.currency || record?.currency);
+    return amount ? { state: saving > 0 ? "saved" : "more", amount, saving, kind: session.kind } : null;
   }
 
-  // History detail line: what a recorded session saved, and compared with what.
+  // One sentence for what a recorded charge saved, and compared with what.
   _historySaving(record) {
-    const session = this._intelligentSession(record?.id);
-    if (!session) return "";
-    if (session.mixed) return "Force charge used";
-    if (session.partial) return "";
-    const currency = this._intelligent()?.currency || record?.currency;
-    const saving = this._num(session.saving);
-    if (saving === null || Math.abs(saving) < MIN_SAVING) return "";
-    const amount = this._formatMoney(Math.abs(saving), currency);
-    if (!amount) return "";
-    if (!session.kind) return saving > 0 ? `Saved ≈ ${amount}` : "";
-    const baseline = baselineName(session.kind, "-");
-    return saving > 0 ? `Saved ≈ ${amount} vs ${baseline}` : `≈ ${amount} more than ${baseline}`;
+    const result = this._chargeComparison(record);
+    if (!result) return "";
+    if (result.state === "mixed") return "Force charge used";
+    if (result.state !== "saved" && result.state !== "more") return "";
+    if (!result.kind) return result.state === "saved" ? `Saved ≈ ${result.amount}` : "";
+    const baseline = baselineName(result.kind, "-");
+    return result.state === "saved" ? `Saved ≈ ${result.amount} vs ${baseline}` : `≈ ${result.amount} more than ${baseline}`;
+  }
+
+  // The periods a charge went through (integration 0.0.14.0), oldest first. A stretch of under
+  // a minute or with next to no energy (the seconds after the plan stopped the charger) is not
+  // a period: its energy and cost go to the period before it, or to the first one. Periods of
+  // one kind that follow each other within a minute are one.
+  _chargePeriods(record): Array<{ kind: string; start: number; end: number; energy: number; cost: number | null }> {
+    type Period = { kind: string; start: number; end: number; energy: number; cost: number | null };
+    const raw: Period[] = (Array.isArray(record?.parts) ? record.parts : [])
+      .map((part) => ({ kind: HISTORY_PART_LABELS[part?.kind] ? String(part.kind) : "other", start: Date.parse(part?.start), end: Date.parse(part?.end),
+        energy: this._num(part?.energy_kwh) ?? 0, cost: part?.cost === null || part?.cost === undefined ? null : this._num(part.cost) }))
+      .filter((part) => Number.isFinite(part.start) && Number.isFinite(part.end) && part.end >= part.start)
+      .sort((left, right) => left.start - right.start);
+    const add = (target: Period, part: Period) => {
+      target.energy += part.energy;
+      if (target.cost !== null && part.cost !== null) target.cost += part.cost;
+    };
+    const periods: Period[] = [];
+    let carried: Period | null = null;
+    for (const part of raw) {
+      if (part.end - part.start < PERIOD_MIN_MS || part.energy < PERIOD_MIN_KWH) {
+        const before = periods[periods.length - 1];
+        if (before) add(before, part);
+        else if (carried) add(carried, part);
+        else carried = { ...part };
+        continue;
+      }
+      const before = periods[periods.length - 1];
+      if (before && before.kind === part.kind && part.start - before.end < PERIOD_MIN_MS) {
+        before.end = part.end;
+        add(before, part);
+      } else periods.push({ ...part });
+      if (carried) {
+        add(periods[periods.length - 1], carried);
+        carried = null;
+      }
+    }
+    return periods;
+  }
+
+  // "0.19 €/kWh": what a charge paid on average, or "" without a price.
+  _averagePrice(cost, energy, currency, unit = true) {
+    const paid = this._num(cost);
+    const kwh = this._num(energy);
+    if (paid === null || kwh === null || kwh < PERIOD_MIN_KWH) return "";
+    const value = formatHassNumber(this._hass, paid / kwh, { digits: 2 });
+    const label = unit ? this._chartPriceUnit(currency) : "";
+    return label ? `${value} ${label}` : value;
+  }
+
+  // The tile of a charger without a car: its last charge as a titled block with the figures
+  // Energy, Cost (and the average price) and what it saved, like the figures of a charging car.
+  _lastCharge(record, key = "") {
+    const energy = this._num(record?.energy_kwh);
+    if (!record || typeof record !== "object" || energy === null || energy < PERIOD_MIN_KWH) return "";
+    const rows: Array<{ id: string; label: string; value: string; tone?: string }> = [
+      { id: "last-energy", label: "Energy", value: `${formatHassNumber(this._hass, energy, { digits: 1 })} kWh` },
+    ];
+    const amount = this._costAmount(record);
+    if (amount !== UNAVAILABLE_TEXT) {
+      const price = record.priced_kwh > 0 ? this._averagePrice(record.cost, record.priced_kwh, record.currency) : "";
+      rows.push({ id: "last-cost", label: "Cost", value: `≈ ${amount}${price ? ` · ${price}` : ""}` });
+    }
+    const result = this._chargeComparison(record);
+    const baseline = result?.kind ? baselineShort(result.kind) : "";
+    if (result?.state === "saved") rows.push({ id: "last-saving", label: "Saved", value: `≈ ${result.amount}${baseline ? ` vs ${baseline}` : ""}`, tone: "success" });
+    else if (result?.state === "more") rows.push({ id: "last-saving", label: "Cost more", value: `≈ ${result.amount}${baseline ? ` than ${baseline}` : ""}`, tone: "caution" });
+    else if (result?.state === "same") rows.push({ id: "last-saving", label: "Saved", value: `– · same cost${baseline ? ` as ${baseline}` : ""}` });
+    else if (result?.state === "mixed") rows.push({ id: "last-saving", label: "Saved", value: "– · Force charge used" });
+    const vehicle = record.vehicle && !["unknown", "unavailable", "none"].includes(String(record.vehicle).toLowerCase()) ? String(record.vehicle) : "";
+    const periods = this._chargePeriods(record);
+    const day = formatHassDate(this._hass, periods[0]?.start ?? record.started_at, { year: false, weekday: true });
+    const when = [day === UNAVAILABLE_TEXT ? "" : day,
+      periods.length ? `${this._formatHistoryClock(periods[0].start)}–${this._formatHistoryClock(periods[periods.length - 1].end)}` : ""].filter(Boolean).join(" · ");
+    return `<section class="last-charge" aria-label="Last charge"${key ? ` data-charger="${this._safe(key)}"` : ""}>
+        <div class="last-charge-head">
+          <div class="last-charge-copy"><span class="last-charge-label">Last charge</span>${vehicle ? `<b class="last-charge-car">${this._safe(vehicle)}</b>` : ""}</div>
+          ${when ? `<span class="last-charge-when">${this._safe(when)}</span>` : ""}
+        </div>
+        ${this._statRows(rows)}
+        ${record.partial ? `<p class="charger-plan-line last-charge-note">Estimate: part of this charge was not observed.</p>` : ""}
+      </section>`;
   }
 
   _costAmount(record) {
@@ -3282,9 +3374,10 @@ class SmartEVSEFlowCard extends LitElement {
     return formatHassTime(this._hass, value);
   }
 
-  // Charging history (0.9.0): one list for both chargers, newest first. Each charge shows what
-  // it took and cost, what it saved, and the parts it went through (integration 0.0.14.0): a
-  // timeline from its first to its last charging minute and one line per kind of part.
+  // Charging history (0.10.0): one list for both chargers, newest first. Each charge is a table:
+  // one row per period it went through (integration 0.0.14.0) with its energy, average price
+  // and cost, the total, and what Charge with schedule would have cost. Above it a timeline from
+  // the first to the last charging minute. Nothing is folded away.
   _chargingHistory(now = Date.now()) {
     const ledger = this._costData();
     if (!ledger) return this._notice("accent", "Charging history requires the updated SmartEVSE integration.");
@@ -3317,53 +3410,85 @@ class SmartEVSEFlowCard extends LitElement {
     const priced = recent.filter(({ record }) => record.currency && Number.isFinite(record.cost));
     const currencies = new Set(priced.map(({ record }) => record.currency));
     const totalCost = currencies.size === 1 ? formatHassCurrency(this._hass, priced.reduce((sum, { record }) => sum + record.cost, 0), { currency: [...currencies][0], digits: 2 }) : "";
+    const pricedKwh = priced.reduce((sum, { record }) => sum + (this._num(record.priced_kwh) ?? 0), 0);
+    const totalPrice = totalCost && currencies.size === 1 ? this._averagePrice(priced.reduce((sum, { record }) => sum + record.cost, 0), pricedKwh, [...currencies][0]) : "";
     const totals = recent.length ? `<dl class="history-totals" aria-label="Last 30 days">
-        <div><dt>Last 30 days</dt><dd>${this._safe(kwh(totalKwh, 0))}</dd></div>
-        ${totalCost && totalCost !== UNAVAILABLE_TEXT ? `<div><dt>Cost</dt><dd>≈ ${this._safe(totalCost)}</dd></div>` : ""}
+        <div><dt>Last 30 days</dt><dd>${this._safe(formatHassNumber(this._hass, totalKwh, { digits: 0 }))}<small> kWh</small></dd></div>
+        ${totalCost && totalCost !== UNAVAILABLE_TEXT ? `<div><dt>Cost</dt><dd>≈ ${this._safe(totalCost)}${totalPrice ? `<span class="history-total-sub">${this._safe(totalPrice)}</span>` : ""}</dd></div>` : ""}
         <div><dt>Charges</dt><dd>${recent.length}</dd></div>
       </dl>` : "";
+    // One selector: a track with a segment per car.
     const filters = cars.length > 1 ? `<div class="history-filter" role="group" aria-label="Show charges of">${["all", ...cars].map((car) =>
-      `<button class="family-chip history-filter-chip" type="button" data-action="history-filter" data-value="${this._safe(car)}" aria-pressed="${car === filter ? "true" : "false"}">${this._safe(car === "all" ? "All" : car)}</button>`).join("")}</div>` : "";
+      `<button class="history-filter-option" type="button" data-action="history-filter" data-value="${this._safe(car)}" aria-pressed="${car === filter ? "true" : "false"}">${this._safe(car === "all" ? "All" : car)}</button>`).join("")}</div>` : "";
     const clock = (value) => this._formatHistoryClock(value);
+    const money = (value, currency) => {
+      const text = currency && value !== null && Number.isFinite(value) ? formatHassCurrency(this._hass, value, { currency, digits: 2 }) : "";
+      return text === UNAVAILABLE_TEXT ? "" : text;
+    };
+    const cell = (text) => text ? this._safe(text) : `<span class="history-none">–</span>`;
     const session = ({ record, key }) => {
-      const start = Date.parse(record.started_at);
-      const parts = (Array.isArray(record.parts) ? record.parts : [])
-        .map((part) => ({ kind: HISTORY_PART_LABELS[part?.kind] ? String(part.kind) : "other", start: Date.parse(part?.start), end: Date.parse(part?.end),
-          energy: this._num(part?.energy_kwh) ?? 0, cost: part?.cost === null || part?.cost === undefined ? null : this._num(part.cost) }))
-        .filter((part) => Number.isFinite(part.start) && Number.isFinite(part.end) && part.end > part.start)
-        .sort((left, right) => left.start - right.start);
-      const ended = Date.parse(record.ended_at);
-      const end = Number.isFinite(ended) ? ended : parts.length ? Math.max(parts[parts.length - 1].end, record.status === "charging" ? now : 0) : now;
-      const span = Math.max(1, end - start);
-      const day = formatHassDate(this._hass, record.started_at, { year: false, weekday: true });
+      const periods = this._chargePeriods(record);
+      // The energy column is headed kWh, like the price column: its cells are figures only.
+      const energyOf = (value) => formatHassNumber(this._hass, Number(value || 0), { digits: 1 });
+      const dayOf = (value) => formatHassDate(this._hass, value, { year: false, weekday: true });
+      const day = dayOf(periods[0]?.start ?? record.started_at);
       const amount = this._costAmount(record);
-      const saving = this._historySaving(record);
-      // One line per kind, in the order the charge went through them, with its time ranges.
-      const kinds: string[] = [...new Set<string>(parts.map((part) => part.kind))];
-      const lines = kinds.map((kind) => {
-        const own = parts.filter((part) => part.kind === kind);
-        const cost = own.every((part) => part.cost !== null) && record.currency
-          ? formatHassCurrency(this._hass, own.reduce((sum, part) => sum + (part.cost as number), 0), { currency: record.currency, digits: 2 }) : "";
-        return `<li class="history-part" data-kind="${this._safe(kind)}"><i class="history-swatch" aria-hidden="true"></i><span class="history-part-kind">${this._safe(HISTORY_PART_LABELS[kind])}</span><span class="history-part-time">${
-          this._safe(own.map((part) => `${clock(part.start)}–${clock(part.end)}`).join(", "))}</span><span class="history-part-amount">${this._safe(kwh(own.reduce((sum, part) => sum + part.energy, 0)))}${
-          cost && cost !== UNAVAILABLE_TEXT ? ` · ≈ ${this._safe(cost)}` : ""}</span></li>`;
-      }).join("");
-      const timeline = parts.length && Number.isFinite(start) ? `<div class="history-timeline" role="img" aria-label="${this._safe(parts.map((part) =>
-          `${HISTORY_PART_LABELS[part.kind]} ${clock(part.start)} to ${clock(part.end)}`).join(", "))}">${parts.map((part) =>
-          `<b data-kind="${this._safe(part.kind)}" style="left:${(Math.max(0, part.start - start) / span * 100).toFixed(2)}%;width:${Math.max(1, (part.end - part.start) / span * 100).toFixed(2)}%"></b>`).join("")}</div>
-        <div class="history-range"><span>${this._safe(clock(start))}</span><span>${this._safe(Number.isFinite(ended) ? clock(ended) : record.status === "charging" ? "charging now" : "plugged in")}</span></div>
-        <ul class="history-parts">${lines}</ul>` : "";
+      const hasCost = amount !== UNAVAILABLE_TEXT;
+      const result = this._chargeComparison(record);
+      const baseline = result?.kind ? baselineName(result.kind, "-") : "the compared plan";
+      const badge = result?.state === "saved" ? ["success", `Saved ≈ ${result.amount}`]
+        : result?.state === "more" ? ["caution", `≈ ${result.amount} more`]
+        : result?.state === "mixed" || result?.state === "partial" ? ["neutral", "Not compared"] : null;
+      // From the first to the last charging minute, each period in the colour of its kind.
+      const from = periods[0]?.start;
+      const span = periods.length ? Math.max(1, periods[periods.length - 1].end - from) : 1;
+      const timeline = periods.length ? `<div class="history-timeline" role="img" aria-label="${this._safe(periods.map((part) =>
+          `${HISTORY_PART_LABELS[part.kind]} ${clock(part.start)} to ${clock(part.end)}`).join(", "))}">${periods.map((part) =>
+          `<b data-kind="${this._safe(part.kind)}" style="left:${((part.start - from) / span * 100).toFixed(2)}%;width:${Math.max(1, (part.end - part.start) / span * 100).toFixed(2)}%"></b>`).join("")}</div>
+        <div class="history-range" aria-hidden="true"><span>${this._safe(clock(from))}</span><span>${this._safe(record.status === "charging" ? "charging now" : clock(periods[periods.length - 1].end))}</span></div>` : "";
+      // One row per period: when, what kind, its energy, what a kWh cost on average and its cost.
+      const rows = periods.map((part) => {
+        const other = dayOf(part.start) !== day ? dayOf(part.start) : "";
+        return `<tr class="history-period" data-kind="${this._safe(part.kind)}"><th scope="row"><i class="history-swatch" aria-hidden="true"></i><span class="history-period-time">${this._safe(`${clock(part.start)}–${clock(part.end)}`)}</span><span class="history-period-kind">${
+          this._safe([HISTORY_PART_LABELS[part.kind], other === UNAVAILABLE_TEXT ? "" : other].filter(Boolean).join(" · "))}</span></th><td>${this._safe(energyOf(part.energy))}</td><td>${
+          cell(this._averagePrice(part.cost, part.energy, record.currency, false))}</td><td>${cell(money(part.cost, record.currency))}</td></tr>`;
+      });
+      // Energy the periods do not hold: a charge that began before periods were recorded.
+      const rest = (this._num(record.energy_kwh) ?? 0) - periods.reduce((sum, part) => sum + part.energy, 0);
+      if (periods.length && rest >= PERIOD_MIN_KWH) {
+        const restCost = hasCost && periods.every((part) => part.cost !== null) ? record.cost - periods.reduce((sum, part) => sum + (part.cost as number), 0) : null;
+        rows.unshift(`<tr class="history-period" data-kind="other"><th scope="row"><i class="history-swatch" aria-hidden="true"></i><span class="history-period-time">Earlier</span><span class="history-period-kind">Not recorded by period</span></th><td>${
+          this._safe(energyOf(rest))}</td><td>${cell(this._averagePrice(restCost, rest, record.currency, false))}</td><td>${cell(money(restCost, record.currency))}</td></tr>`);
+      }
+      const compared = hasCost && result && ["saved", "more", "same"].includes(result.state);
+      const sentence = (text) => text.charAt(0).toUpperCase() + text.slice(1);
+      const table = `<table class="history-table">
+          <thead><tr><th scope="col">Period</th><th scope="col">kWh</th><th scope="col">${this._safe(this._chartPriceUnit(record.currency) || "Price")}</th><th scope="col">Cost</th></tr></thead>
+          ${rows.length ? `<tbody>${rows.join("")}</tbody>` : ""}
+          <tfoot>
+            <tr class="history-total"><th scope="row">Total</th><td>${this._safe(energyOf(record.energy_kwh))}</td><td>${
+              cell(hasCost && record.priced_kwh > 0 ? this._averagePrice(record.cost, record.priced_kwh, record.currency, false) : "")}</td><td>${
+              hasCost ? `≈ ${this._safe(amount)}` : `<span class="family-unavailable">Unavailable</span>`}</td></tr>
+            ${compared ? `<tr class="history-baseline"><th scope="row" colspan="3">${this._safe(sentence(baseline))} would have cost</th><td>≈ ${this._safe(money(record.cost + (result as { saving: number }).saving, record.currency))}</td></tr>` : ""}
+            ${compared && result?.state === "saved" ? `<tr class="history-result" data-tone="success"><th scope="row" colspan="3">Saved</th><td>≈ ${this._safe(result.amount)}</td></tr>` : ""}
+            ${compared && result?.state === "more" ? `<tr class="history-result" data-tone="caution"><th scope="row" colspan="3">Cost more</th><td>≈ ${this._safe(result.amount)}</td></tr>` : ""}
+          </tfoot>
+        </table>`;
+      // Everything else worth knowing is said in plain lines; nothing is folded away.
       const notes = [
-        record.priced_kwh > 0 ? `Average ${this._costAmount({ ...record, cost: record.cost / record.priced_kwh })}/kWh` : "",
-        record.unpriced_kwh > 0 ? `${formatHassNumber(this._hass, Number(record.unpriced_kwh), { digits: 3, unit: "kWh" })} without a price` : "",
+        result?.state === "mixed" ? `Not compared with ${baseline}: Force charge was used.` : "",
+        result?.state === "partial" ? `Not compared with ${baseline}: the charge was not fully observed.` : "",
+        record.unpriced_kwh > 0 ? `${formatHassNumber(this._hass, Number(record.unpriced_kwh), { digits: 2, unit: "kWh" })} had no price and is not in the cost.` : "",
         ...(Array.isArray(record.issues) ? record.issues : []).map((issue) => issues[issue] || "Some measurements are missing."),
       ].filter(Boolean);
       return `<li class="history-session" data-session="${this._safe(record.id)}" data-charger="${this._safe(key)}">
-          <div class="history-head"><span class="history-car">${this._safe(carOf(record) || "Vehicle")}</span><span class="history-when">${this._safe(day === UNAVAILABLE_TEXT ? "Time unavailable" : day)} · ${this._safe(chargerName(key))}</span></div>
-          <div class="history-sum"><b>${this._safe(kwh(record.energy_kwh))}</b>${amount === UNAVAILABLE_TEXT ? `<span class="family-unavailable">Cost unavailable</span>` : `<b>≈ ${this._safe(amount)}</b>`}${
-            saving ? `<span class="history-saving">${this._safe(saving)}</span>` : ""}${record.partial ? `<span class="history-partial">Partial estimate</span>` : ""}</div>
+          <div class="history-head">
+            <div class="history-title"><span class="history-car">${this._safe(carOf(record) || "Vehicle")}</span><span class="history-when">${this._safe(day === UNAVAILABLE_TEXT ? "Time unavailable" : day)} · ${this._safe(chargerName(key))}</span></div>
+            ${badge ? `<span class="history-badge" data-tone="${badge[0]}">${this._safe(badge[1])}</span>` : ""}
+          </div>
           ${timeline}
-          ${notes.length ? `<details class="history-more" data-key="history-${this._safe(record.id)}"><summary>Details</summary>${notes.map((note) => `<p>${this._safe(note)}</p>`).join("")}</details>` : ""}
+          ${table}
+          ${notes.map((note) => `<p class="history-note">${this._safe(note)}</p>`).join("")}
         </li>`;
     };
     return `<section class="cost-history" aria-label="Charging history">
@@ -3371,8 +3496,8 @@ class SmartEVSEFlowCard extends LitElement {
       ${totals}${filters}
       ${shown.length ? `<ol class="history-list">${shown.map(session).join("")}</ol>`
         : `<div class="family-async-state cost-empty" role="status"><span>No charging sessions recorded yet. Tracking starts with the next charge; earlier sessions are not reconstructed.</span></div>`}
-      <p class="cost-note">Estimated from measured power and Real Electricity Price at the time of charging. Shared across all users; latest ${this._safe(ledger.history_limit || 100)} sessions per charger.${
-        shown.some(({ record }) => !(Array.isArray(record.parts) && record.parts.length)) ? " The parts of a charge are recorded from integration 0.0.14.0." : ""}</p></section>`;
+      <p class="cost-note">Cost is the measured energy at the Real Electricity Price of the time; the price of a period is its average. Shared across all users; latest ${this._safe(ledger.history_limit || 100)} charges per charger.${
+        shown.some(({ record }) => !(Array.isArray(record.parts) && record.parts.length)) ? " Periods are recorded from integration 0.0.14.0; older charges show their total." : ""}</p></section>`;
   }
 
   // One titled section of the charger details: label/value rows, or a line of text.
@@ -3531,11 +3656,12 @@ class SmartEVSEFlowCard extends LitElement {
   }
 
   // What the saving of one car's plan is, with what it is compared with: "≈ €1.29 vs Charge with
-  // schedule". "" when the payload carries none it can stand behind.
-  _chargerSaving(charger, payload) {
+  // schedule", or "≈ €1.29 vs schedule" for a tile's figure. "" when the payload carries none it
+  // can stand behind.
+  _chargerSaving(charger, payload, short = false) {
     if (!charger || charger.estimated === true || charger.partial || charger.includes_forecast) return "";
     const saving = this._formatSaving(charger.saving, payload?.currency);
-    return saving ? `≈ ${saving} vs ${baselineName(payload?.baseline_kind)}` : "";
+    return saving ? `≈ ${saving} vs ${short ? baselineShort(payload?.baseline_kind) : baselineName(payload?.baseline_kind)}` : "";
   }
 
   // Facts of a charger tile as label/value rows: a car without a known level, a charger without a car.
@@ -3562,7 +3688,7 @@ class SmartEVSEFlowCard extends LitElement {
     if (reached) return `${sub(reached[1])}<span class="fact-sep"> · </span>${main(reached[2])}`;
     const dot = text.indexOf(" · ");
     if (dot > 0) return `${main(text.slice(0, dot))}<span class="fact-sep"> · </span>${sub(text.slice(dot + 3))}`;
-    for (const word of [" by ", " vs "]) {
+    for (const word of [" by ", " vs ", " than "]) {
       const at = text.indexOf(word);
       if (at > 0) return `${main(text.slice(0, at))} ${sub(text.slice(at + 1))}`;
     }
@@ -3583,10 +3709,10 @@ class SmartEVSEFlowCard extends LitElement {
   // The figures of a charger tile, side by side: Charged, Planned and what the plan saves, each a
   // main figure with a quieter line under it. History has one entry, the row under the tiles
   // (0.9.0): the figures are not controls.
-  _statRows(rows: Array<{ id: string; label: string; value: string }>) {
+  _statRows(rows: Array<{ id: string; label: string; value: string; tone?: string }>) {
     if (!rows.length) return "";
     return `<dl class="plan-stats">${rows.map((row) =>
-      `<div class="plan-row" data-row="${this._safe(row.id)}"><dt>${this._safe(row.label)}</dt><dd><span class="fact">${this._factParts(row.value)}</span></dd></div>`).join("")}</dl>`;
+      `<div class="plan-row" data-row="${this._safe(row.id)}"${row.tone ? ` data-tone="${this._safe(row.tone)}"` : ""}><dt>${this._safe(row.label)}</dt><dd><span class="fact">${this._factParts(row.value)}</span></dd></div>`).join("")}</dl>`;
   }
 
   // One tile per charger: icon, charger, vehicle and state with the battery level, the shared
@@ -3616,24 +3742,24 @@ class SmartEVSEFlowCard extends LitElement {
       ...(minimum !== null && extraTo !== null && extraTo > minimum ? { range: { from: minimum, to: extraTo } } : {}),
     }) : "";
     const plan = ev.connected && planCharger ? this._intelligentTileRows(ev) : { note: null, rows: [] };
-    const rows: Array<{ id: string; label: string; value: string }> = [...plan.rows];
-    let note = plan.note ? `<p class="charger-plan-line"${plan.note.tone ? ` data-tone="${this._safe(plan.note.tone)}"` : ""}>${plan.note.tone === "warning" ? WARNING_GLYPH : ""}${this._wrapGlue(plan.note.text)}</p>` : "";
+    const rows: Array<{ id: string; label: string; value: string; tone?: string }> = [...plan.rows];
+    let lastCharge = "";
+    const note = plan.note ? `<p class="charger-plan-line"${plan.note.tone ? ` data-tone="${this._safe(plan.note.tone)}"` : ""}>${plan.note.tone === "warning" ? WARNING_GLYPH : ""}${this._wrapGlue(plan.note.text)}</p>` : "";
     if (ev.connected) {
       // What this charge has taken and cost so far: the charger's metered session since plug-in.
-      const charged = this._chargedValue(record);
+      // The ledger opens a session with the first charging; until then its newest record is the
+      // charge before this plug-in, which is not this car's.
+      const charged = this._chargedValue(record?.status === "finished" ? null : record);
       if (charged) {
         const at = rows.findIndex((row) => row.id === "planned" || row.id === "cost");
         rows.splice(at < 0 ? rows.length : at, 0, { id: "charged", label: "Charged", value: charged });
       }
       // What this car's plan saves, and compared with what (the whole plan's is under the tiles).
-      const saving = planCharger ? this._chargerSaving(planCharger, payload) : "";
-      if (saving && plan.rows.length) rows.push({ id: "saving", label: "Saves", value: saving });
+      const saving = planCharger ? this._chargerSaving(planCharger, payload, true) : "";
+      if (saving && plan.rows.length) rows.push({ id: "saving", label: "Saves", value: saving, tone: "success" });
     } else if (ev.available && !ev.hasError) {
       // No car: the last charge here, and what Intelligent charging saved on it.
-      const last = this._chargedValue(record);
-      if (last && last !== NOTHING_CHARGED) rows.push({ id: "last", label: "Last charge", value: last });
-      const lastSaving = this._lastChargeSaving(record);
-      if (lastSaving) note = `<p class="charger-plan-line">Last charge saved ≈ ${this._safe(lastSaving.amount)} compared with ${this._safe(baselineName(lastSaving.kind))}</p>`;
+      lastCharge = this._lastCharge(record, ev.key);
     }
     // With a bar and a minimum on it, Guaranteed and Extra sit under the bar; the figures
     // (Next, Charged, Planned) are side by side. A charger without a car keeps its one row.
@@ -3666,7 +3792,7 @@ class SmartEVSEFlowCard extends LitElement {
           </div>
           ${meter}${scale}
           ${ev.hasError ? `<p class="charger-message" role="status">${this._safe(ev.error)}</p>` : !ev.available ? `<p class="charger-message">Status cannot be read. Check the charger connection.</p>` : ""}
-          ${note || facts ? `<div class="charger-plan">${note}${facts}</div>` : ""}
+          ${note || facts || lastCharge ? `<div class="charger-plan">${note}${facts}${lastCharge}</div>` : ""}
           ${ev.available && ev.connected ? `
           <button class="charger-details" type="button" data-action="open-charger-details" aria-haspopup="dialog" data-charger="${this._safe(ev.key)}" aria-label="${this._safe(ev.smartevseName)} charger details">
             Charger details<ha-icon icon="${UI_ICONS.details}" aria-hidden="true"></ha-icon>
@@ -4096,10 +4222,17 @@ class SmartEVSEFlowCard extends LitElement {
     const modeLabel = sortedHeroGroups.length
       ? ({ "force-charge": "Force charge", intelligent: "Intelligent", "use-schedule": "Schedule" }[sortedHeroGroups[0].id] || sortedHeroGroups[0].label)
       : "Off";
+    // The status sentence is the line under the title (0.10.0). Its notes and pills keep their
+    // panel, which is left out when there are none.
+    const statusDetail = Boolean(plainHero?.support || controllerErrorNote || noPlanEnabled || heroRuntimePills.length
+      || sortedHeroGroups.some((group) => groupNotes(group).length || group.pills.length));
     const headMarkup = `
             <section class="house-node overview-header visual-${this._safe(heroVisual)}">
               <div class="overview-head">
-                <h2 class="overview-title">EV charging</h2>
+                <div class="overview-heading-copy">
+                  <h2 class="overview-title">EV charging</h2>
+                  <p class="status-title${plainHero ? " family-visually-hidden" : ""}">${this._safe(activeTitle)}</p>
+                </div>
                 <button
                   class="status-hero mode-chip"
                   data-action="open-force-wizard"
@@ -4113,8 +4246,7 @@ class SmartEVSEFlowCard extends LitElement {
                   <span class="mode-dot" aria-hidden="true"></span><span class="mode-label">${this._safe(modeLabel)}</span><ha-icon icon="mdi:chevron-down" aria-hidden="true"></ha-icon>
                 </button>
               </div>
-              <div class="status-copy${plainHero ? " family-visually-hidden" : ""}" data-plain="${plainHero ? "true" : "false"}">
-                <div class="status-title">${this._safe(activeTitle)}</div>
+              <div class="status-copy${plainHero ? " family-visually-hidden" : ""}" data-plain="${plainHero ? "true" : "false"}"${statusDetail ? "" : " hidden"}>
                 ${plainHero?.support ? `<p class="overview-note status-support">${this._safe(plainHero.support)}</p>` : ""}
                 ${controllerErrorNote ? `<p class="overview-note">${this._safe(controllerErrorNote)}</p>` : ""}
                 ${noPlanEnabled ? `<p class="overview-note">No charging plan enabled</p>` : `<div class="status-pills status-pill-groups">${heroPillsMarkup}${heroRuntimePillsMarkup}</div>`}

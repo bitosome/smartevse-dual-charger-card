@@ -26,6 +26,7 @@ export const OVERVIEW_CSS = `
   .overview-header { display: grid; gap: 10px; padding: 2px 4px 0; }
   .overview-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; }
   .overview-title { margin: 0; font-size: 16px; font-weight: 600; line-height: 1.3; color: var(--primary-text-color); }
+  .overview-heading-copy { display: grid; gap: 1px; min-width: 0; }
   .status-hero.mode-chip { position: relative; display: inline-flex; align-items: center; gap: 8px; width: auto; min-height: 36px; margin: 0; padding: 0 10px 0 12px;
     border: 0; border-radius: 999px; background: color-mix(in srgb, var(--primary-color) 16%, transparent); color: var(--primary-text-color);
     font: inherit; font-size: 13px; font-weight: 600; line-height: 1; cursor: pointer; box-shadow: none; clip-path: none; overflow: visible; }
@@ -38,8 +39,9 @@ export const OVERVIEW_CSS = `
   .mode-chip ha-icon { --mdc-icon-size: 18px; width: 18px; height: 18px; color: var(--secondary-text-color); }
   /* The status of a state the tiles do not tell: one line, its notes and pills, on a panel. */
   .overview-header .status-copy:not(.family-visually-hidden) { display: grid; gap: 8px; padding: 12px 14px; border-radius: 16px; background: var(--sdc-surface-panel); }
-  .overview-header .status-title { font-size: 15px; font-weight: 600; letter-spacing: 0; }
+  .overview-header .status-title { margin: 0; font-size: 13px; font-weight: 400; line-height: 1.4; letter-spacing: 0; color: var(--secondary-text-color); overflow-wrap: anywhere; }
   .overview-header.visual-error .status-title { color: var(--family-error, var(--error-color)); }
+  .overview-header .status-copy[hidden] { display: none; }
   /* The chip names the mode; the group's own label chip would say it twice. */
   .overview-header .status-pill-group-label { display: none; }
   .overview-header .status-pill-group + .status-pill-group { padding-top: var(--medium-gap); }
@@ -78,41 +80,66 @@ export const OVERVIEW_CSS = `
   .tone-unavailable .charger-status { color: var(--family-unavailable); }
   .visual-charging .charger-icon { color: var(--family-success); }
   .charger-totals { min-width: 0; text-align: right; flex: 0 0 auto; }
-  /* Charging history (0.9.0): totals, a filter per car, and one block per charge with the
-     parts it went through. */
+  /* Charging history (0.10.0): totals, one selector for the car, and one block per charge: a
+     timeline and a table of its periods with the comparison under the total. */
   .cost-history { display: grid; gap: 10px; }
   .history-totals { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); margin: 0; padding: 12px 14px; border-radius: 16px; background: color-mix(in srgb, var(--primary-text-color) 6%, transparent); }
-  .history-totals dt { font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--secondary-text-color); }
-  .history-totals dd { margin: 2px 0 0; font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
-  .history-filter { display: flex; flex-wrap: wrap; gap: 6px; }
-  .history-filter-chip { min-height: 36px; padding: 0 14px; border: 0; font: inherit; font-size: 13px; cursor: pointer; }
-  .history-filter-chip[aria-pressed="true"] { background: color-mix(in srgb, var(--primary-color) 18%, transparent); color: var(--primary-text-color); font-weight: 600; }
-  .history-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
-  .history-session { display: grid; gap: 6px; padding: 12px 14px; border-radius: 16px; background: color-mix(in srgb, var(--primary-text-color) 6%, transparent); }
-  .history-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
-  .history-car { font-size: 14px; font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
-  .history-when { font-size: 12px; color: var(--secondary-text-color); text-align: right; }
-  .history-sum { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; font-size: 13px; font-variant-numeric: tabular-nums; color: var(--secondary-text-color); }
-  .history-sum b { color: var(--primary-text-color); font-weight: 600; }
-  .history-saving { color: var(--family-success, var(--success-color)); }
-  .history-timeline { position: relative; height: 10px; margin-top: 4px; border-radius: 5px; background: color-mix(in srgb, var(--primary-text-color) 8%, transparent); overflow: hidden; }
-  .history-timeline b { position: absolute; top: 0; bottom: 0; border-radius: 5px; }
+  .history-totals > div { padding-inline-start: 12px; border-inline-start: 1px solid var(--family-divider, color-mix(in srgb, var(--primary-text-color) 10%, transparent)); }
+  .history-totals > div:first-child { padding-inline-start: 0; border-inline-start: 0; }
+  .history-totals dt { font-size: 10px; line-height: 1.4; letter-spacing: .06em; text-transform: uppercase; color: var(--secondary-text-color); }
+  .history-totals dd { margin: 2px 0 0; font-size: 17px; font-weight: 600; line-height: 1.25; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .history-totals dd small { font-size: 11px; font-weight: 500; color: var(--secondary-text-color); }
+  .history-total-sub { display: block; font-size: 12px; font-weight: 400; line-height: 1.4; color: var(--secondary-text-color); }
+  /* The selector: a track with one segment per choice; the chosen one is raised. */
+  .history-filter { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 2px; padding: 3px; border-radius: 14px; background: color-mix(in srgb, var(--primary-text-color) 6%, transparent); }
+  .history-filter-option { min-width: 0; min-height: 38px; padding: 0 8px; border: 0; border-radius: 11px; background: none; color: var(--secondary-text-color);
+    font: inherit; font-size: 13px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+  .history-filter-option[aria-pressed="true"] { background: color-mix(in srgb, var(--primary-text-color) 13%, transparent); color: var(--primary-text-color); font-weight: 600;
+    box-shadow: 0 1px 3px color-mix(in srgb, #000 28%, transparent); }
+  .history-filter-option:focus-visible { outline-offset: -2px; }
+  .history-list { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+  .history-session { display: grid; gap: 0; padding: 14px 14px 12px; border-radius: 16px; background: color-mix(in srgb, var(--primary-text-color) 6%, transparent); }
+  .history-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+  .history-title { display: grid; gap: 2px; min-width: 0; }
+  .history-car { font-size: 15px; font-weight: 600; line-height: 1.3; min-width: 0; overflow-wrap: anywhere; }
+  .history-when { font-size: 12px; line-height: 1.4; color: var(--secondary-text-color); }
+  .history-badge { flex: 0 0 auto; padding: 5px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; line-height: 1.3; white-space: nowrap; font-variant-numeric: tabular-nums;
+    color: var(--history-tone, var(--secondary-text-color)); background: color-mix(in srgb, var(--history-tone, var(--primary-text-color)) 14%, transparent); }
+  .history-badge[data-tone="neutral"] { font-weight: 500; background: color-mix(in srgb, var(--primary-text-color) 8%, transparent); }
+  /* A toned figure is text: the tone is mixed towards the text colour so it reads in both themes. */
+  .history-session [data-tone="success"] { --history-tone: color-mix(in srgb, var(--family-success, var(--success-color)) 68%, var(--primary-text-color)); }
+  .history-session [data-tone="caution"] { --history-tone: color-mix(in srgb, var(--family-caution, var(--warning-color)) 58%, var(--primary-text-color)); }
+  .history-timeline { position: relative; height: 8px; margin-top: 12px; border-radius: 4px; background: color-mix(in srgb, var(--primary-text-color) 8%, transparent); overflow: hidden; }
+  .history-timeline b { position: absolute; top: 0; bottom: 0; border-radius: 4px; }
   .history-timeline b, .history-swatch { background: var(--history-part, var(--primary-color)); }
   [data-kind="guaranteed"] { --history-part: var(--family-chart-series-1, var(--primary-color)); }
   [data-kind="extra"] { --history-part: repeating-linear-gradient(135deg, color-mix(in srgb, var(--primary-text-color) 55%, transparent) 0 1px, transparent 1px 4px), color-mix(in srgb, var(--family-chart-series-1, var(--primary-color)) 45%, transparent); }
   [data-kind="schedule"] { --history-part: var(--info-color, #5b8def); }
   [data-kind="force"] { --history-part: var(--family-warning, var(--warning-color, #ff9800)); }
   [data-kind="other"] { --history-part: color-mix(in srgb, var(--primary-text-color) 35%, transparent); }
-  .history-range { display: flex; justify-content: space-between; font-size: 11px; color: var(--secondary-text-color); font-variant-numeric: tabular-nums; }
-  .history-parts { display: grid; gap: 4px; margin: 2px 0 0; padding: 0; list-style: none; font-size: 12px; color: var(--secondary-text-color); font-variant-numeric: tabular-nums; }
-  .history-part { display: grid; grid-template-columns: 10px auto minmax(0, 1fr) auto; align-items: baseline; gap: 8px; }
-  .history-swatch { width: 10px; height: 10px; border-radius: 3px; align-self: center; }
-  .history-part-kind { color: var(--primary-text-color); font-weight: 600; }
-  .history-part-amount { text-align: right; white-space: nowrap; }
-  .history-more { font-size: 12px; color: var(--secondary-text-color); }
-  .history-more summary { min-height: 32px; display: flex; align-items: center; cursor: pointer; }
-  .history-more p { margin: 2px 0 6px; line-height: 1.5; }
-  .history-partial { color: var(--secondary-text-color); }
+  .history-range { display: flex; justify-content: space-between; margin-top: 4px; font-size: 11px; color: var(--secondary-text-color); font-variant-numeric: tabular-nums; }
+  /* Fixed columns, so the figures of every charge line up down the list. */
+  .history-table { width: 100%; margin-top: 10px; border-collapse: collapse; table-layout: fixed; font-size: 13px; line-height: 1.35; font-variant-numeric: tabular-nums; }
+  .history-table th, .history-table td { padding: 6px 0 6px 10px; text-align: right; font-weight: 400; white-space: nowrap; vertical-align: top; }
+  .history-table th:first-child { padding-inline-start: 0; text-align: left; white-space: normal; }
+  .history-table thead th:nth-child(2) { width: 46px; }
+  .history-table thead th:nth-child(3) { width: 56px; }
+  .history-table thead th:nth-child(4) { width: 78px; }
+  .history-table thead th { padding-top: 0; padding-bottom: 5px; font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--secondary-text-color); }
+  .history-table tbody tr, .history-total { border-top: 1px solid var(--family-divider, color-mix(in srgb, var(--primary-text-color) 10%, transparent)); }
+  .history-period th { display: grid; grid-template-columns: 10px minmax(0, 1fr); column-gap: 8px; align-items: start; }
+  .history-swatch { width: 10px; height: 10px; margin-top: 4px; border-radius: 3px; }
+  .history-period-time { white-space: nowrap; }
+  .history-period-kind { grid-column: 2; font-size: 11px; line-height: 1.4; color: var(--secondary-text-color); }
+  .history-none { color: var(--secondary-text-color); }
+  .history-total { border-top-color: color-mix(in srgb, var(--primary-text-color) 24%, transparent); }
+  .history-total th, .history-total td { font-weight: 600; }
+  .history-baseline th, .history-baseline td { padding-top: 2px; padding-bottom: 2px; color: var(--secondary-text-color); }
+  .history-result th, .history-result td { padding-top: 2px; font-weight: 600; color: var(--history-tone, var(--primary-text-color)); }
+  .history-note { display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 8px; margin: 8px 0 0; font-size: 12px; line-height: 1.45; color: var(--secondary-text-color); }
+  .history-table + .history-note { margin-top: 10px; }
+  .history-note::before { content: "i"; width: 14px; height: 14px; margin-top: 1px; box-sizing: border-box; border: 1px solid currentColor; border-radius: 50%;
+    font-size: 9px; font-weight: 700; line-height: 12px; text-align: center; opacity: .8; }
   .cost-history > .cost-note:first-child { margin-top: 0; }
   .cost-note, .cost-record-details { font-size: 12px; color: var(--secondary-text-color); line-height: 1.5; }
   .cost-charger { margin: 10px 0; padding: 0 10px; background: var(--chip-background-color); border-radius: var(--tile-border-radius); }
@@ -145,7 +172,19 @@ export const OVERVIEW_CSS = `
   /* A warning line reads in the primary text colour; the shared warning glyph carries the tone. */
   .charger-plan-line[data-tone="warning"] { color: var(--primary-text-color); }
   .plan-tone-icon { --mdc-icon-size: 14px; width: 14px; height: 14px; margin-inline-end: 4px; vertical-align: -2px; color: var(--family-tone, var(--family-warning)); }
-  .compact .charger-plan { margin-top: var(--medium-gap); }
+  /* A charger without a car: its last charge, set off from the heading, with the same figures
+     as a charging car. */
+  .compact .charger-plan { margin-top: var(--large-gap); }
+  .last-charge { display: grid; gap: 8px; padding-top: 12px; border-top: 1px solid var(--family-divider, color-mix(in srgb, var(--primary-text-color) 10%, transparent)); }
+  .last-charge-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 4px 12px; flex-wrap: wrap; }
+  .last-charge-copy { display: grid; gap: 1px; min-width: 0; }
+  .last-charge-label { font-size: 10px; line-height: 1.4; letter-spacing: .06em; text-transform: uppercase; color: var(--secondary-text-color); }
+  .last-charge-car { font-size: 14px; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
+  .last-charge-when { font-size: 12px; line-height: 1.5; color: var(--secondary-text-color); font-variant-numeric: tabular-nums; }
+  .last-charge .plan-stats { border-block: 0; }
+  .last-charge .plan-stats .plan-row { padding-top: 0; padding-bottom: 0; }
+  .plan-stats .plan-row[data-tone="success"] .fact-main { color: color-mix(in srgb, var(--family-success, var(--success-color)) 68%, var(--primary-text-color)); }
+  .plan-stats .plan-row[data-tone="caution"] .fact-main { color: color-mix(in srgb, var(--family-caution, var(--warning-color)) 58%, var(--primary-text-color)); }
   .compact { padding-bottom: 18px; }
   .compact .charger-status { margin-top: 3px; }
   .charger-details { display: flex; justify-content: space-between; align-items: center; width: 100%; min-height: 44px; margin-top: var(--medium-gap); padding: 0; border: 0; background: none; font: inherit; font-size: 12px; color: var(--secondary-text-color); cursor: pointer; }
@@ -268,6 +307,7 @@ export const OVERVIEW_CSS = `
     .plan-stats .plan-row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 7px 0; border-inline-start: 0;
       border-top: 1px solid var(--family-divider, color-mix(in srgb, var(--primary-text-color) 10%, transparent)); }
     .plan-stats .plan-row:first-child { border-top: 0; }
+    .last-charge .plan-stats .plan-row { padding: 6px 0; }
     .plan-stats dd { margin: 0; text-align: right; }
     .plan-stats .fact { align-items: flex-end; }
   }

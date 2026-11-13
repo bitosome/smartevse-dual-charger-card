@@ -2,16 +2,16 @@
 
 Standalone Lovelace card for the SmartEVSE Dual Charger Home Assistant integration.
 
-Version: `0.9.0`
+Version: `0.10.0`
 
 This repository contains only the frontend card and local preview assets.
 
 ## Features
 
 - A slim header with the charging mode as one chip (Intelligent, Schedule, Force charge or Off) that opens the mode sheet. There is no hero tile (0.9.0): each car's tile says what happens next.
-- Outside the normal Intelligent case the status sentence, with only the enabled Schedule/Force plans and their active timer/price constraints, is shown in a panel under the header. Enabled plan names use accented pills with on-switch icons, alongside quieter timer/price/time pills. The icon describes the plan setting even while charging waits for time or price. Force appears first while overriding the standing schedule.
+- Outside the normal Intelligent case the status sentence is the line under the title (0.10.0: "Waiting for a vehicle"). The enabled Schedule/Force plans and their active timer/price constraints are shown in a panel under the header when there are any. Enabled plan names use accented pills with on-switch icons, alongside quieter timer/price/time pills. The icon describes the plan setting even while charging waits for time or price. Force appears first while overriding the standing schedule.
 - One layout. With **Intelligent charging** enabled the plan chart sits above the charger tiles; without it the card is the same tiles without the chart.
-- One tile per charger: charger, vehicle, status and battery percentage, the shared battery meter, then short labelled facts. **Charged** (what this charge has taken and cost since plug-in) is shown for every connected car in every mode. History opens from the one row under the tiles. Disconnected ports stay compact; unavailable and faulted chargers are identified explicitly.
+- One tile per charger: charger, vehicle, status and battery percentage, the shared battery meter, then short labelled facts. **Charged** (what this charge has taken and cost since plug-in) is shown for every connected car in every mode. History opens from the one row under the tiles. A charger without a car shows its **last charge** as a block: the car and when, then the figures Energy, Cost (with the average price per kWh) and what it saved. Unavailable and faulted chargers are identified explicitly.
 - **Charger details** opens a dialog with everything about one charger in short sections: the car, its plan, this charge, the charger (State, Mode, Current offered, Limit) and what the planner uses. Offered current is the charger pilot setting, not measured current or power consumption.
 - Space Hub shared surfaces, radii, theme colors and underglow helpers. Glow colors and effects follow the controller's physical WLED configuration.
 - Responsive: the two charger tiles stack on a phone and sit side by side on a wide card. In a car tile the guaranteed level and the extra level sit under the battery bar, and Charged, Planned and Saves are three figures side by side (rows in a narrow tile).
@@ -215,7 +215,7 @@ and its price.
   never changes the other. While both are on, Intelligent has priority (the Schedule
   tile says so), and the schedule takes over again when Intelligent is turned off.
   Force charge still overrides both; the Intelligent group then reads "Resumes after force charge".
-- **Status sentence (the hero until 0.8.x).** Since 0.9.0 it is read out by screen readers in the normal Intelligent case and shown under the header in every other state; each car's tile shows what happens next. While Intelligent charging governs, the title is one plain sentence: "Charging
+- **Status sentence (the hero until 0.8.x).** Since 0.9.0 it is read out by screen readers in the normal Intelligent case and shown in every other state (0.10.0: as the line under the title); each car's tile shows what happens next. While Intelligent charging governs, the title is one plain sentence: "Charging
   Volvo XC40", "Next charge at 22:00" (or "Next charge Tue 22:00"), "Both cars ready" or
   "Volvo XC40 ready" when every planned car has its minimum and nothing more is planned, or
   "Waiting for a vehicle". One line under it says when the cars are ready ("Ready by 07:00",
@@ -240,24 +240,28 @@ and its price.
   - **Next**: "Starts 22:00", "Charging until 23:00", "After Volvo XC40", "Done".
   - **Charged**: what this charge has taken and cost so far since plug-in ("29.4 kWh · ≈
     €7.57"), from the charger's metered session. It is shown for every connected car in
-    every mode (Force charge, Schedule, Intelligent), and the value is the control that
-    opens that charger's history.
+    every mode (Force charge, Schedule, Intelligent). A car that has not charged since it
+    was plugged in has no Charged figure: the charge before it is not this car's.
   - **Planned**: what the plan still charges and what that costs ("≈ 4.6 kWh · ≈ €1.11").
     With an integration older than 0.0.11.0 one **Total** row shows the figure for the whole
     charge instead.
 
   Guaranteed, Extra, Next and Planned need an Intelligent plan for the car. The **Charger
-  details** row opens the details dialog. A charger without a car is a compact tile: its
-  name and state, a **Last charge** row that opens its history, and what Intelligent
-  charging saved on that charge.
+  details** row opens the details dialog. A charger without a car shows its name and state
+  and, under a line, its **last charge** (0.10.0): the car, the day and the hours it charged,
+  then three figures like a charging car's: **Energy** ("19.3 kWh"), **Cost** ("≈ €4.28"
+  over "0.22 €/kWh") and **Saved** ("≈ €1.25" over "vs schedule", green). A charge that
+  cost more reads **Cost more** ("≈ €0.18" over "than schedule"); one that used Force
+  charge reads "–" over "Force charge used"; a charge that was not compared has two figures.
 - **What a saving is compared with.** Every saving names its comparison, from the
   integration's `baseline_kind` (0.0.11.0): "Saves ≈ €7.41 compared with Charge with
   schedule" when the comparison is your schedule, otherwise "… compared with charging at
   plug‑in" (the cars charging one after the other from the moment they were plugged in).
   The line under the tiles reads "Saved" when nothing more is planned. History rows
-  ("Saved ≈ €1.25 vs Charge with schedule", "≈ €0.40 more than Charge with schedule"), the
-  last-charge line of a tile without a car, the Intelligent page totals and the charger
-  details use the same names. Each recorded session carries its own comparison.
+  ("Charge with schedule would have cost ≈ €5.53", then "Saved ≈ €1.25" or "Cost more
+  ≈ €0.40"), the Intelligent page totals and the charger details use the same names. The
+  figures of a tile have room for a short name only: "vs schedule", "vs plug‑in". Each
+  recorded session carries its own comparison.
 - **Charger details.** One dialog per charger, in short titled sections of label and value:
   **Car** (vehicle, battery level, "At least", car limit, ready by), **Plan** (Guaranteed,
   Extra and each planned block as "21:00–22:00 · Guaranteed" or "… · Above the minimum", or
@@ -315,8 +319,15 @@ exactly as before. A price chart on the Intelligent page follows in 0.3.1.
 ### Session costs
 
 With SmartEVSE Dual Charger integration 0.0.8.7+, each charger tile shows what its
-charge has taken and cost in the **Charged** row (**Last charge** on a tile without a car). Tap the **Charging history** row below the charger tiles to open history: it is the one way in (0.9.0). History is one list for both chargers, newest first, with the totals of the last 30 days and one filter chip per car. Each charge shows its car, day and charger, its energy and cost, what it saved, and, with integration 0.0.14.0, the parts it went through (Guaranteed, Extra, Schedule, Force charge) as a timeline and one line per kind with its times, energy and cost. History is separate from Settings. Open **Details** of a charge
-for the energy-weighted average rate and missing-data details. All amounts are
+charge has taken and cost in the **Charged** figure (the **last charge** block on a tile without a car). Tap the **Charging history** row below the charger tiles to open history: it is the one way in (0.9.0). History is one list for both chargers, newest first, with the totals of the last 30 days (energy, cost with the average price per kWh, number of charges) and one selector with a segment per car.
+
+Each charge (0.10.0) shows its car, day and charger, a badge with the outcome ("Saved ≈ €1.25", "≈ €0.18 more", "Not compared") and a table:
+
+- one row per **period** it went through (integration 0.0.14.0): its hours, its kind (Guaranteed, Extra, Schedule, Force charge), its energy in kWh, the average price per kWh it paid and its cost. A timeline above the table shows where the periods lie between the first and the last charging minute;
+- the **Total** with the average price of the whole charge;
+- **what the comparison would have cost** ("Charge with schedule would have cost ≈ €5.53") and the difference: **Saved** or **Cost more**.
+
+Nothing is folded away: missing prices, unobserved time and why a charge is not compared are plain lines under the table. A stretch of under a minute or with next to no energy (the seconds after the plan stops the charger) is counted with the period before it. Charges recorded before integration 0.0.14.0 show their total only. History is separate from Settings. All amounts are
 estimates from the integration's measured-power accounting and Real Electricity
 Price tariff; the card never calculates or persists authoritative costs locally.
 A partial estimate is only the known subtotal. The last session remains visible

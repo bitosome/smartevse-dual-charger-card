@@ -527,9 +527,63 @@ for (const theme of THEMES) {
   await scrollPage.close();
 }
 
+// Charging history (0.10.0): the selector and the table of periods fit their dialog at every
+// phone width, the columns of all charges line up, and no figure is cut or wrapped.
+let historyChecks = 0;
+for (const width of WIDTHS) {
+  const historyPage = await browser.newPage({ viewport: { width: width + 40, height: 900 }, deviceScaleFactor: 1 });
+  await historyPage.goto(`${origin}/preview/index.html?theme=dark`);
+  await historyPage.waitForFunction(() => customElements.get('smartevse-flow-card'));
+  const problems = await historyPage.evaluate(async (width) => {
+    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    document.getElementById('frame').style.width = `${width}px`;
+    // eslint-disable-next-line no-undef
+    resetScenario('intelligent');
+    const card = document.querySelector('smartevse-flow-card');
+    await card.updateComplete;
+    card.shadowRoot.querySelector('.charging-history-launcher').click();
+    await card.updateComplete;
+    await wait(300);
+    const found = [];
+    const dialog = card.shadowRoot.querySelector('dialog');
+    const body = dialog?.querySelector('.cost-history');
+    if (!body) return ['the history did not open'];
+    const box = (node) => node.getBoundingClientRect();
+    const sessions = [...body.querySelectorAll('.history-session')];
+    if (sessions.length < 2) found.push(`only ${sessions.length} charges in the demo data`);
+    const filter = body.querySelector('.history-filter');
+    const options = [...filter.querySelectorAll('.history-filter-option')];
+    if (new Set(options.map((option) => Math.round(box(option).width))).size !== 1) found.push('the selector segments differ in width');
+    if (new Set(options.map((option) => Math.round(box(option).height))).size !== 1 || box(options[0]).height < 36) found.push('the selector segments differ in height or are under 36px');
+    if (options.some((option) => option.scrollWidth > option.clientWidth + 1)) found.push('a selector label is cut');
+    const lefts = new Set();
+    for (const session of sessions) {
+      const inner = box(session);
+      for (const cell of session.querySelectorAll('.history-table th, .history-table td, .history-badge, .history-title')) {
+        const rect = box(cell);
+        if (rect.right > inner.right - 12 || rect.left < inner.left + 12) found.push(`"${cell.textContent.trim().slice(0, 24)}" leaves its charge`);
+      }
+      for (const cell of session.querySelectorAll('.history-table td')) {
+        if (cell.scrollWidth > cell.clientWidth + 1) found.push(`the figure "${cell.textContent.trim()}" is wider than its column`);
+        if (box(cell).height > 44 && !cell.closest('.history-period')) found.push(`the figure "${cell.textContent.trim()}" wraps`);
+      }
+      for (const time of session.querySelectorAll('.history-period-time')) if (box(time).height > 24) found.push(`the period "${time.textContent}" wraps`);
+      lefts.add([...session.querySelectorAll('.history-table thead th')].map((cell) => Math.round(box(cell).right - inner.left)).join(','));
+    }
+    if (lefts.size !== 1) found.push('the columns of the charges do not line up');
+    if (dialog.querySelector('.family-dialog-body')?.scrollWidth > dialog.querySelector('.family-dialog-body')?.clientWidth + 1) found.push('the history scrolls sideways');
+    return [...new Set(found)];
+  }, width);
+  checks++;
+  historyChecks++;
+  console.log(`${problems.length ? 'FAIL' : 'PASS'}: charging history @ ${width}px${problems.length ? `: ${problems.join('; ')}` : ''}`);
+  if (problems.length) failures.push(`history ${width}`);
+  await historyPage.close();
+}
+
 await browser.close();
 server.close();
 for (const note of notes) console.log(`NOTE: the page reported "${note}"`);
 console.log(failures.length ? `\nLAYOUT TEST FAILED (${failures.length} of ${checks})`
-  : `\nLAYOUT TEST OK (${checks - 1} states, ${glowChecks} of them with the glow paint check, and the scroll check)`);
+  : `\nLAYOUT TEST OK (${checks - 1 - historyChecks} states, ${glowChecks} of them with the glow paint check, the scroll check and the history at ${historyChecks} widths)`);
 process.exit(failures.length ? 1 : 0);
