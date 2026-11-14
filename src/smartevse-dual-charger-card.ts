@@ -14,7 +14,7 @@ import {
 import { buildGlow, type PulseColors } from "./shared/glow";
 import { ChargeHistory, chargedIntervals, joinIntervals, withLiveState } from "./charge-history";
 
-const CARD_VERSION = "0.10.1";
+const CARD_VERSION = "0.10.2";
 
 // String twin of the shared pendingIndicator(); this card renders through unsafeHTML.
 const PENDING_INDICATOR = `<span class="family-pending-indicator" aria-hidden="true"></span>`;
@@ -78,8 +78,11 @@ interface PlanChartData {
   cheap: number | null;
   unit: string;
 }
-// Saving below this magnitude is noise; the integration publishes it, the card hides it.
+// A realised saving below this magnitude reads "same cost" in history.
 const MIN_SAVING = 0.1;
+// A planned saving is shown from one cent (0.10.2): a tile shows its own car's figure, however
+// small. Under half a cent it rounds to nothing.
+const MIN_PLAN_SAVING = 0.005;
 // A realised window with less energy never carries a saving (integration REALISED_MIN_KWH),
 // e.g. the empty window a deadline roll opens just before the car leaves.
 const MIN_WINDOW_KWH = 0.1;
@@ -486,10 +489,10 @@ class SmartEVSEFlowCard extends LitElement {
     return amount === UNAVAILABLE_TEXT ? "" : amount;
   }
 
-  // Visible saving, or "" when missing, negligible or negative (the cost is shown anyway).
+  // Visible saving, or "" when missing, under a cent or negative (the cost is shown anyway).
   _formatSaving(value, currency) {
     const number = this._num(value);
-    return number === null || number < MIN_SAVING ? "" : this._formatMoney(number, currency);
+    return number === null || number < MIN_PLAN_SAVING ? "" : this._formatMoney(number, currency);
   }
 
   // Calendar day in the HA time zone, for "today" and "Tonight" decisions.
@@ -3521,7 +3524,7 @@ class SmartEVSEFlowCard extends LitElement {
         ["Charged", charged],
         ["Since", since === "Time unavailable" ? "" : since],
         [later?.label || "Planned", later?.value || ""],
-        ["Saving", planned ? this._chargerSaving(charger, payload) : ""],
+        ["Saving", planned ? this._chargerSaving(charger, payload)?.value || "" : ""],
       ]));
     }
     sections.push(`<section class="details-section" data-section="charger" aria-label="Charger">
@@ -3620,12 +3623,20 @@ class SmartEVSEFlowCard extends LitElement {
   }
 
   // What the saving of one car's plan is, with what it is compared with: "≈ €1.29 vs Charge with
-  // schedule", or "≈ €1.29 vs schedule" for a tile's figure. "" when the payload carries none it
-  // can stand behind.
-  _chargerSaving(charger, payload, short = false) {
-    if (!charger || charger.estimated === true || charger.partial || charger.includes_forecast) return "";
-    const saving = this._formatSaving(charger.saving, payload?.currency);
-    return saving ? `≈ ${saving} vs ${short ? baselineShort(payload?.baseline_kind) : baselineName(payload?.baseline_kind)}` : "";
+  // schedule", or "≈ €1.29 vs schedule" for a tile's figure. null when the payload carries none
+  // it can stand behind. The figure is this car's own, so it is shown whatever its size
+  // (0.10.2): a plan that costs more than the comparison says so, one that costs the same
+  // reads "≈ €0.00".
+  _chargerSaving(charger, payload, short = false): { label: string; value: string; tone?: string } | null {
+    if (!charger || charger.estimated === true || charger.partial || charger.includes_forecast) return null;
+    const saving = this._num(charger.saving);
+    if (saving === null) return null;
+    const more = saving <= -MIN_PLAN_SAVING;
+    const amount = this._formatMoney(Math.abs(saving) < MIN_PLAN_SAVING ? 0 : Math.abs(saving), payload?.currency);
+    if (!amount) return null;
+    const baseline = short ? baselineShort(payload?.baseline_kind) : baselineName(payload?.baseline_kind);
+    if (more) return { label: "Costs more", value: `≈ ${amount} ${short ? "than" : "more than"} ${baseline}`, tone: "caution" };
+    return { label: "Saves", value: `≈ ${amount} vs ${baseline}`, ...(saving >= MIN_PLAN_SAVING ? { tone: "success" } : {}) };
   }
 
   // Facts of a charger tile as label/value rows: a car without a known level, a charger without a car.
@@ -3718,8 +3729,8 @@ class SmartEVSEFlowCard extends LitElement {
         rows.splice(at < 0 ? rows.length : at, 0, { id: "charged", label: "Charged", value: charged });
       }
       // What this car's plan saves, and compared with what (the whole plan's is under the tiles).
-      const saving = planCharger ? this._chargerSaving(planCharger, payload, true) : "";
-      if (saving && plan.rows.length) rows.push({ id: "saving", label: "Saves", value: saving, tone: "success" });
+      const saving = planCharger ? this._chargerSaving(planCharger, payload, true) : null;
+      if (saving && plan.rows.length) rows.push({ id: "saving", ...saving });
     }
     // A charger without a car is its name and state only (0.10.1): past charges are in history.
     // With a bar and a minimum on it, Guaranteed and Extra sit under the bar; the figures

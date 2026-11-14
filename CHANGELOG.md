@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.10.2 — 2026-11-14
+
+- **A tile always shows its own car's saving.** A saving under €0.10 was hidden as noise, so a tile could show Planned without Saves while the other tile had both, and the missing amount was only in the total under the tiles. A planned saving is now shown from one cent: "≈ €0.07 vs schedule".
+- A plan that costs the same as the comparison reads "≈ €0.00 vs schedule"; one that costs more reads **Costs more** ("≈ €0.12 than schedule"). Charger details say the same with the full name.
+- The total under the tiles, the per-car lines and the totals of the Intelligent page follow the same rule (shown from one cent), so the tiles add up to the total.
+- Not changed: a saving is still left out when the integration cannot stand behind it (unknown battery level, missing or forecast prices), and history still calls a finished charge within €0.10 of its comparison the same cost.
+
 ## 0.10.1 — 2026-11-13
 
 - **A charger without a car no longer shows its last charge.** The tile is the charger's name and state only; what the last charge took, cost and saved is in the charging history, which the row under the tiles opens. The block introduced in 0.10.0 is removed.

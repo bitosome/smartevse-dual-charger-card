@@ -1885,6 +1885,9 @@ check('a planned tile states what is guaranteed, when it starts, what was charge
   // 0.9.0: each car's own saving is a figure on its tile, named with what it is compared with.
   saves2('smartevse_1') === '≈ €1.29 vs plug\u2011in' && root2.querySelector('.ev-node.smartevse_1 .plan-row[data-row="saving"]').dataset.tone === 'success' && root2.querySelector('.ev-node.smartevse_1 .plan-row[data-row="saving"] dt')?.textContent === 'Saves' &&
   !/Cost|Session estimate/i.test(root2.querySelector('.ev-row')?.textContent || '') && !!CH2('smartevse_2'));
+// 0.10.2: a tile shows its own car's saving whatever its size; only the whole plan's is under the tiles.
+check('a small saving is still on its own car\'s tile',
+  saves2('smartevse_2') === '≈ €0.05 vs plug\u2011in' && root2.querySelector('.ev-node.smartevse_2 .plan-row[data-row="saving"]').dataset.tone === 'success');
 check('a plan starting tomorrow names the day, and extra charging names how far it goes',
   sameRows(planRows2('smartevse_2'), [['Guaranteed', `80% by ${t7}`], ['Extra', 'up to 100% while cheap'],
     ['Next', `Starts ${el2._formatPlanTime('2026-11-10T02:00:00+00:00', FIXED_NOW)}`], ['Total', '≈ €1.19']]));
@@ -1927,6 +1930,31 @@ for (const [name, mutate, note, facts, attrs = {}] of tileCases) {
 }
 check('each plan status reads as one note or warning line and its facts, with the money rules', wrongTiles.length === 0);
 if (wrongTiles.length) console.log(wrongTiles);
+// 0.10.2: the saving on a tile is that car's own, whatever its size.
+const savingCases = [
+  ['a few cents', 0.07, 'Saves', '≈ €0.07 vs plug\u2011in', 'success'],
+  ['one cent', 0.01, 'Saves', '≈ €0.01 vs plug\u2011in', 'success'],
+  ['the same cost', 0, 'Saves', '≈ €0.00 vs plug\u2011in', undefined],
+  ['under a cent', -0.004, 'Saves', '≈ €0.00 vs plug\u2011in', undefined],
+  ['costs more', -0.12, 'Costs more', '≈ €0.12 than plug\u2011in', 'caution'],
+  ['not computed', null, undefined, '', undefined],
+];
+const wrongSavings = [];
+for (const [name, saving, label, value, tone] of savingCases) {
+  iAttrs.intelligent = basePayload();
+  iAttrs.intelligent.chargers.smartevse_1.saving = saving;
+  await push();
+  const row = root2.querySelector('.ev-node.smartevse_1 .plan-row[data-row="saving"]');
+  const got = [row?.querySelector('dt')?.textContent, saves2('smartevse_1'), row?.dataset.tone];
+  if (JSON.stringify(got) !== JSON.stringify([label, value, tone])) wrongSavings.push(`${name}: ${JSON.stringify(got)}`);
+}
+check('a tile shows its own car\'s saving whatever its size, and says when the plan costs more', wrongSavings.length === 0);
+if (wrongSavings.length) console.log(wrongSavings);
+iAttrs.intelligent = basePayload();
+iAttrs.intelligent.baseline_kind = 'schedule';
+iAttrs.intelligent.chargers.smartevse_1.saving = -0.12;
+check('charger details name the full comparison of a plan that costs more',
+  el2._chargerSaving(iAttrs.intelligent.chargers.smartevse_1, iAttrs.intelligent)?.value === '≈ €0.12 more than Charge with schedule');
 iAttrs.smartevse_1_state = 'Ready to Charge';
 iAttrs.intelligent = basePayload();
 iAttrs.smartevse_1_error = 'Ground fault';
@@ -2038,7 +2066,7 @@ check('the plan lists chronological blocks per car with top-up marked',
     `${el2._formatDateTime('2026-11-10T04:00:00+00:00')}–${el2._formatClock('04:30')} · Volvo EX30 · top-up`]));
 const carLines = [...root2.querySelectorAll('.intelligent-car-line')].map((node) => node.textContent.trim());
 check('each car summarises SoC, minimum, deadline, cost and saving',
-  carLines[0] === `53% → 80% by ${t7} · ≈ €4.91 · saving ≈ €1.29` && carLines[1] === `30% → 80% by ${t7} · ≈ €1.19`);
+  carLines[0] === `53% → 80% by ${t7} · ≈ €4.91 · saving ≈ €1.29` && carLines[1] === `30% → 80% by ${t7} · ≈ €1.19 · saving ≈ €0.05`);
 check('the page labels the saving baseline once and shows the price horizon',
   (page.textContent.match(/Saving vs charging at plug-in/g) || []).length === 1 &&
   page.textContent.includes(`Prices until ${el2._formatDateTime('2026-11-10T01:00:00+00:00')}`) &&
@@ -2363,7 +2391,7 @@ const keptAndDone = pageCarLines();
 Object.assign(iAttrs.intelligent.chargers.smartevse_2, { vehicle: null, vehicle_name: null, settings_key: 'other', soc: null, soc_source: 'unknown', estimated: true, need_kwh: 0 });
 await push();
 check('per-car lines use the planned deadline and say "Charging complete" when done below the target or level unknown',
-  keptAndDone[0] === `53% → 80% by ${t7} · ≈ €4.91 · saving ≈ €1.29` && keptAndDone[1] === 'Charging complete · ≈ €1.19' &&
+  keptAndDone[0] === `53% → 80% by ${t7} · ≈ €4.91 · saving ≈ €1.29` && keptAndDone[1] === 'Charging complete · ≈ €1.19 · saved ≈ €0.05' &&
   pageCarLines()[1] === 'Charging complete' && !pageCarLines().some((line) => /reached/.test(line)));
 // An unidentified car's level is never known: the page says it is planned by energy, and an
 // estimate that is short of time speaks of energy, not of a % it cannot know.

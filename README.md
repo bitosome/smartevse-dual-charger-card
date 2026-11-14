@@ -2,7 +2,7 @@
 
 Standalone Lovelace card for the SmartEVSE Dual Charger Home Assistant integration.
 
-Version: `0.10.1`
+Version: `0.10.2`
 
 This repository contains only the frontend card and local preview assets.
 
@@ -14,7 +14,7 @@ This repository contains only the frontend card and local preview assets.
 - One tile per charger: charger, vehicle, status and battery percentage, the shared battery meter, then short labelled facts. **Charged** (what this charge has taken and cost since plug-in) is shown for every connected car in every mode. History opens from the one row under the tiles. A charger without a car is a compact tile with its name and state only (0.10.1); past charges are in history. Unavailable and faulted chargers are identified explicitly.
 - **Charger details** opens a dialog with everything about one charger in short sections: the car, its plan, this charge, the charger (State, Mode, Current offered, Limit) and what the planner uses. Offered current is the charger pilot setting, not measured current or power consumption.
 - Space Hub shared surfaces, radii, theme colors and underglow helpers. Glow colors and effects follow the controller's physical WLED configuration.
-- Responsive: the two charger tiles stack on a phone and sit side by side on a wide card. In a car tile the guaranteed level and the extra level sit under the battery bar, and Charged, Planned and Saves are three figures side by side (rows in a narrow tile).
+- Responsive: the two charger tiles stack on a phone and sit side by side on a wide card. In a car tile the guaranteed level and the extra level sit under the battery bar, and Charged, Planned and Saves are three figures side by side (rows in a narrow tile). **Saves** is that car's own figure and is shown whatever its size (0.10.2): "≈ €0.07 vs schedule", "≈ €0.00" when the plan costs the same, and **Costs more** ("≈ €0.12 than schedule") when it costs more than the comparison. It is missing only when the integration has no saving it can stand behind (unknown battery level, missing or forecast prices).
 - Charging-plan editor with schedule, immediate charging, timer and acceptable-price controls, plus **Intelligent charging** with integration 0.0.9.0+. Unsupported options are omitted; temporarily unavailable controls are identified and guarded.
 - Keyboard focus management, Escape/back navigation, visible focus, touch-sized controls and reduced-motion support. Expanded details survive live state updates.
 - Local interactive preview backed by mocked Home Assistant services.
