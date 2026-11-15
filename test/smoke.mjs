@@ -1839,6 +1839,7 @@ iAttrs.smartevse_1_state = 'Ready to Charge'; iAttrs.active_smartevse_raw = '';
 // Warning-level controller_error values become readable notices; ids are never printed.
 const warningCases = {
   intelligent_price_data_unavailable: 'Prices unavailable · charging by deadline',
+  intelligent_no_prices_using_schedule: 'No prices · charging with schedule',
   intelligent_planner_failed: 'Plan unavailable · charging by deadline',
   smartevse_2_vehicle_timer_blocks_charging: 'Car’s own charging timer is on',
 };
@@ -3162,7 +3163,22 @@ await push3();
 check('the Force charge switch pauses the chart even before the payload reports it',
   lanes3().every((lane) => lane.tones.every((tone) => tone === 'muted')) && same(legend3(), ['Price', 'Paused by Force charge', 'No price yet']) && !root3.querySelector('.plan-saving'));
 iStates['switch.force'].state = 'off';
+// No hour with a known price (integration 0.0.17.0): the plan is not used and charging follows
+// "Charge with schedule". Nothing planned is drawn or listed; a notice says why.
 iAttrs.smartevse_1_state = 'Connected';
+iAttrs.intelligent = payload10();
+Object.assign(iAttrs.intelligent, { overridden_by: 'schedule', status: 'overridden', reason: null });
+const before0170 = { reason: iAttrs.charge_reason, allowed: iAttrs.charge_allowed, state: iAttrs.controller_state };
+Object.assign(iAttrs, { controller_error: 'intelligent_no_prices_using_schedule', charge_reason: 'waiting_for_schedule_window', charge_allowed: false, controller_state: 'idle' });
+await push3();
+check('without known prices the chart draws no plan and says charging follows the schedule',
+  lanes3().length === 2 && lanes3().every((lane) => lane.tones.length === 0 && !lane.marker) && same(legend3(), ['Price', 'No price yet']) &&
+  desc3().includes('Volvo XC40: no prices, charging with schedule'));
+check('without known prices the tiles show no plan rows and no saving, and a notice says what happens instead',
+  all3('.plan-row').every((row) => row.getAttribute('data-row') === 'charged') && !root3.querySelector('.plan-saving') &&
+  same(all3('.family-notice').map((node) => node.textContent.trim()), ['No prices · charging with schedule']) &&
+  root3.querySelector('.status-title')?.textContent.trim() === 'Waiting for scheduled charge' && !root3.textContent.includes('intelligent_no_prices'));
+Object.assign(iAttrs, { controller_error: null, charge_reason: before0170.reason, charge_allowed: before0170.allowed, controller_state: before0170.state });
 iAttrs.intelligent = payload10();
 await at3('2026-11-09T18:00:00Z');
 check('without Force charge nothing is muted', lanes3().every((lane) => !lane.tones.includes('muted')) && !desc3().includes('Paused') && !!root3.querySelector('.plan-saving'));

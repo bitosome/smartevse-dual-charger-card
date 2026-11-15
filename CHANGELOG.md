@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.10.3 — 2026-11-15
+
+For SmartEVSE Dual Charger integration 0.0.17.0. Nothing changes with an older integration.
+
+- **No prices: charging follows the schedule.** When no hour has a known electricity price, integration 0.0.17.0 charges like "Charge with schedule" and marks the plan as overridden by the schedule. The card then shows the notice "No prices · charging with schedule", the schedule's own status as the title ("Waiting for scheduled charge", "Charging …"), no planned periods in the chart, no plan rows and no saving on the tiles, and "No prices · charging follows Charge with schedule" in the charger details and on the Intelligent page. Planning comes back by itself with the first known price.
+- The texts about waiting for tomorrow's prices no longer appear with integration 0.0.17.0, which uses every hour with a known price and does not wait.
+
 ## 0.10.2 — 2026-11-14
 
 - **A tile always shows its own car's saving.** A saving under €0.10 was hidden as noise, so a tile could show Planned without Saves while the other tile had both, and the missing amount was only in the total under the tiles. A planned saving is now shown from one cent: "≈ €0.07 vs schedule".

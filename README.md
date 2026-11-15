@@ -2,7 +2,7 @@
 
 Standalone Lovelace card for the SmartEVSE Dual Charger Home Assistant integration.
 
-Version: `0.10.2`
+Version: `0.10.3`
 
 This repository contains only the frontend card and local preview assets.
 
@@ -10,6 +10,7 @@ This repository contains only the frontend card and local preview assets.
 
 - A slim header with the charging mode as one chip (Intelligent, Schedule, Force charge or Off) that opens the mode sheet. There is no hero tile (0.9.0): each car's tile says what happens next.
 - Outside the normal Intelligent case the status sentence is the line under the title (0.10.0: "Waiting for a vehicle"). The enabled Schedule/Force plans and their active timer/price constraints are shown in a panel under the header when there are any. Enabled plan names use accented pills with on-switch icons, alongside quieter timer/price/time pills. The icon describes the plan setting even while charging waits for time or price. Force appears first while overriding the standing schedule.
+- **No prices (0.10.3, integration 0.0.17.0).** When no hour has a known price, Intelligent charging follows "Charge with schedule": the card shows the notice "No prices · charging with schedule" and the schedule's status, and nothing planned (no periods in the chart, no plan rows or saving on the tiles).
 - One layout. With **Intelligent charging** enabled the plan chart sits above the charger tiles; without it the card is the same tiles without the chart.
 - One tile per charger: charger, vehicle, status and battery percentage, the shared battery meter, then short labelled facts. **Charged** (what this charge has taken and cost since plug-in) is shown for every connected car in every mode. History opens from the one row under the tiles. A charger without a car is a compact tile with its name and state only (0.10.1); past charges are in history. Unavailable and faulted chargers are identified explicitly.
 - **Charger details** opens a dialog with everything about one charger in short sections: the car, its plan, this charge, the charger (State, Mode, Current offered, Limit) and what the planner uses. Offered current is the charger pilot setting, not measured current or power consumption.
