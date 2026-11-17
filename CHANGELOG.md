@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.11.0 — 2026-11-17
+
+A review of the whole card for one thing: the same fact reads the same wherever it is shown, and nothing is reachable only in some states. No new data; works with integration 0.0.17.0 and older.
+
+**Always reachable**
+
+- **Charger details open for every charger**, also without a car, when the charger cannot be read and when it reports an error. Every section is there and says why it has nothing to show: "No vehicle connected", "Intelligent charging is off", "Not planned while the charger reports an error", "Paused by Force charge". A charger without a car shows its **Last charge**; a charger in error shows the error.
+- The **Intelligent page** says when the mode is off, and the **charge policy** is on it whenever it exists (it was there only while two cars were planned).
+
+**One wording per fact**
+
+- **How far a car is learned** is one line in the charger details and on the Intelligent page ("Learned from 3 charges", "Refining estimates · 2 of 3 charges"). They were written twice with different words and rules, so a learned car read "Refined from 3 of 3 charges" in one place.
+- **Saving.** One rule everywhere: a plan that still charges "Saves", a finished one "Saved", a dearer one "Costs more", from one cent in both directions. The charger details said "Saving" for all of them, the Intelligent page hid a small or negative saving that the tile showed, and history compared only from €0.10 (it now reads "Same cost" under half a cent).
+- **The plan's two parts are "Guaranteed" and "Extra"** in the chart legend, the tiles, the charger details, the Intelligent page and history. The chart said "Planned", the details and the page "Above the minimum".
+- **"Charge with schedule"** is the name of the schedule mode on the mode sheet and its page too (it was "Use a schedule" there and "Charge with schedule" in every saving).
+- "Reached" is decided by one rule on the tile, the Intelligent page and in the header; the page reads "Reached · 84%" like the tile.
+- The car of a charger has one name on its tile and in its details ("Unidentified vehicle" for a car the plan does not know; it was "Vehicle connected" on the tile).
+- The cost on the Intelligent page is named for what it is: "total ≈ €4.91" and "Total cost" (charged so far and still planned; it read "Planned cost", which is another figure on the tile).
+- Every cost in history reads "≈", the periods included. "Charges", not "sessions".
+- Smaller: "Current limit" (amps) beside "Car limit" (percent); "No charging planned"; "Minimum reached"; "Paused by Force charge"; "Resumes after Force charge".
+
+**Fixes**
+
+- **The charger details showed the previous charge as "This charge"** for a car that had not charged since it was plugged in. The tile was right since 0.10.0; the details now use the same record.
+- **Without known prices the header said "Resumes after force charge"** and, with the schedule on, "Intelligent charging has priority". It now says "Resumes when prices are known".
+- **What both cars save together is its own line under the tiles** ("Both cars · Saves ≈ €1.34 vs Charge with schedule"). It was the second line of the "Charging history" row, where it read as history. With one car its tile already says it.
+- Decorative icons of the mode pages are hidden from screen readers.
+
+**Not changed**
+
+- The plan chart is shown while Intelligent charging is on. Prices keep their precision per place (four decimals in the chart readout, two in history).
+
 ## 0.10.3 — 2026-11-15
 
 For SmartEVSE Dual Charger integration 0.0.17.0. Nothing changes with an older integration.

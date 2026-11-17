@@ -273,10 +273,9 @@ export const OVERVIEW_CSS = `
   .plan-next .plan-row { display: inline; }
   .plan-next dt { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .plan-next dd { display: inline; margin: 0; font: inherit; color: inherit; }
-  /* The history row: its title, and under it what the plan saves. */
+  /* The history row is its title only: what the plan saves has its own line (0.11.0). */
   .launcher-copy { display: grid; gap: 1px; min-width: 0; }
   .launcher-title { color: var(--primary-text-color); }
-  .charging-history-launcher .plan-saving { display: block; padding: 0; background: none; font-size: 12px; line-height: 1.4; color: var(--secondary-text-color); font-variant-numeric: tabular-nums; }
   /* "Charged" (and "Last charge") open that charger's history: the value is the control, with a
      touch-sized hit area that does not make the row taller. */
   .row-history { display: inline-flex; align-items: center; gap: 2px; max-width: 100%; margin: -13px -4px -13px 0; padding: 13px 4px 13px 0; border: 0;
@@ -284,10 +283,13 @@ export const OVERVIEW_CSS = `
   .row-history > span { min-width: 0; overflow-wrap: break-word; }
   .row-history ha-icon { flex: none; --mdc-icon-size: 16px; width: 16px; height: 16px; color: var(--secondary-text-color); }
   .row-history:focus-visible { outline-offset: -8px; }
-  /* What the plan saves: a slim foreground surface (opaque, above the glows), not a row of tiles. */
-  .plan-saving { display: flex; align-items: center; gap: 8px; margin: 0; padding: 8px 12px; border-radius: 12px; background: var(--sdc-surface-control);
+  /* What the plans of both cars save together: a slim foreground surface (opaque, above the
+     glows) under the tiles, named on the left with the figure on the right. */
+  .plan-saving { position: relative; z-index: 1; display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 12px; margin: 0; padding: 10px 16px; border-radius: 12px; background: var(--sdc-surface-panel);
     font-size: 12px; line-height: 1.4; color: var(--secondary-text-color); font-variant-numeric: tabular-nums; }
-  .plan-saving ha-icon { flex: none; --mdc-icon-size: 16px; width: 16px; height: 16px; }
+  .plan-saving-value { color: var(--primary-text-color); text-align: right; }
+  .plan-saving[data-tone="success"] .plan-saving-value { color: color-mix(in srgb, var(--family-success, var(--success-color)) 68%, var(--primary-text-color)); }
+  .plan-saving[data-tone="caution"] .plan-saving-value { color: color-mix(in srgb, var(--family-caution, var(--warning-color)) 58%, var(--primary-text-color)); }
   @container charger-facts (max-width: 250px) {
     .plan-rows { grid-template-columns: minmax(0, 1fr); }
   }

@@ -65,8 +65,8 @@ const LONG_NAME = 'Supercalifragilisticexpialidocious123'; // 37 characters, no 
 // Each state starts from the preview's "intelligent" scenario (two cars, a planned night) and
 // edits the mock state in the page. `ctx` = { attrs, plan, states, hour, now, locale }.
 const STATES = {
-  // Two cars, both planned (integration 0.0.11.0): the XC40 goes on to its car limit, the EX30's
-  // charging above the minimum waits for tomorrow's prices.
+  // Two cars, both planned (integration 0.0.17.0): the XC40 goes on to its car limit, the EX30
+  // some way above its minimum before its ready-by.
   'two-cars': () => {},
   // The owner's morning: the XC40 is at its car limit, the EX30 reached its minimum and charges on
   // until its ready-by. Its glow is lit right above the totals row.

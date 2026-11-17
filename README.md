@@ -2,7 +2,7 @@
 
 Standalone Lovelace card for the SmartEVSE Dual Charger Home Assistant integration.
 
-Version: `0.10.3`
+Version: `0.11.0`
 
 This repository contains only the frontend card and local preview assets.
 
@@ -10,10 +10,10 @@ This repository contains only the frontend card and local preview assets.
 
 - A slim header with the charging mode as one chip (Intelligent, Schedule, Force charge or Off) that opens the mode sheet. There is no hero tile (0.9.0): each car's tile says what happens next.
 - Outside the normal Intelligent case the status sentence is the line under the title (0.10.0: "Waiting for a vehicle"). The enabled Schedule/Force plans and their active timer/price constraints are shown in a panel under the header when there are any. Enabled plan names use accented pills with on-switch icons, alongside quieter timer/price/time pills. The icon describes the plan setting even while charging waits for time or price. Force appears first while overriding the standing schedule.
-- **No prices (0.10.3, integration 0.0.17.0).** When no hour has a known price, Intelligent charging follows "Charge with schedule": the card shows the notice "No prices · charging with schedule" and the schedule's status, and nothing planned (no periods in the chart, no plan rows or saving on the tiles).
+- **No prices (0.10.3, integration 0.0.17.0).** When no hour has a known price, Intelligent charging follows "Charge with schedule": the card shows the notice "No prices · charging follows Charge with schedule" and the schedule's status, and nothing planned (no periods in the chart, no plan rows or saving on the tiles).
 - One layout. With **Intelligent charging** enabled the plan chart sits above the charger tiles; without it the card is the same tiles without the chart.
-- One tile per charger: charger, vehicle, status and battery percentage, the shared battery meter, then short labelled facts. **Charged** (what this charge has taken and cost since plug-in) is shown for every connected car in every mode. History opens from the one row under the tiles. A charger without a car is a compact tile with its name and state only (0.10.1); past charges are in history. Unavailable and faulted chargers are identified explicitly.
-- **Charger details** opens a dialog with everything about one charger in short sections: the car, its plan, this charge, the charger (State, Mode, Current offered, Limit) and what the planner uses. Offered current is the charger pilot setting, not measured current or power consumption.
+- One tile per charger: charger, vehicle, status and battery percentage, the shared battery meter, then short labelled facts. **Charged** (what this charge has taken and cost since plug-in) is shown for every connected car in every mode. History opens from the one row under the tiles. A charger without a car is a compact tile with its name, its state and the way to its details (0.11.0); past charges are in history. Unavailable and faulted chargers are identified explicitly.
+- **Charger details** opens a dialog with everything about one charger in short sections: the car, its plan, this charge, the charger (State, Mode, Current offered, Current limit) and what the planner uses. It opens for every charger in every state (0.11.0). Offered current is the charger pilot setting, not measured current or power consumption.
 - Space Hub shared surfaces, radii, theme colors and underglow helpers. Glow colors and effects follow the controller's physical WLED configuration.
 - Responsive: the two charger tiles stack on a phone and sit side by side on a wide card. In a car tile the guaranteed level and the extra level sit under the battery bar, and Charged, Planned and Saves are three figures side by side (rows in a narrow tile). **Saves** is that car's own figure and is shown whatever its size (0.10.2): "≈ €0.07 vs schedule", "≈ €0.00" when the plan costs the same, and **Costs more** ("≈ €0.12 than schedule") when it costs more than the comparison. It is missing only when the integration has no saving it can stand behind (unknown battery level, missing or forecast prices).
 - Charging-plan editor with schedule, immediate charging, timer and acceptable-price controls, plus **Intelligent charging** with integration 0.0.9.0+. Unsupported options are omitted; temporarily unavailable controls are identified and guarded.
@@ -105,7 +105,7 @@ The card also expects the related control entities configured in `card_flow.yaml
 - Enabled price constraints turn green when the current price meets the limit. In a combined timer/price plan, the timer is muted while price blocks charging.
 - Disconnected chargers show no stale current, mode or battery. Unavailable hardware cannot be mistaken for an unplugged car; faults remain visible even when disconnected.
 - Battery percentages are shown only for known vehicles with valid battery data. Session completion is reported from the integration, not inferred from battery percentage.
-- **Charger details** shows only what the controller reports: a value it does not carry leaves its row out. Current offered is diagnostic information, never a consumption measurement.
+- **Charger details** shows only what the controller reports. Every section is always there and says why it has nothing to show (0.11.0); an optional value the controller does not carry leaves its row out. Current offered is diagnostic information, never a consumption measurement.
 
 ## Naming Rules
 
@@ -196,7 +196,7 @@ and its price.
     from the recorder history of the charger state sensors
     (`sensor.<name>_smartevse_1_state` and `_2_state` next to a controller entity named
     `…_controller_state`, or the options `smartevse_1_state_entity` and
-    `smartevse_2_state_entity`). Right of it is the plan: Planned, Above the minimum, Not
+    `smartevse_2_state_entity`). Right of it is the plan: Guaranteed, Extra, Not
     enough time, and a tick at the ready-by time. A car that charges now is one **Charging**
     period from where the charger began to the end of its planned period. The history is
     read once per day and again after a charger changes state (at most every ten minutes
@@ -215,7 +215,7 @@ and its price.
 - **Standing plans.** Intelligent charging and Schedule are independent: switching one
   never changes the other. While both are on, Intelligent has priority (the Schedule
   tile says so), and the schedule takes over again when Intelligent is turned off.
-  Force charge still overrides both; the Intelligent group then reads "Resumes after force charge".
+  Force charge still overrides both; the Intelligent group then reads "Resumes after Force charge". Without any known price it reads "Resumes when prices are known" (0.11.0).
 - **Status sentence (the hero until 0.8.x).** Since 0.9.0 it is read out by screen readers in the normal Intelligent case and shown in every other state (0.10.0: as the line under the title); each car's tile shows what happens next. While Intelligent charging governs, the title is one plain sentence: "Charging
   Volvo XC40", "Next charge at 22:00" (or "Next charge Tue 22:00"), "Both cars ready" or
   "Volvo XC40 ready" when every planned car has its minimum and nothing more is planned, or
@@ -249,38 +249,49 @@ and its price.
 
   Guaranteed, Extra, Next and Planned need an Intelligent plan for the car. The **Charger
   details** row opens the details dialog. A charger without a car is a compact tile with its
-  name and state only (0.10.1): what the last charge took, cost and saved is in history.
+  name, state and the way to its details (0.11.0): what the last charge took and cost is
+  there, and every charge with what it saved is in history.
 - **What a saving is compared with.** Every saving names its comparison, from the
-  integration's `baseline_kind` (0.0.11.0): "Saves ≈ €7.41 compared with Charge with
-  schedule" when the comparison is your schedule, otherwise "… compared with charging at
-  plug‑in" (the cars charging one after the other from the moment they were plugged in).
-  The line under the tiles reads "Saved" when nothing more is planned. History rows
+  integration's `baseline_kind` (0.0.11.0): "Saves ≈ €7.41 vs Charge with schedule" when
+  the comparison is your schedule, otherwise "… vs charging at plug‑in" (the cars charging
+  one after the other from the moment they were plugged in). One rule gives every saving
+  its words (0.11.0): a plan that still charges **Saves**, a finished one **Saved**, a plan
+  dearer than the comparison **Costs more** / **Cost more**, from one cent in both
+  directions, on the tile, in the charger details, on the Intelligent page and in history
+  (where under half a cent reads "Same cost"). With two cars planned a line under the
+  tiles gives the sum: "Both cars · Saves ≈ €1.34 vs Charge with schedule". History rows
   ("Charge with schedule would have cost ≈ €5.53", then "Saved ≈ €1.25" or "Cost more
   ≈ €0.40"), the Intelligent page totals and the charger details use the same names. The
   figures of a tile have room for a short name only: "vs schedule", "vs plug‑in". Each
   recorded session carries its own comparison.
 - **Charger details.** One dialog per charger, in short titled sections of label and value:
   **Car** (vehicle, battery level, "At least", car limit, ready by), **Plan** (Guaranteed,
-  Extra and each planned block as "21:00–22:00 · Guaranteed" or "… · Above the minimum", or
-  the note when the car has no plan), **This charge** (Charged and since when, Planned, and
-  the saving with its comparison), **Charger** (State, Mode, Current offered, Limit) and
-  **What the planner uses** (energy per percent and whether it is learned or from the
-  battery capacity, charging power, "Refined from 2 of 3 charges"). A value the controller
-  does not report leaves its row out.
+  Extra and each planned block as "21:00–22:00 · Guaranteed" or "… · Extra", or the note
+  when the car has no plan), **This charge** (Charged and since when, Planned, and the
+  saving with its comparison), **Charger** (State, Mode, Current offered, Current limit,
+  and the error when there is one) and **What the planner uses** (energy per percent and
+  whether it is learned or from the battery capacity, charging power, and the same line as
+  the Intelligent page: "Learned from 12 charges" or "Refining estimates · 2 of 3
+  charges"). The dialog opens for every charger (0.11.0). Without a car it says "No
+  vehicle connected" and shows the **Last charge** (vehicle, energy and cost, when it
+  started); a charger that cannot be read, a charger in error, Intelligent charging off,
+  Force charge and missing prices each have their line in the section they empty.
 - **Glows stay beneath tiles.** Every panel next to a glowing tile is a shared foreground
   surface (`.family-surface`) with the card's opaque tile background. `npm run test:layout`
   compares real pixels with the glows on and off: the inside of every tile and every piece
   of text must be identical, in both themes, with and without Intelligent charging.
-- **Intelligent page.** The plan first: chronological blocks per car (charging above the
-  minimum marked "above the minimum"), a per-car summary, totals with the saving and its
-  comparison ("Saving vs Charge with schedule"), which charger charges first (opens Charge
-  policy) and the price horizon. The counters that refine the planner's estimates read
+- **Intelligent page.** The plan first: chronological blocks per car (the part above the
+  minimum marked "extra"), a per-car summary ("53% → 80% by 07:00 · total ≈ €4.91 · saves
+  ≈ €1.29"), the total cost (charged so far and still planned) with the saving and its
+  comparison ("Saves vs Charge with schedule"), the charge policy (always there; with two
+  cars it names the charger that charges first) and the price horizon. While the mode is
+  off the plan block says so and the settings stay (0.11.0). The counters that refine the planner's estimates read
   "Refining estimates · 1 of 3 charges" and "Refining household load · 1 of 7 days", with the
   line "Planning works from the first night. These only make its estimates more exact.":
   none of them is a condition for planning. Then per-vehicle **Ready by** (native time input) and **At least**
   (the minimum, in %) fields with the line "Charges to at least this level by the ready-by
   time.", and a learned departure suggestion ("Usually leaves 07:30" · "Use 07:15"). The
-  block **Above the minimum** explains it and has nothing to set: each car goes on to its
+  block **Extra charging** explains it and has nothing to set: each car goes on to its
   own charge limit in the cheapest hours left, and while tomorrow's prices are due it says
   when they are expected. With integration 0.0.10.0 it names the learned price instead, and
   with 0.0.9.x the page
